@@ -1,0 +1,254 @@
+
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8"/>
+  <title>Contrat de location meublée (résidence principale)</title>
+  <style>
+    :root{
+      --text:#111;
+      --muted:#555;
+      --line:#d9d9d9;
+      --soft:#f7f7f7;
+      --accent:#0b2a6f;
+    }
+    @page { margin: 18mm 16mm; }
+    html,body{ padding:0; margin:0; }
+    body{
+      font-family: Arial, sans-serif;
+      color: var(--text);
+      font-size: 10.8pt;
+      line-height: 1.35;
+    }
+    h1{ font-size: 17pt; margin: 0 0 10px 0; color: var(--accent); }
+    h2{ font-size: 12.5pt; margin: 16px 0 8px 0; color: var(--accent); }
+    h3{ font-size: 11.2pt; margin: 12px 0 6px 0; }
+    p{ margin: 6px 0; }
+    .small{ color: var(--muted); font-size: 9.5pt; }
+    .muted{ color: var(--muted); }
+    .box{
+      border:1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      margin: 10px 0;
+      background: #fff;
+    }
+    .box.soft{ background: var(--soft); }
+    .grid2{
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    .kv{
+      width:100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+    }
+    .kv td{
+      border:1px solid var(--line);
+      padding: 7px 8px;
+      vertical-align: top;
+    }
+    .kv td.k{
+      width: 32%;
+      background: var(--soft);
+      font-weight: 700;
+      color: #222;
+    }
+    ul{ margin: 6px 0 6px 18px; padding:0; }
+    li{ margin: 4px 0; }
+    .hr{ height:1px; background: var(--line); margin: 10px 0; }
+    .pagebreak{ page-break-before: always; }
+    .nowrap{ white-space: nowrap; }
+    .siggrid{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+      margin-top: 8px;
+    }
+    .sigbox{
+      border:1px solid var(--line);
+      border-radius: 10px;
+      padding: 10px 12px;
+      min-height: 110px;
+    }
+    .sigtitle{ font-weight: 800; margin-bottom: 6px; color: var(--accent); }
+    .sigmeta{ font-size: 9.5pt; color: var(--muted); }
+    .footer{
+      margin-top: 10px;
+      font-size: 9pt;
+      color: var(--muted);
+    }
+    .badge{
+      display:inline-block;
+      padding: 2px 8px;
+      border:1px solid var(--line);
+      border-radius: 999px;
+      background:#fff;
+      font-size: 9pt;
+      color: var(--muted);
+      margin-right: 6px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="box soft">
+    <div class="small">
+      Référence bail: <b>{{lease_id_short}}</b> • Logement: <b>{{unit_code}}</b> •
+      Période: <b class="nowrap">{{start_date}}</b> → <b class="nowrap">{{end_date_theoretical}}</b>
+    </div>
+  </div>
+
+  <h1>Contrat de location meublée (résidence principale)</h1>
+
+  <div class="box">
+    <div class="grid2">
+      <div>
+        <h3>Entre les soussignés</h3>
+        <p><b>Le Bailleur</b></p>
+        <p>
+          <b>{{landlord_name}}</b><br/>
+          {{landlord_address}}<br/>
+          <span class="small">Email :</span> {{landlord_email}}<br/>
+          <span class="small">Tél. :</span> {{landlord_phone}}
+        </p>
+      </div>
+
+      <div>
+        <h3>Et</h3>
+        <p><b>Le Locataire</b></p>
+        <div class="small">Identité(s) du/des locataire(s) :</div>
+        <div class="box soft" style="margin:6px 0 0 0;">
+          {{tenants_block}}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h2>1. Désignation des locaux loués</h2>
+  <div class="box">
+    {{designation_block}}
+  </div>
+
+  <h2>2. Destination / Usage</h2>
+  <div class="box">
+    <p>Le présent contrat est conclu à titre de <b>résidence principale</b>. Le logement est loué meublé et équipé.</p>
+    <p class="small">Toute sous-location (totale ou partielle) ou cession du bail est interdite sans accord écrit du Bailleur.</p>
+  </div>
+
+  <h2>3. Durée</h2>
+  <div class="box">
+    <p>
+      Le présent bail est consenti pour une durée conforme au régime de la location meublée à usage de résidence principale.
+      Il prend effet le <b class="nowrap">{{start_date}}</b> et se termine le <b class="nowrap">{{end_date_theoretical}}</b>, sauf renouvellement, congé ou résiliation dans les conditions légales.
+    </p>
+  </div>
+
+  <h2>4. Loyer / Charges / Dépôt de garantie</h2>
+  <div class="box">
+    <table class="kv">
+      <tr><td class="k">Loyer mensuel</td><td><b>{{rent_eur}} €</b></td></tr>
+      <tr><td class="k">Charges</td><td><b>{{charges_eur}} €</b> (forfait) — <b>non récupérables</b> (pas de régularisation)</td></tr>
+      <tr><td class="k">Dépôt de garantie</td><td><b>{{deposit_eur}} €</b></td></tr>
+      <tr><td class="k">Date d’exigibilité</td><td>Paiement au plus tard le <b>jour {{payment_day}}</b> de chaque mois</td></tr>
+    </table>
+
+    <p class="small">
+      Modalités de paiement : virement bancaire (recommandé) ou tout autre moyen accepté par le Bailleur.
+      Tout retard pourra entraîner l’application des voies de droit prévues.
+    </p>
+  </div>
+
+  <h2>5. Révision du loyer (IRL – INSEE)</h2>
+  <div class="box">
+    <p>
+      Le loyer pourra être révisé <b>une fois par an</b> si le Bailleur en fait la demande, à la date anniversaire du contrat
+      (ou à défaut, à la date de prise d’effet), conformément à l’Indice de Référence des Loyers (IRL) publié par l’INSEE.
+    </p>
+    <p>
+      <b>Indice de référence :</b> <span class="nowrap">{{irl_reference_quarter}}</span> — <b>Valeur :</b> <span class="nowrap">{{irl_reference_value}}</span>.
+    </p>
+    <p class="small">
+      La variation est calculée selon la formule légale : <i>nouveau loyer = loyer actuel × (IRL nouveau / IRL de référence)</i>.
+      En l’absence de demande de révision, le loyer reste inchangé.
+    </p>
+  </div>
+
+  <h2>6. État des lieux / Inventaire</h2>
+  <div class="box">
+    <p>
+      Un état des lieux d’entrée est établi contradictoirement lors de la remise des clés, ainsi qu’un inventaire du mobilier et des équipements.
+      Un état des lieux de sortie est établi au départ du Locataire.
+    </p>
+  </div>
+
+  <h2>7. Assurance</h2>
+  <div class="box">
+    <p>
+      Le Locataire s’engage à souscrire une assurance couvrant les risques locatifs (incendie, explosion, dégâts des eaux) et à en justifier à la remise des clés puis chaque année à la demande du Bailleur.
+    </p>
+  </div>
+
+  <h2>8. Entretien / Réparations</h2>
+  <div class="box">
+    <p>
+      Le Locataire assure l’entretien courant du logement, du mobilier et des équipements, ainsi que les menues réparations.
+      Les réparations autres que locatives restent à la charge du Bailleur, sauf faute du Locataire.
+    </p>
+  </div>
+
+  <h2>9. Clause résolutoire / Congé</h2>
+  <div class="box">
+    <p>
+      En cas de manquement grave (notamment défaut de paiement du loyer/charges, défaut d’assurance, troubles de voisinage),
+      le Bailleur pourra engager les procédures prévues par la loi.
+    </p>
+    <p class="small">
+      Le congé et la résiliation s’effectuent selon les formes et délais légaux applicables à la location meublée en résidence principale.
+    </p>
+  </div>
+
+  <h2>10. Colocation (le cas échéant)</h2>
+  <div class="box">
+    {{colocation_clause}}
+  </div>
+
+  <div class="pagebreak"></div>
+
+  <h2>11. Annexes / Informations</h2>
+  <div class="box">
+    <p class="small">
+      Le présent contrat est établi en autant d’exemplaires que de parties. Les documents annexes (notice, EDL, inventaire, diagnostics, etc.)
+      peuvent être remis sous format dématérialisé.
+    </p>
+
+    <div class="hr"></div>
+
+    <p><span class="badge">Signature</span> Fait à <b>{{signature_city}}</b>, le <b class="nowrap">{{signature_date}}</b>.</p>
+
+    <div class="siggrid">
+      <div class="sigbox">
+        <div class="sigtitle">Le Bailleur</div>
+        <div class="sigmeta">{{landlord_name}}</div>
+        <div class="small" style="margin-top:8px;">Signature :</div>
+        <div class="small muted">Voir annexe/attestation de signature (PDF) générée par RentalOS.</div>
+      </div>
+
+      <div class="sigbox">
+        <div class="sigtitle">Le Locataire</div>
+        <div class="sigmeta">{{tenants_block}}</div>
+        <div class="small" style="margin-top:8px;">Signature :</div>
+        <div class="small muted">Voir annexe/attestation de signature (PDF) générée par RentalOS.</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      Document généré par RentalOS • Version template: MEUBLE_RP / 2026-02
+    </div>
+  </div>
+
+</body>
+</html>
+

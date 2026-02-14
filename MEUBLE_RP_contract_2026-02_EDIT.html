@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Contrat de location meublée — Résidence principale</title>
+  <style>
+    @page { margin: 18mm 14mm; }
+    body { font-family: Arial, Helvetica, sans-serif; font-size: 10.7pt; line-height: 1.35; color:#111; }
+    h1 { font-size: 15.5pt; margin: 0 0 6px 0; }
+    h2 { font-size: 12.3pt; margin: 14px 0 6px 0; }
+    h3 { font-size: 11.2pt; margin: 10px 0 6px 0; }
+    p { margin: 6px 0; }
+    .muted { color:#555; }
+    .small { font-size: 9.6pt; color:#444; }
+    .tiny { font-size: 8.7pt; color:#555; }
+    .hr { height:1px; background:#e5e5e5; margin:10px 0; }
+
+    .box { border:1px solid #dedede; border-radius:10px; padding:10px 11px; margin:10px 0; }
+    .box-title { font-weight:700; margin-bottom:6px; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap:10px; }
+    .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap:10px; }
+    .kv { width:100%; border-collapse: collapse; }
+    .kv td { border: 1px solid #e4e4e4; padding:7px 8px; vertical-align: top; }
+    .kv .k { width: 34%; background:#fafafa; font-weight:700; }
+
+    .clause { margin: 8px 0; }
+    .li { margin: 3px 0; }
+    ul { margin: 6px 0 6px 18px; padding:0; }
+    li { margin: 4px 0; }
+
+    .sig-wrap { display:grid; grid-template-columns: 1fr 1fr; gap:12px; margin-top:10px; }
+    .sig { border:1px dashed #bdbdbd; border-radius:10px; padding:10px; min-height:110px; }
+    .sig .label { font-weight:700; margin-bottom:6px; }
+    .sig .line { margin-top:62px; border-top:1px solid #bdbdbd; padding-top:6px; }
+    .pagebreak { page-break-before: always; }
+    .right { text-align:right; }
+    .center { text-align:center; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; }
+
+    .warn { background:#fff7e6; border:1px solid #f1d29b; padding:8px 10px; border-radius:10px; }
+  </style>
+</head>
+<body>
+
+  <div class="right tiny">Réf. bail : <span class="mono">{{lease_id_short}}</span></div>
+  <h1>Contrat de location meublée (résidence principale)</h1>
+  <div class="small muted">
+    Contrat conforme “MVP” : champs structurés + génération PDF automatique.  
+    Période : <b>{{start_date_fr}}</b> → <b>{{end_date_theoretical_fr}}</b>
+  </div>
+
+  <div class="hr"></div>
+
+  <!-- PARTIES -->
+  <div class="grid2">
+    <div class="box">
+      <div class="box-title">Bailleur</div>
+      <div><b>{{landlord_name}}</b></div>
+      <div class="small">
+        Adresse : {{landlord_address}}<br/>
+        Email : {{landlord_email}}<br/>
+        Téléphone : {{landlord_phone}}<br/>
+        {{landlord_identifiers_html}}
+      </div>
+    </div>
+
+    <div class="box">
+      <div class="box-title">Locataire(s)</div>
+      {{tenants_block}}
+      <div class="tiny muted" style="margin-top:6px">
+        (En cas de pluralité de locataires : solidarité selon clause de colocation ci-dessous.)
+      </div>
+    </div>
+  </div>
+
+  <!-- DESIGNATION -->
+  <h2>1. Désignation des locaux loués</h2>
+  <div class="box">
+    {{designation_block}}
+    <div class="small" style="margin-top:8px">
+      Type de location : <b>Meublé – Résidence principale</b>.
+    </div>
+  </div>
+
+  <!-- DUREE -->
+  <h2>2. Durée</h2>
+  <div class="box">
+    <div class="clause">
+      Le présent contrat est conclu pour une durée de <b>un (1) an</b> (sauf dispositions légales particulières),
+      à compter du <b>{{start_date_fr}}</b>.  
+      Date de fin théorique : <b>{{end_date_theoretical_fr}}</b>.
+    </div>
+    <div class="tiny muted">
+      Le bail est reconduit/renouvelé selon les dispositions légales applicables aux locations meublées à usage de résidence principale.
+    </div>
+  </div>
+
+  <!-- LOYER / CHARGES -->
+  <h2>3. Conditions financières</h2>
+  <div class="box">
+    <table class="kv">
+      <tr><td class="k">Loyer mensuel</td><td><b>{{rent_eur}} €</b></td></tr>
+      <tr><td class="k">Charges</td><td><b>{{charges_eur}} €</b> / mois</td></tr>
+      <tr><td class="k">Dépôt de garantie</td><td><b>{{deposit_eur}} €</b></td></tr>
+      <tr><td class="k">Date de paiement</td><td>Le <b>{{payment_day}}</b> de chaque mois</td></tr>
+    </table>
+
+    <div style="margin-top:10px">
+      <!-- IMPORTANT : 1 template, 1 variable -->
+      {{charges_clause_html}}
+    </div>
+  </div>
+
+  <!-- IRL -->
+  <h2>4. Révision du loyer (IRL — INSEE)</h2>
+  <div class="box">
+    {{irl_clause_html}}
+    <div class="tiny muted" style="margin-top:8px">
+      Indice de référence (déclaratif) : <b>{{irl_reference_quarter}}</b> — valeur : <b>{{irl_reference_value}}</b>.  
+      Date de révision prévue : <b>{{irl_revision_date_fr}}</b>.
+    </div>
+
+    <div class="warn tiny" style="margin-top:8px">
+      Note : le texte ci-dessus doit rester juridiquement propre. L’outil calcule/stocke les paramètres (trimestre/valeur/date de révision).
+      Le calcul précis pourra être automatisé plus tard si tu ajoutes l’index “IRL courant” au moment de la révision.
+    </div>
+  </div>
+
+  <!-- CLAUSE COLOCATION -->
+  <h2>5. Colocation / Solidarité</h2>
+  <div class="box">
+    {{colocation_clause}}
+  </div>
+
+  <!-- GARANT / VISALE -->
+  <h2>6. Garanties</h2>
+  <div class="grid2">
+    <div class="box">
+      <div class="box-title">Caution / Garant</div>
+      {{guarantor_block}}
+    </div>
+    <div class="box">
+      <div class="box-title">Garantie Visale</div>
+      {{visale_block}}
+    </div>
+  </div>
+
+  <!-- SIGNATURE -->
+  <h2>7. Signature</h2>
+  <div class="box">
+    <div class="small">
+      Fait à <b>{{signature_city}}</b>, le <b>{{signature_date_fr}}</b>.
+    </div>
+
+    <div class="sig-wrap">
+      <div class="sig">
+        <div class="label">Le Bailleur</div>
+        <div class="tiny muted">Nom : {{landlord_name}}</div>
+        <div class="line tiny muted">Signature</div>
+      </div>
+
+      <div class="sig">
+        <div class="label">Le Locataire</div>
+        <div class="tiny muted">Nom : {{tenant_name}}</div>
+        <div class="line tiny muted">Signature</div>
+      </div>
+    </div>
+
+    <div class="tiny muted" style="margin-top:10px">
+      Le processus de signature électronique “MVP” produit des annexes de signature horodatées et une fusion PDF “SIGNED_FINAL”.
+    </div>
+  </div>
+
+  <div class="center tiny muted">
+    RentalOS — Contrat généré automatiquement — version template {{template_version}}
+  </div>
+
+</body>
+</html>
