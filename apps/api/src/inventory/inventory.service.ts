@@ -158,9 +158,9 @@ export class InventoryService {
       `INSERT INTO inventory_lines (
          id, inventory_session_id, catalog_item_id,
          entry_qty, entry_state, entry_notes,
-         exit_qty, exit_state, exit_notes
+         exit_qty
        )
-       VALUES ($1,$2,$3,$4,$5,NULL,0,NULL,NULL)
+       VALUES ($1,$2,$3,$4,$5,NULL,0)
        RETURNING *`,
       [lineId, inventorySessionId, catalogId, entryQty, entryState],
     );
