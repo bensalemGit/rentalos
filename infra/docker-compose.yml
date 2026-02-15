@@ -1,10 +1,12 @@
 services:
   postgres:
     image: postgres:16
+    env_file:
+      - .env
     environment:
-      POSTGRES_DB: rentalos
-      POSTGRES_USER: rentalos
-      POSTGRES_PASSWORD: rentalos
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports:
       - "5432:5432"
     volumes:
@@ -20,39 +22,41 @@ services:
     image: node:20-alpine
     working_dir: /app
     command: sh -c "npm i && npm run start:dev"
+    env_file:
+      - .env
     environment:
-      PORT: 4000
-      DATABASE_URL: postgresql://rentalos:rentalos@postgres:5432/rentalos
-      STORAGE_DRIVER: filesystem
-      STORAGE_BASE_PATH: /storage
-      GOTENBERG_URL: http://gotenberg:3000
-      JWT_SECRET: change_me_dev_secret
-      SMTP_HOST: smtp-relay.brevo.com
-      SMTP_PORT: 587
-      SMTP_USER: a13280001@smtp-brevo.com
-      SMTP_PASS: J6HWPSyUNCYwmfFq
-      SMTP_FROM: "RentalOS <no-reply@rentalos.fr>"
-
+      PORT: ${API_PORT}
+      DATABASE_URL: ${DATABASE_URL}
+      STORAGE_DRIVER: ${STORAGE_DRIVER}
+      STORAGE_BASE_PATH: ${STORAGE_BASE_PATH}
+      GOTENBERG_URL: ${GOTENBERG_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      SMTP_HOST: ${SMTP_HOST}
+      SMTP_PORT: ${SMTP_PORT}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
     volumes:
       - ../apps/api:/app
       - ../infra/storage:/storage
       - ../packages:/packages
     ports:
-      - "4000:4000"
+      - "${API_PORT:-4000}:4000"
     depends_on:
       - postgres
       - gotenberg
-
 
   pgadmin:
     image: dpage/pgadmin4
     container_name: infra-pgadmin-1
     restart: always
+    env_file:
+      - .env
     ports:
-      - "5050:80"
+      - "${PGADMIN_PORT:-5050}:80"
     environment:
-      PGADMIN_DEFAULT_EMAIL: admin@rentalos.fr
-      PGADMIN_DEFAULT_PASSWORD: "ChangeMe_123!"
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     depends_on:
       - postgres
 
@@ -60,13 +64,15 @@ services:
     image: node:20-alpine
     working_dir: /app
     command: sh -c "npm i && npm run build && npm run start -- -p 3000"
+    env_file:
+      - .env
     environment:
-      NEXT_PUBLIC_API_URL: /api
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     volumes:
       - ../apps/web:/app
       - ../packages:/packages
     ports:
-      - "3001:3000"
+      - "${WEB_PORT:-3001}:3000"
     depends_on:
       - api
 

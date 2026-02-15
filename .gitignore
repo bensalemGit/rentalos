@@ -33,3 +33,17 @@ Thumbs.db
 # misc
 coverage/
 **/coverage/
+
+# Local secrets
+**/.env
+**/.env.*
+infra/storage/
+
+# local env
+infra/.env
+infra/.env.*
+
+# runtime / data
+apps/api/uploads/
+backups/
+infra/_compose_resolved.yml
