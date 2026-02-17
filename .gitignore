@@ -47,3 +47,19 @@ infra/.env.*
 apps/api/uploads/
 backups/
 infra/_compose_resolved.yml
+
+# backups runtime artifacts
+backups/db/
+backups/storage/
+backups/config/
+backups/logs/
+backups/manifest_*.json
+backups/manifest_*.sha256
+
+# secrets
+backups/secrets/
+**/*.xml
+
+# env files
+infra/.env
+**/.env
