@@ -45,51 +45,28 @@ export class DocumentsService {
     return `data:image/png;base64,${b.toString('base64')}`;
   }
 
-  /**
-   * ✅ Robust ISO date extraction:
-   * - supports Date objects (pg can return Date depending on config)
-   * - supports ISO strings 'YYYY-MM-DD...' (timestamp)
-   * - fallback: empty string
-   */
   private isoDate(d: any): string {
     if (!d) return '';
-
-    // Date instance -> ISO
-    if (d instanceof Date && !isNaN(d.getTime())) {
-      return d.toISOString().slice(0, 10);
-    }
-
-    const s = String(d).trim();
-    if (!s) return '';
-
-    // exact ISO date
+    const s = String(d);
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
-    // ISO-like prefix (timestamp)
     const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];
-
-    // try parse as Date string
-    const parsed = new Date(s);
-    if (!isNaN(parsed.getTime())) {
-      return parsed.toISOString().slice(0, 10);
-    }
-
-    return '';
+    return s.slice(0, 10);
   }
 
   private formatDateFr(d: any): string {
+    if (!d) return '';
     const iso = this.isoDate(d);
     if (!iso) return '';
-    const [yyyy, mm, dd] = iso.split('-');
-    if (yyyy && mm && dd) return `${dd}/${mm}/${yyyy}`;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+      const [yyyy, mm, dd] = iso.split('-');
+      return `${dd}/${mm}/${yyyy}`;
+    }
     return iso;
   }
 
   private toEuros(cents: any): string {
-    if (cents === null || cents === undefined || cents === '') return '0.00';
-    const n = Number(cents);
-    if (!Number.isFinite(n)) return '0.00';
+    const n = Number(cents ?? 0);
     return (n / 100).toFixed(2);
   }
 
@@ -118,6 +95,16 @@ export class DocumentsService {
     }
   }
 
+  private normalizeText(v: any): string {
+    const s = String(v ?? '').trim();
+    return s;
+  }
+
+  private missingSpan(label = 'À compléter'): string {
+    // Inline style so we don't depend on template CSS
+    return `<span style="color:#b00020;font-weight:700">${this.escapeHtml(label)}</span>`;
+  }
+
   // -------------------------------------
   // Templates
   // -------------------------------------
@@ -141,12 +128,58 @@ export class DocumentsService {
   }
 
   private async htmlToPdfBuffer(html: string): Promise<Buffer> {
-    // Node 18+ : fetch / FormData / Blob are global. Otherwise polyfill is needed.
+    // Node 18+ : fetch / FormData / Blob are available. Otherwise polyfill required.
     const form = new FormData();
     form.append('files', new Blob([new Uint8Array(Buffer.from(html, 'utf-8'))], { type: 'text/html' }), 'index.html');
     const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, { method: 'POST', body: form as any });
     if (!resp.ok) throw new BadRequestException(`PDF generation failed: ${await resp.text()}`);
     return Buffer.from(await resp.arrayBuffer());
+  }
+
+  // -------------------------------------
+  // Signature guard helpers
+  // -------------------------------------
+  private tenantMissingFields(t: any): string[] {
+    const missing: string[] = [];
+    if (!this.normalizeText(t?.full_name)) missing.push('nom');
+    if (!this.normalizeText(t?.birth_date)) missing.push('date de naissance');
+    if (!this.normalizeText(t?.birth_place)) missing.push('lieu de naissance');
+    if (!this.normalizeText(t?.current_address)) missing.push('adresse actuelle');
+    return missing;
+  }
+
+  private async assertSignableLeaseOrThrow(leaseId: string) {
+    const row = await this.fetchLeaseBundle(leaseId);
+    const tenantsArr = this.parseJsonSafe(row.tenants_json);
+    const tenants: any[] = Array.isArray(tenantsArr) && tenantsArr.length ? tenantsArr : [];
+
+    // If for some reason tenants_json is empty, fall back to the principal tenant fields
+    if (!tenants.length) {
+      tenants.push({
+        full_name: row.tenant_name,
+        birth_date: row.birth_date,
+        birth_place: row.birth_place,
+        current_address: row.current_address,
+        role: 'principal',
+      });
+    }
+
+    const incomplete = tenants
+      .map((t) => {
+        const name = this.normalizeText(t?.full_name) || '(locataire sans nom)';
+        const missing = this.tenantMissingFields(t);
+        return { name, missing };
+      })
+      .filter((x) => x.missing.length > 0);
+
+    if (incomplete.length > 0) {
+      throw new BadRequestException(
+        `Impossible de signer : informations locataires incomplètes.\n` +
+          incomplete.map((x) => `- ${x.name} : ${x.missing.join(', ')}`).join('\n'),
+      );
+    }
+
+    return row;
   }
 
   // -------------------------------------
@@ -168,49 +201,45 @@ export class DocumentsService {
       tenants = [];
     }
 
+    const renderTenant = (t: any) => {
+      const tName = this.normalizeText(t?.full_name || t?.name) ? this.escapeHtml(t.full_name || t.name) : this.missingSpan();
+      const tEmail = this.normalizeText(t?.email) ? this.escapeHtml(t.email) : '—';
+      const tPhone = this.normalizeText(t?.phone) ? this.escapeHtml(t.phone) : '—';
+      const birthDate = this.normalizeText(t?.birth_date) ? this.escapeHtml(this.formatDateFr(t.birth_date)) : this.missingSpan();
+      const birthPlace = this.normalizeText(t?.birth_place) ? this.escapeHtml(t.birth_place) : this.missingSpan();
+      const currentAddress = this.normalizeText(t?.current_address) ? this.escapeHtml(t.current_address) : this.missingSpan();
+      const role = this.escapeHtml(t?.role || '');
+      const roleLabel = role ? ` <span class="small">(${role})</span>` : '';
+
+      return `
+        <div style="margin-bottom:8px">
+          <div><b>${tName}</b>${roleLabel}</div>
+          <div class="small">${tEmail} — ${tPhone}</div>
+          <div class="small">Né(e) le ${birthDate} à ${birthPlace}</div>
+          <div class="small">Adresse actuelle : ${currentAddress}</div>
+        </div>
+      `;
+    };
+
     if (Array.isArray(tenants) && tenants.length) {
-      return tenants
-        .map((t) => {
-          const tName = this.escapeHtml(t.full_name || t.name || '');
-          const tEmail = this.escapeHtml(t.email || '-');
-          const tPhone = this.escapeHtml(t.phone || '-');
-          const birthDate = t.birth_date ? this.escapeHtml(this.formatDateFr(t.birth_date)) : '-';
-          const birthPlace = this.escapeHtml(t.birth_place || '-');
-          const currentAddress = this.escapeHtml(t.current_address || '-');
-          const role = this.escapeHtml(t.role || '');
-          const roleLabel = role ? ` <span class="small">(${role})</span>` : '';
-          return `
-            <div style="margin-bottom:8px">
-              <div><b>${tName}</b>${roleLabel}</div>
-              <div class="small">${tEmail} — ${tPhone}</div>
-              <div class="small">Né(e) le ${birthDate} à ${birthPlace}</div>
-              <div class="small">Adresse actuelle : ${currentAddress}</div>
-            </div>
-          `;
-        })
-        .join('');
+      return tenants.map(renderTenant).join('');
     }
 
     // single tenant fallback
-    const tName = this.escapeHtml(row.tenant_name || '');
-    const tEmail = this.escapeHtml(row.tenant_email || '-');
-    const tPhone = this.escapeHtml(row.tenant_phone || '-');
-    const birthDate = row.birth_date ? this.escapeHtml(this.formatDateFr(row.birth_date)) : '-';
-    const birthPlace = this.escapeHtml(row.birth_place || '-');
-    const currentAddress = this.escapeHtml(row.current_address || '-');
-
-    return `
-      <div><b>${tName}</b></div>
-      <div class="small">${tEmail} — ${tPhone}</div>
-      <div class="small">Né(e) le ${birthDate} à ${birthPlace}</div>
-      <div class="small">Adresse actuelle : ${currentAddress}</div>
-    `;
+    return renderTenant({
+      full_name: row.tenant_name,
+      email: row.tenant_email,
+      phone: row.tenant_phone,
+      birth_date: row.birth_date,
+      birth_place: row.birth_place,
+      current_address: row.current_address,
+      role: 'principal',
+    });
   }
 
   private getTenantsCount(row: AnyRow): number {
     const arr = this.parseJsonSafe(row.tenants_json);
-    if (Array.isArray(arr) && arr.length) return arr.length;
-    return 1;
+    return Array.isArray(arr) && arr.length ? arr.length : 1;
   }
 
   /**
@@ -331,10 +360,14 @@ export class DocumentsService {
 
     const items = guarantors
       .map((g, idx) => {
-        const name = this.escapeHtml(g.full_name || g.name || `Garant #${idx + 1}`);
-        const email = this.escapeHtml(g.email || '-');
-        const phone = this.escapeHtml(g.phone || '-');
-        const address = this.escapeHtml(g.address || g.current_address || '-');
+        const name = this.normalizeText(g?.full_name || g?.name)
+          ? this.escapeHtml(g.full_name || g.name)
+          : this.escapeHtml(`Garant #${idx + 1}`);
+        const email = this.normalizeText(g?.email) ? this.escapeHtml(g.email) : '—';
+        const phone = this.normalizeText(g?.phone) ? this.escapeHtml(g.phone) : '—';
+        const address = this.normalizeText(g?.address || g?.current_address)
+          ? this.escapeHtml(g.address || g.current_address)
+          : this.missingSpan();
         return `
           <div style="margin:6px 0 10px 0">
             <div><b>${name}</b></div>
@@ -438,7 +471,9 @@ export class DocumentsService {
   }
 
   private buildIrlClauseHtml(row: AnyRow): string {
-    const revisionDate = row.irl_revision_date || row.start_date;
+    // ✅ IMPORTANT: your DB does NOT have irl_revision_date column (you hit SQL error)
+    // So we use start_date as the annual revision reference date for now.
+    const revisionDate = row.start_date;
     const revisionDateFr = this.formatDateFr(revisionDate);
     return `
       <div class="small">
@@ -534,18 +569,14 @@ export class DocumentsService {
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
-    const signatureDateIso = this.isoDate(new Date());
-    const signatureDateFr = this.formatDateFr(signatureDateIso);
-
     const vars: Record<string, any> = {
       template_version: templateVersion,
       lease_id_short: this.leaseIdShort(leaseId),
 
-      // ISO dates (for file names / internal use)
       start_date: this.isoDate(row.start_date),
       end_date_theoretical: this.isoDate(row.end_date_theoretical),
 
-      // FR dates (for display)
+      // Dates FR
       start_date_fr: this.formatDateFr(row.start_date),
       end_date_theoretical_fr: this.formatDateFr(row.end_date_theoretical),
 
@@ -569,7 +600,6 @@ export class DocumentsService {
       designation_block: this.buildDesignationBlock(row),
       colocation_clause: this.buildColocationClause(row),
 
-      // ✅ NEW (but will display only if template includes them)
       guarantor_block: this.buildGuarantorBlock(row),
       visale_block: this.buildVisaleBlock(row),
 
@@ -577,7 +607,6 @@ export class DocumentsService {
       charges_eur: this.toEuros(row.charges_cents),
       deposit_eur: this.toEuros(row.deposit_cents),
 
-      // single source for charges clause (template should use it)
       charges_clause_html: this.buildChargesClauseHtml(row),
 
       payment_day: String(row.payment_day ?? 5),
@@ -585,14 +614,12 @@ export class DocumentsService {
       // IRL
       irl_reference_quarter: this.escapeHtml(irl.quarter),
       irl_reference_value: this.escapeHtml(irl.value),
-      irl_revision_date_fr: this.formatDateFr(row.irl_revision_date || row.start_date),
+      // ✅ no irl_revision_date column -> use start_date
+      irl_revision_date_fr: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
 
       signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
-
-      // ✅ compatibility: some templates use signature_date (not _fr)
-      signature_date_fr: signatureDateFr,
-      signature_date: signatureDateFr,
+      signature_date_fr: this.formatDateFr(new Date()),
     };
 
     const html = this.applyVars(tpl.html_template, vars);
@@ -697,10 +724,9 @@ h1{font-size:16pt;margin:0 0 10px 0}
     if (!leaseQ.rowCount) throw new BadRequestException('Unknown leaseId');
     const lease = leaseQ.rows[0];
 
-    const sQ = await this.pool.query(
-      `SELECT * FROM edl_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`,
-      [leaseId],
-    );
+    const sQ = await this.pool.query(`SELECT * FROM edl_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`, [
+      leaseId,
+    ]);
     if (!sQ.rowCount) throw new BadRequestException('No EDL session for this lease');
     const edlSession = sQ.rows[0];
 
@@ -1036,7 +1062,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   }
 
   // ---------------------------------------------
-  // Signatures (kept)
+  // Signatures (kept) + ✅ SIGNATURE GUARD
   // ---------------------------------------------
   private async generateSignaturePagePdf(args: {
     unitCode: string;
@@ -1048,8 +1074,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     signedAtIso: string;
     auditJson: any;
   }): Promise<Buffer> {
-    const { unitCode, leaseId, signerName, signerRole, signatureDataUrl, originalPdfSha256, signedAtIso, auditJson } =
-      args;
+    const { unitCode, leaseId, signerName, signerRole, signatureDataUrl, originalPdfSha256, signedAtIso, auditJson } = args;
 
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"/>
@@ -1099,6 +1124,9 @@ code{word-break:break-all}
     const docR = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [documentId]);
     if (!docR.rowCount) throw new BadRequestException('Unknown document');
     const doc = docR.rows[0];
+
+    // ✅ SIGNATURE GUARD: block signing if any tenant info incomplete
+    await this.assertSignableLeaseOrThrow(doc.lease_id);
 
     const absPdf = path.join(this.storageBase, doc.storage_path);
     if (!fs.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
