@@ -120,12 +120,12 @@ export class DocumentsService {
   /**
    * Future-proof:
    * - today: lease has 1 tenant (row.tenant_*)
-   * - later: you can add row.tenants_json / row.tenants[] and it will render multiple tenants
+   * - later: row.tenants_json / row.tenants[] renders multiple tenants
    */
   private buildTenantsBlock(row: AnyRow): string {
     if (row.tenants_block && String(row.tenants_block).includes('<')) return String(row.tenants_block);
 
-    // Optional multi-tenant support (if you add it later)
+    // Optional multi-tenant support
     let tenants: Array<any> = [];
     try {
       if (Array.isArray(row.tenants)) tenants = row.tenants;
@@ -173,8 +173,29 @@ export class DocumentsService {
 
   private buildColocationClause(row: AnyRow): string {
     if (row.colocation_clause && String(row.colocation_clause).includes('<')) return String(row.colocation_clause);
-    // If later you pass tenants_count / tenants list, update this wording
-    return `<div class="small">Sans objet (bail conclu avec un seul locataire).</div>`;
+
+    // Determine tenants count (from tenants_json / tenants)
+    let tenants: Array<any> = [];
+    try {
+      if (Array.isArray(row.tenants)) tenants = row.tenants;
+      else if (row.tenants_json) tenants = typeof row.tenants_json === 'string' ? JSON.parse(row.tenants_json) : row.tenants_json;
+    } catch {
+      tenants = [];
+    }
+
+    if (!tenants || tenants.length <= 1) {
+      return `<div class="small">Sans objet (bail conclu avec un seul locataire).</div>`;
+    }
+
+    // Pragmatic, solid, not too long
+    return `
+      <div class="small">
+        <b>Colocation — Solidarité</b><br/>
+        En cas de pluralité de locataires, ceux-ci sont tenus <b>solidairement</b> au paiement du loyer, des charges et à l’exécution de l’ensemble des obligations du présent bail.<br/>
+        <b>Paiement :</b> le paiement effectué par l’un libère les autres à concurrence des sommes versées.<br/>
+        <b>Congé d’un colocataire :</b> le congé donné par un colocataire ne met fin au bail qu’à l’égard de celui-ci ; les autres colocataires demeurent tenus. Un avenant pourra être établi en cas de remplacement.
+      </div>
+    `;
   }
 
   private listToBadges(title: string, items: any[] | undefined): string {
@@ -237,12 +258,50 @@ export class DocumentsService {
 
   private buildGuarantorBlock(row: AnyRow): string {
     if (row.guarantor_block && String(row.guarantor_block).includes('<')) return String(row.guarantor_block);
-    return `<div class="small"><b>Caution solidaire :</b> aucune (non prévue).</div>`;
+
+    const name = String(row.guarantor_full_name || '').trim();
+    if (!name) {
+      return `<div class="small"><b>Caution solidaire :</b> aucune (non prévue).</div>`;
+    }
+
+    const email = this.escapeHtml(row.guarantor_email || '-');
+    const phone = this.escapeHtml(row.guarantor_phone || '-');
+    const addr = this.escapeHtml(row.guarantor_address || '-');
+
+    return `
+      <div class="small">
+        <b>Caution solidaire (personne physique)</b><br/>
+        <b>Nom :</b> ${this.escapeHtml(name)}<br/>
+        <b>Email / Tél :</b> ${email} — ${phone}<br/>
+        <b>Adresse :</b> ${addr}
+      </div>
+    `;
   }
 
   private buildVisaleBlock(row: AnyRow): string {
     if (row.visale_block && String(row.visale_block).includes('<')) return String(row.visale_block);
-    return `<div class="small"><b>Garantie Visale :</b> non (non prévue).</div>`;
+
+    // Future-proof: support visale_number or visale_json if added later
+    let visaleNum = String(row.visale_number || '').trim();
+    if (!visaleNum && row.visale_json) {
+      try {
+        const v = typeof row.visale_json === 'string' ? JSON.parse(row.visale_json) : row.visale_json;
+        visaleNum = String(v?.number || '').trim();
+      } catch {
+        visaleNum = '';
+      }
+    }
+
+    if (!visaleNum) {
+      return `<div class="small"><b>Garantie Visale :</b> non (non prévue).</div>`;
+    }
+
+    return `
+      <div class="small">
+        <b>Garantie Visale :</b> oui<br/>
+        <b>N° dossier :</b> ${this.escapeHtml(visaleNum)}
+      </div>
+    `;
   }
 
   private defaultIrl(row: AnyRow): { quarter: string; value: string } {
@@ -337,7 +396,29 @@ export class DocumentsService {
           t.phone as tenant_phone,
           t.birth_date,
           t.birth_place,
-          t.current_address
+          t.current_address,
+
+          (
+            SELECT COALESCE(
+              json_agg(
+                json_build_object(
+                  'full_name', tt.full_name,
+                  'email', tt.email,
+                  'phone', tt.phone,
+                  'birth_date', tt.birth_date,
+                  'birth_place', tt.birth_place,
+                  'current_address', tt.current_address,
+                  'role', lt.role
+                )
+                ORDER BY CASE WHEN lt.role='principal' THEN 0 ELSE 1 END, lt.created_at
+              ),
+              '[]'::json
+            )
+            FROM lease_tenants lt
+            JOIN tenants tt ON tt.id = lt.tenant_id
+            WHERE lt.lease_id = l.id
+          ) as tenants_json
+
         FROM leases l
         JOIN units u ON u.id = l.unit_id
         JOIN tenants t ON t.id = l.tenant_id
@@ -366,6 +447,7 @@ export class DocumentsService {
       throw new BadRequestException(`Unsupported lease kind for contract: ${leaseKind}`);
     }
 
+    // IMPORTANT: keep 2026-02 until you create & load 2026-03 in DB
     const templateVersion = '2026-02';
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
@@ -472,7 +554,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
 <b>Bail :</b> ${this.escapeHtml(leaseId)}<br/>
 <b>Logement :</b> ${this.escapeHtml(row.unit_code)} — ${this.escapeHtml(row.unit_label)}<br/>
 <b>Adresse :</b> ${this.escapeHtml(row.unit_address_line1)}, ${this.escapeHtml(row.unit_postal_code)} ${this.escapeHtml(row.unit_city)}<br/>
-<b>Locataire :</b> ${this.escapeHtml(row.tenant_name)}<br/>
+<b>Locataire(s) :</b><br/>${this.buildTenantsBlock(row)}<br/>
 <b>Période :</b> ${this.formatDateFr(row.start_date)} → ${this.formatDateFr(row.end_date_theoretical)}
 </div>
 
