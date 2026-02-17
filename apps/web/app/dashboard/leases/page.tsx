@@ -118,6 +118,16 @@ export default function LeasesPage() {
   // -------------------------
   const [unitId, setUnitId] = useState("");
   const [tenantId, setTenantId] = useState("");
+  // ✅ Multi-locataires à la création (optionnel)
+  const [coTenantIds, setCoTenantIds] = useState<string[]>([]);
+  const [newCoTenantIdCreate, setNewCoTenantIdCreate] = useState("");
+
+  useEffect(() => {
+  setCoTenantIds((prev) => prev.filter((id) => id && id !== tenantId));
+  setNewCoTenantIdCreate("");
+  }, [tenantId]);
+
+
   const [startDate, setStartDate] = useState("");
   const [endDateTheoretical, setEndDateTheoretical] = useState("");
 
@@ -283,6 +293,7 @@ export default function LeasesPage() {
   const payload: any = {
     unitId,
     tenantId,
+    coTenantIds, // ✅ NEW: cotenants at creation
     startDate,
     endDateTheoretical,
 
@@ -768,6 +779,67 @@ export default function LeasesPage() {
                 ))}
               </select>
             </label>
+      {/* ✅ Co-locataires (optionnel, à la création) */}
+      <div style={{ display: "grid", gap: 8 }}>
+        <div style={{ fontWeight: 900 }}>Co-locataires (optionnel)</div>
+        <div style={{ color: muted, fontSize: 12 }}>
+          Ajoute 1 ou plusieurs co-locataires dès la création (sinon tu pourras le faire après).
+        </div>
+
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <select
+            value={newCoTenantIdCreate}
+            onChange={(e) => setNewCoTenantIdCreate(e.target.value)}
+            style={{ ...inputStyle(border), minWidth: 320 }}
+          >
+            <option value="">Ajouter un co-locataire…</option>
+            {tenants
+              .filter((t: any) => t.id !== tenantId)
+              .filter((t: any) => !coTenantIds.includes(t.id))
+              .map((t: any) => (
+                <option key={t.id} value={t.id}>
+                  {t.full_name} {t.email ? `— ${t.email}` : ""}
+                </option>
+              ))}
+          </select>
+
+          <button
+            type="button"
+            onClick={() => {
+              const id = String(newCoTenantIdCreate || "").trim();
+              if (!id) return;
+              setCoTenantIds((prev) => Array.from(new Set([...prev, id])));
+              setNewCoTenantIdCreate("");
+            }}
+            style={btnSecondary(border)}
+          >
+            Ajouter
+          </button>
+        </div>
+
+        {!!coTenantIds.length && (
+          <div style={{ display: "grid", gap: 6 }}>
+            {coTenantIds.map((id) => {
+              const t = (tenants as any[]).find((x) => x.id === id);
+              return (
+                <div key={id} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <div style={{ fontWeight: 900 }}>
+                    {t?.full_name || id}
+                    <span style={{ color: muted, fontWeight: 700, marginLeft: 8 }}>(cotenant)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setCoTenantIds((prev) => prev.filter((x) => x !== id))}
+                    style={btnDanger(border)}
+                  >
+                    Retirer
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>            
           </div>
 
           <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>

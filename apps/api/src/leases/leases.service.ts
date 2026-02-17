@@ -28,6 +28,7 @@ export class LeasesService {
     const {
       unitId,
       tenantId,
+      coTenantIds, // ✅ NEW
       startDate,
       endDateTheoretical,
       rentCents,
@@ -51,6 +52,12 @@ export class LeasesService {
 
     const leaseKind = this.normalizeKind(kind);
 
+    // ✅ normalize coTenantIds
+    const coIdsRaw = Array.isArray(coTenantIds) ? coTenantIds : [];
+    const coIds = Array.from(new Set(coIdsRaw.map((x) => String(x || '').trim()).filter(Boolean))).filter(
+      (id) => id !== String(tenantId),
+    );
+
     let leaseDesignationJson: any = null;
     if (leaseDesignation && typeof leaseDesignation === 'object') leaseDesignationJson = leaseDesignation;
     else if (typeof leaseDesignation === 'string' && leaseDesignation.trim()) {
@@ -61,8 +68,7 @@ export class LeasesService {
       }
     }
 
-    const keysCountInt =
-      keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
+    const keysCountInt = keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
 
     const irlValueNum =
       irlReferenceValue === null || irlReferenceValue === undefined || irlReferenceValue === ''
@@ -78,6 +84,14 @@ export class LeasesService {
 
       const tenant = await client.query('SELECT id FROM tenants WHERE id=$1', [tenantId]);
       if (!tenant.rowCount) throw new BadRequestException('Unknown tenantId');
+
+      // ✅ validate co-tenants existence (if any)
+      if (coIds.length) {
+        const rr = await client.query(`SELECT id FROM tenants WHERE id = ANY($1::uuid[])`, [coIds]);
+        if ((rr.rowCount || 0) !== coIds.length) {
+          throw new BadRequestException('One or more coTenantIds are unknown');
+        }
+      }
 
       const leaseRes = await client.query(
         `INSERT INTO leases (
@@ -110,11 +124,13 @@ export class LeasesService {
           Number.isFinite(keysCountInt as any) ? keysCountInt : null,
           irlReferenceQuarter ? String(irlReferenceQuarter) : null,
           Number.isFinite(irlValueNum as any) ? irlValueNum : null,
-          (chargesMode ? String(chargesMode) : "FORFAIT"),
+          chargesMode ? String(chargesMode) : 'FORFAIT',
         ],
       );
+
       const lease = leaseRes.rows[0];
 
+      // principal always
       await client.query(
         `INSERT INTO lease_tenants (lease_id, tenant_id, role)
          VALUES ($1,$2,'principal')
@@ -122,6 +138,18 @@ export class LeasesService {
         [lease.id, tenantId],
       );
 
+      // ✅ cotenants at creation
+      if (coIds.length) {
+        await client.query(
+          `INSERT INTO lease_tenants (lease_id, tenant_id, role)
+           SELECT $1, x, 'cotenant'
+           FROM unnest($2::uuid[]) AS x
+           ON CONFLICT (lease_id, tenant_id) DO NOTHING`,
+          [lease.id, coIds],
+        );
+      }
+
+      // amounts line at startDate
       await client.query(
         `INSERT INTO lease_amounts (lease_id, effective_date, rent_cents, charges_cents, deposit_cents, payment_day)
          VALUES ($1,$2,$3,$4,$5,$6)
@@ -159,8 +187,7 @@ export class LeasesService {
       }
     }
 
-    const keysCountInt =
-      keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
+    const keysCountInt = keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
 
     const irlValueNum =
       irlReferenceValue === null || irlReferenceValue === undefined || irlReferenceValue === ''
@@ -257,17 +284,11 @@ export class LeasesService {
       await client.query(`UPDATE leases SET status='ended' WHERE id=$1`, [leaseId]);
 
       if (edlId) {
-        await client.query(
-          `UPDATE edl_sessions SET status='exit_signed', exit_done_at=now() WHERE id=$1`,
-          [edlId],
-        );
+        await client.query(`UPDATE edl_sessions SET status='exit_signed', exit_done_at=now() WHERE id=$1`, [edlId]);
       }
 
       if (invId) {
-        await client.query(
-          `UPDATE inventory_sessions SET status='exit_signed' WHERE id=$1`,
-          [invId],
-        );
+        await client.query(`UPDATE inventory_sessions SET status='exit_signed' WHERE id=$1`, [invId]);
       }
 
       await client.query(
@@ -323,10 +344,7 @@ export class LeasesService {
       throw new BadRequestException('Cannot remove principal tenant from lease');
     }
 
-    const r = await this.pool.query(`DELETE FROM lease_tenants WHERE lease_id=$1 AND tenant_id=$2`, [
-      leaseId,
-      tenantId,
-    ]);
+    const r = await this.pool.query(`DELETE FROM lease_tenants WHERE lease_id=$1 AND tenant_id=$2`, [leaseId, tenantId]);
 
     return { ok: true, removed: r.rowCount };
   }

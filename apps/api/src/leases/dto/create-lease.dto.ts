@@ -1,4 +1,13 @@
-import { IsEmail, IsIn, IsInt, IsISO8601, IsOptional, IsString, Min } from 'class-validator';
+import {
+  IsArray,
+  IsEmail,
+  IsIn,
+  IsInt,
+  IsISO8601,
+  IsOptional,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export type LeaseChargesMode = 'FORFAIT' | 'PROVISION';
 export type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
@@ -7,8 +16,15 @@ export class CreateLeaseDto {
   @IsString()
   unitId!: string;
 
+  // Locataire principal (obligatoire)
   @IsString()
   tenantId!: string;
+
+  // Co-locataires optionnels à la création
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  coTenantIds?: string[];
 
   @IsISO8601()
   startDate!: string;
