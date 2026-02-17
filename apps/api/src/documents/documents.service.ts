@@ -45,28 +45,51 @@ export class DocumentsService {
     return `data:image/png;base64,${b.toString('base64')}`;
   }
 
+  /**
+   * ✅ Robust ISO date extraction:
+   * - supports Date objects (pg can return Date depending on config)
+   * - supports ISO strings 'YYYY-MM-DD...' (timestamp)
+   * - fallback: empty string
+   */
   private isoDate(d: any): string {
     if (!d) return '';
-    const s = String(d);
+
+    // Date instance -> ISO
+    if (d instanceof Date && !isNaN(d.getTime())) {
+      return d.toISOString().slice(0, 10);
+    }
+
+    const s = String(d).trim();
+    if (!s) return '';
+
+    // exact ISO date
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    // ISO-like prefix (timestamp)
     const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];
-    return s.slice(0, 10);
+
+    // try parse as Date string
+    const parsed = new Date(s);
+    if (!isNaN(parsed.getTime())) {
+      return parsed.toISOString().slice(0, 10);
+    }
+
+    return '';
   }
 
   private formatDateFr(d: any): string {
-    if (!d) return '';
     const iso = this.isoDate(d);
     if (!iso) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-      const [yyyy, mm, dd] = iso.split('-');
-      return `${dd}/${mm}/${yyyy}`;
-    }
+    const [yyyy, mm, dd] = iso.split('-');
+    if (yyyy && mm && dd) return `${dd}/${mm}/${yyyy}`;
     return iso;
   }
 
   private toEuros(cents: any): string {
-    const n = Number(cents ?? 0);
+    if (cents === null || cents === undefined || cents === '') return '0.00';
+    const n = Number(cents);
+    if (!Number.isFinite(n)) return '0.00';
     return (n / 100).toFixed(2);
   }
 
@@ -83,13 +106,16 @@ export class DocumentsService {
     return String(id || '').slice(0, 8);
   }
 
-  /**
-   * Store storage_path in DB as a stable relative path with forward slashes (no leading slash).
-   * This avoids Windows backslashes and avoids path.join() ignoring storageBase.
-   */
-  private toStorageRel(absPath: string) {
-    const rel = path.relative(this.storageBase, absPath);
-    return rel.split(path.sep).join('/').replace(/^\/+/, '');
+  private parseJsonSafe(v: any): any {
+    if (v == null) return null;
+    if (typeof v === 'object') return v;
+    const s = String(v || '').trim();
+    if (!s) return null;
+    try {
+      return JSON.parse(s);
+    } catch {
+      return null;
+    }
   }
 
   // -------------------------------------
@@ -115,6 +141,7 @@ export class DocumentsService {
   }
 
   private async htmlToPdfBuffer(html: string): Promise<Buffer> {
+    // Node 18+ : fetch / FormData / Blob are global. Otherwise polyfill is needed.
     const form = new FormData();
     form.append('files', new Blob([new Uint8Array(Buffer.from(html, 'utf-8'))], { type: 'text/html' }), 'index.html');
     const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, { method: 'POST', body: form as any });
@@ -127,23 +154,21 @@ export class DocumentsService {
   // -------------------------------------
 
   /**
-   * Future-proof:
    * - today: lease has 1 tenant (row.tenant_*)
-   * - later: you can add row.tenants_json / row.tenants[] and it will render multiple tenants
+   * - now: supports multi tenants through row.tenants_json (json array)
    */
   private buildTenantsBlock(row: AnyRow): string {
     if (row.tenants_block && String(row.tenants_block).includes('<')) return String(row.tenants_block);
 
-    // Optional multi-tenant support (if you add it later)
     let tenants: Array<any> = [];
     try {
       if (Array.isArray(row.tenants)) tenants = row.tenants;
-      else if (row.tenants_json) tenants = typeof row.tenants_json === 'string' ? JSON.parse(row.tenants_json) : row.tenants_json;
+      else if (row.tenants_json) tenants = this.parseJsonSafe(row.tenants_json) ?? [];
     } catch {
       tenants = [];
     }
 
-    if (tenants.length) {
+    if (Array.isArray(tenants) && tenants.length) {
       return tenants
         .map((t) => {
           const tName = this.escapeHtml(t.full_name || t.name || '');
@@ -152,9 +177,11 @@ export class DocumentsService {
           const birthDate = t.birth_date ? this.escapeHtml(this.formatDateFr(t.birth_date)) : '-';
           const birthPlace = this.escapeHtml(t.birth_place || '-');
           const currentAddress = this.escapeHtml(t.current_address || '-');
+          const role = this.escapeHtml(t.role || '');
+          const roleLabel = role ? ` <span class="small">(${role})</span>` : '';
           return `
-            <div style="margin-bottom:6px">
-              <div><b>${tName}</b></div>
+            <div style="margin-bottom:8px">
+              <div><b>${tName}</b>${roleLabel}</div>
               <div class="small">${tEmail} — ${tPhone}</div>
               <div class="small">Né(e) le ${birthDate} à ${birthPlace}</div>
               <div class="small">Adresse actuelle : ${currentAddress}</div>
@@ -164,7 +191,7 @@ export class DocumentsService {
         .join('');
     }
 
-    // Current single tenant
+    // single tenant fallback
     const tName = this.escapeHtml(row.tenant_name || '');
     const tEmail = this.escapeHtml(row.tenant_email || '-');
     const tPhone = this.escapeHtml(row.tenant_phone || '-');
@@ -180,29 +207,35 @@ export class DocumentsService {
     `;
   }
 
+  private getTenantsCount(row: AnyRow): number {
+    const arr = this.parseJsonSafe(row.tenants_json);
+    if (Array.isArray(arr) && arr.length) return arr.length;
+    return 1;
+  }
+
+  /**
+   * ✅ Colocation clause “béton” si >1 locataire
+   * - solidarité / indivisibilité
+   * - départ d’un cotenant : le bail continue
+   */
   private buildColocationClause(row: AnyRow): string {
     if (row.colocation_clause && String(row.colocation_clause).includes('<')) return String(row.colocation_clause);
 
-    let tenants: Array<any> = [];
-    try {
-      if (Array.isArray(row.tenants)) tenants = row.tenants;
-      else if (row.tenants_json) tenants = typeof row.tenants_json === 'string' ? JSON.parse(row.tenants_json) : row.tenants_json;
-    } catch {
-      tenants = [];
-    }
-
-    if (!tenants || tenants.length <= 1) {
+    const n = this.getTenantsCount(row);
+    if (!n || n <= 1) {
       return `<div class="small">Sans objet (bail conclu avec un seul locataire).</div>`;
     }
 
     return `
       <div class="small">
-        <b>Colocation — solidarité :</b><br/>
-        En cas de pluralité de locataires, ceux-ci sont tenus <b>solidairement</b> au paiement du loyer, des charges
-        et à l’exécution de l’ensemble des obligations du présent bail.<br/>
-        <b>Paiement :</b> le paiement effectué par l’un libère les autres à concurrence des sommes versées.<br/>
-        <b>Congé d’un colocataire :</b> le congé donné par un colocataire ne met fin au bail qu’à l’égard de celui-ci ;
-        les autres colocataires demeurent tenus. Un avenant pourra être établi en cas de remplacement.
+        <b>Colocation — bail unique :</b><br/>
+        Le présent contrat est conclu avec <b>${n}</b> locataire(s). Les locataires sont tenus <b>solidairement</b> au paiement du loyer,
+        des charges, des indemnités d’occupation et, le cas échéant, des réparations locatives dues au titre du présent bail.<br/><br/>
+        <b>Indivisibilité :</b> le congé donné par un seul colocataire (ou son départ) n’emporte pas résiliation du bail.
+        Le bail se poursuit avec le(s) colocataire(s) restant(s). Tout remplacement d’un colocataire ou ajout/suppression
+        d’un cotenant doit faire l’objet d’un <b>avenant</b> établi par le bailleur.<br/><br/>
+        Les colocataires s’organisent entre eux pour la répartition interne des paiements. Le bailleur peut réclamer l’intégralité
+        des sommes dues à n’importe lequel des colocataires.
       </div>
     `;
   }
@@ -225,7 +258,9 @@ export class DocumentsService {
       d = null;
     }
 
-    const addr = `${this.escapeHtml(row.unit_address_line1)}, ${this.escapeHtml(row.unit_postal_code)} ${this.escapeHtml(row.unit_city)}`;
+    const addr = `${this.escapeHtml(row.unit_address_line1)}, ${this.escapeHtml(row.unit_postal_code)} ${this.escapeHtml(
+      row.unit_city,
+    )}`;
     const buildingName = this.escapeHtml(row.building_name || d?.buildingName || '-');
     const batiment = this.escapeHtml(d?.batiment || '-');
     const etage = this.escapeHtml(d?.etagePrecision || (row.floor != null ? `Étage ${row.floor}` : '-') || '-');
@@ -265,49 +300,94 @@ export class DocumentsService {
     `;
   }
 
+  /**
+   * ✅ Garants multiples supportés via:
+   * - l.guarantors_json (array)
+   * Fallback:
+   * - l.guarantor_full_name / email / phone / address
+   */
   private buildGuarantorBlock(row: AnyRow): string {
     if (row.guarantor_block && String(row.guarantor_block).includes('<')) return String(row.guarantor_block);
 
-    const name = String(row.guarantor_full_name || '').trim();
-    if (!name) {
+    const gArr = this.parseJsonSafe(row.guarantors_json);
+    const guarantors: any[] = Array.isArray(gArr) ? gArr : [];
+
+    // fallback legacy single guarantor
+    if (
+      !guarantors.length &&
+      (row.guarantor_full_name || row.guarantor_email || row.guarantor_phone || row.guarantor_address)
+    ) {
+      guarantors.push({
+        full_name: row.guarantor_full_name,
+        email: row.guarantor_email,
+        phone: row.guarantor_phone,
+        address: row.guarantor_address,
+      });
+    }
+
+    if (!guarantors.length) {
       return `<div class="small"><b>Caution solidaire :</b> aucune (non prévue).</div>`;
     }
 
-    const email = this.escapeHtml(row.guarantor_email || '-');
-    const phone = this.escapeHtml(row.guarantor_phone || '-');
-    const addr = this.escapeHtml(row.guarantor_address || '-');
+    const items = guarantors
+      .map((g, idx) => {
+        const name = this.escapeHtml(g.full_name || g.name || `Garant #${idx + 1}`);
+        const email = this.escapeHtml(g.email || '-');
+        const phone = this.escapeHtml(g.phone || '-');
+        const address = this.escapeHtml(g.address || g.current_address || '-');
+        return `
+          <div style="margin:6px 0 10px 0">
+            <div><b>${name}</b></div>
+            <div class="small">${email} — ${phone}</div>
+            <div class="small">Adresse : ${address}</div>
+          </div>
+        `;
+      })
+      .join('');
 
     return `
       <div class="small">
-        <b>Caution solidaire (personne physique) :</b><br/>
-        <b>Nom :</b> ${this.escapeHtml(name)}<br/>
-        <b>Email / Tél :</b> ${email} — ${phone}<br/>
-        <b>Adresse :</b> ${addr}
+        <b>Caution solidaire :</b> oui (garant(s) ci-dessous).<br/>
+        La/Les caution(s) s’engage(nt) solidairement au paiement des sommes dues au titre du bail selon l’acte de cautionnement annexé.
       </div>
+      <div style="margin-top:8px">${items}</div>
     `;
   }
 
+  /**
+   * ✅ Visale supporté via:
+   * - l.visale_json (object)
+   * fallback:
+   * - l.visale_visa_number / l.visale_enabled etc. (si existant)
+   */
   private buildVisaleBlock(row: AnyRow): string {
     if (row.visale_block && String(row.visale_block).includes('<')) return String(row.visale_block);
 
-    let visaleNum = String(row.visale_number || '').trim();
-    if (!visaleNum && row.visale_json) {
-      try {
-        const v = typeof row.visale_json === 'string' ? JSON.parse(row.visale_json) : row.visale_json;
-        visaleNum = String(v?.number || '').trim();
-      } catch {
-        visaleNum = '';
-      }
-    }
+    const v = this.parseJsonSafe(row.visale_json) || null;
 
-    if (!visaleNum) {
+    // fallback simple (si tu as déjà des colonnes)
+    const enabledFallback = String(row.visale_enabled ?? '').toLowerCase() === 'true' || row.visale_enabled === 1;
+    const visaNumberFallback = row.visale_visa_number || row.visaleVisaNumber;
+
+    const enabled = Boolean(v?.enabled ?? enabledFallback ?? false);
+    if (!enabled) {
       return `<div class="small"><b>Garantie Visale :</b> non (non prévue).</div>`;
     }
 
+    const visaNumber = this.escapeHtml(v?.visaNumber || visaNumberFallback || '—');
+    const tenantRef = this.escapeHtml(v?.tenantRef || v?.locataireRef || '—');
+    const landlordRef = this.escapeHtml(v?.landlordRef || v?.bailleurRef || '—');
+    const plafond = v?.maxAmountEur != null ? this.escapeHtml(v.maxAmountEur) : '—';
+    const start = v?.startDate ? this.escapeHtml(this.formatDateFr(v.startDate)) : '—';
+    const end = v?.endDate ? this.escapeHtml(this.formatDateFr(v.endDate)) : '—';
+
     return `
       <div class="small">
-        <b>Garantie Visale :</b> oui<br/>
-        <b>N° dossier :</b> ${this.escapeHtml(visaleNum)}
+        <b>Garantie Visale :</b> oui.<br/>
+        <b>Visa / Référence :</b> ${visaNumber}<br/>
+        <b>Référence locataire :</b> ${tenantRef} — <b>Référence bailleur :</b> ${landlordRef}<br/>
+        <b>Période :</b> ${start} → ${end} — <b>Plafond (indicatif) :</b> ${plafond}${plafond === '—' ? '' : ' €'}<br/>
+        Les parties conviennent que la garantie Visale s’applique selon les conditions du dispositif et des documents annexés.
       </div>
     `;
   }
@@ -444,9 +524,6 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
-    if (process.env.DEBUG_DOCUMENTS === '1') {
-      console.log('charges_mode=', row.charges_mode, 'charges_cents=', row.charges_cents);
-    }
 
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
     if (leaseKind !== 'MEUBLE_RP' && leaseKind !== 'NU_RP' && leaseKind !== 'SAISONNIER') {
@@ -457,14 +534,18 @@ export class DocumentsService {
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
+    const signatureDateIso = this.isoDate(new Date());
+    const signatureDateFr = this.formatDateFr(signatureDateIso);
+
     const vars: Record<string, any> = {
       template_version: templateVersion,
       lease_id_short: this.leaseIdShort(leaseId),
 
+      // ISO dates (for file names / internal use)
       start_date: this.isoDate(row.start_date),
       end_date_theoretical: this.isoDate(row.end_date_theoretical),
 
-      // Dates FR
+      // FR dates (for display)
       start_date_fr: this.formatDateFr(row.start_date),
       end_date_theoretical_fr: this.formatDateFr(row.end_date_theoretical),
 
@@ -487,6 +568,8 @@ export class DocumentsService {
 
       designation_block: this.buildDesignationBlock(row),
       colocation_clause: this.buildColocationClause(row),
+
+      // ✅ NEW (but will display only if template includes them)
       guarantor_block: this.buildGuarantorBlock(row),
       visale_block: this.buildVisaleBlock(row),
 
@@ -494,7 +577,7 @@ export class DocumentsService {
       charges_eur: this.toEuros(row.charges_cents),
       deposit_eur: this.toEuros(row.deposit_cents),
 
-      // ✅ single source for charges clause
+      // single source for charges clause (template should use it)
       charges_clause_html: this.buildChargesClauseHtml(row),
 
       payment_day: String(row.payment_day ?? 5),
@@ -506,7 +589,10 @@ export class DocumentsService {
       irl_clause_html: this.buildIrlClauseHtml(row),
 
       signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
-      signature_date_fr: this.formatDateFr(new Date()),
+
+      // ✅ compatibility: some templates use signature_date (not _fr)
+      signature_date_fr: signatureDateFr,
+      signature_date: signatureDateFr,
     };
 
     const html = this.applyVars(tpl.html_template, vars);
@@ -523,7 +609,7 @@ export class DocumentsService {
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
        VALUES ($1,$2,'CONTRAT',$3,$4,$5) RETURNING *`,
-      [row.unit_id, leaseId, pdfName, this.toStorageRel(outPdfPath), sha],
+      [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
     return ins.rows[0];
@@ -589,7 +675,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
        VALUES ($1,$2,'NOTICE',$3,$4,$5) RETURNING *`,
-      [row.unit_id, leaseId, pdfName, this.toStorageRel(outPdfPath), sha],
+      [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
     return ins.rows[0];
@@ -757,7 +843,7 @@ ${annexHtml}
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
        VALUES ($1,$2,'EDL',$3,$4,$5) RETURNING *`,
-      [lease.unit_id, leaseId, pdfName, this.toStorageRel(outPdfPath), sha],
+      [lease.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
     return ins.rows[0];
@@ -882,7 +968,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
        VALUES ($1,$2,'INVENTAIRE',$3,$4,$5) RETURNING *`,
-      [lease.unit_id, leaseId, pdfName, this.toStorageRel(outPdfPath), sha],
+      [lease.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
     return ins.rows[0];
@@ -930,7 +1016,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
        VALUES ($1,$2,'PACK',$3,$4,$5) RETURNING *`,
-      [row.unit_id, leaseId, pdfName, this.toStorageRel(outPdfPath), mergedSha],
+      [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), mergedSha],
     );
 
     return ins.rows[0];
@@ -949,9 +1035,9 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     return Buffer.from(await resp.arrayBuffer());
   }
 
-  // -------------------------------------
+  // ---------------------------------------------
   // Signatures (kept)
-  // -------------------------------------
+  // ---------------------------------------------
   private async generateSignaturePagePdf(args: {
     unitCode: string;
     leaseId: string;
@@ -962,7 +1048,8 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     signedAtIso: string;
     auditJson: any;
   }): Promise<Buffer> {
-    const { unitCode, leaseId, signerName, signerRole, signatureDataUrl, originalPdfSha256, signedAtIso, auditJson } = args;
+    const { unitCode, leaseId, signerName, signerRole, signatureDataUrl, originalPdfSha256, signedAtIso, auditJson } =
+      args;
 
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"/>
@@ -1049,7 +1136,7 @@ code{word-break:break-all}
         doc.id,
         signerRole as SignRole,
         signerName,
-        this.toStorageRel(sigAbs),
+        sigAbs.replace(this.storageBase, ''),
         req.ip,
         req.headers['user-agent'],
         originalSha,
@@ -1120,7 +1207,7 @@ code{word-break:break-all}
       const insDoc = await this.pool.query(
         `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
          VALUES ($1,$2,'CONTRAT',$3,$4,$5,$6) RETURNING *`,
-        [doc.unit_id, doc.lease_id, signedName, this.toStorageRel(signedAbs2), mergedSha, doc.id],
+        [doc.unit_id, doc.lease_id, signedName, signedAbs2.replace(this.storageBase, ''), mergedSha, doc.id],
       );
 
       await this.pool.query(`UPDATE documents SET signed_final_document_id=$1 WHERE id=$2`, [insDoc.rows[0].id, doc.id]);
