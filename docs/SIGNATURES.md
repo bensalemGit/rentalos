@@ -94,3 +94,15 @@ afficher tous les locataires
 forcer la sélection du signataire
 
 envoyer signerTenantId dans la requête
+
+---
+
+# 🖥️ UI obligatoire
+
+Sur `/sign/[leaseId]`, si plusieurs locataires :
+
+- afficher la liste des locataires du bail
+- forcer l’utilisateur à choisir qui signe
+- envoyer `signerTenantId` dans le payload
+
+Sinon la signature échoue (400).

@@ -2,74 +2,68 @@
 
 Bienvenue dans la documentation officielle de **RentalOS**.
 
-Objectif :
+Objectifs :
 
-- centraliser toute la documentation projet
-- permettre une reprise rapide par un nouveau dev/chat
-- garantir un runbook DR complet
-- sécuriser le contrat meublé RP ("bail béton")
-- formaliser le workflow multi-locataires + signatures
+- Centraliser toute la documentation projet
+- Permettre une reprise immédiate par un nouveau dev/chat
+- Garantir un PRA/DR opérationnel (<10 min)
+- Sécuriser le workflow métier : **Bail → Contrat meublé béton**
+- Encadrer la signature électronique multi-locataires
 
 ---
 
-## 📚 Documents disponibles
+## 📌 Documents essentiels
+---
 
-### 🔥 Projet & Passation
+## 🔗 Liens rapides
+
+- Passation : **HANDOVER.md**
+- Signature électronique : **SIGNATURES.md**
+- Templates contrats : **TEMPLATES.md**
+- PRA / Restore : **DR_RUNBOOK.md**
+
+
+### 🚀 Onboarding / Passation
 
 - **HANDOVER.md**  
-  Document principal de transmission (nouveau chat/dev)
-
----
-
-### 🛡️ Disaster Recovery
-
-- **DR_RUNBOOK.md**  
-  Restore complet en moins de 10 minutes
-
-- **OPS_CHECKLIST.md**  
-  Checklist exploitation + monitoring
-
----
-
-### 📄 Contrats & Templates
-
-- **TEMPLATES.md**  
-  Gestion SQL des templates (`document_templates`)  
-  Backup + Update UTF-8 safe
-
----
+  → Document principal de reprise projet (nouveau dev/chat)
 
 ### ✍️ Signatures électroniques
 
 - **SIGNATURES.md**  
-  Workflow complet multi-locataires + bailleur  
-  Finalisation automatique du PDF signé
+  → Workflow complet multi-locataires + bailleur + finalisation PDF
+
+### 📄 Templates juridiques (contrats)
+
+- **TEMPLATES.md**  
+  → Gestion SQL des templates + variables + versioning
 
 ---
 
-### 📌 Historique
+## 🛡️ PRA / DR (Backup & Restore)
+
+- **DR_RUNBOOK.md**  
+  → Restore complet en <10 min
+
+- **OPS_CHECKLIST.md**  
+  → Commandes réflexes d’exploitation
 
 - **CHANGELOG.md**  
-  Liste des évolutions importantes (commits majeurs)
+  → Historique des évolutions
 
 ---
 
-## ✅ Golden Path Terrain (Bail Meublé Béton)
+## 📍 État actuel (février 2026)
 
-1. Création bail MEUBLE_RP (multi-locataires possible)
-2. Génération contrat via template SQL (`document_templates`)
-3. Signature :
-   - chaque locataire signe avec `signerTenantId`
-   - bailleur signe en dernier
-4. PDF final généré automatiquement :
-
-CONTRAT_MEUBLE_RP_*_SIGNED_FINAL.pdf
-
+✅ Backup daily + R2 chiffré + FailOnly email  
+✅ Contrat MEUBLE_RP multi-locataires + clause colocation  
+✅ Signature multi-tenant : tenantId requis si plusieurs locataires  
+✅ Final PDF généré uniquement quand tous ont signé  
 
 ---
 
-## Next Steps
+## Next Step (priorité)
 
-- Tests automatiques signature multi-tenant
-- UI Visale + garants multiples
-- Finalisation juridique du contrat RP
+1. Automatiser un test E2E signatures (2 locataires + bailleur)
+2. Finaliser le contrat “bail béton” (garants multi + visale UI)
+3. Améliorer création bail multi-locataires dès l’écran initial

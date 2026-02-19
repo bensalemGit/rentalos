@@ -460,6 +460,64 @@ git commit -m "docs: add official templates guide (backup + update UTF-8)"
 
 git push origin main
 
+---
+
+# ♻️ Rollback (restaurer un backup)
+
+Lister les backups :
+
+```sql
+SELECT version, title
+FROM document_templates
+WHERE kind='CONTRACT'
+AND lease_kind='MEUBLE_RP'
+AND version LIKE '2026-02-backup-%'
+ORDER BY version DESC;
+
+Restaurer un backup :
+UPDATE document_templates
+SET html_template = b.html_template
+FROM document_templates b
+WHERE b.version='2026-02-backup-YYYYMMDD-HHMMSS'
+AND document_templates.kind='CONTRACT'
+AND document_templates.lease_kind='MEUBLE_RP'
+AND document_templates.version='2026-02';
+
+✅ Retour immédiat à la version précédente.
+
+---
+
+# ✅ Conclusion
+
+Tu es **à 95% prêt passation “nouveau chat/dev”**.
+
+Avec ces 3 micro-ajouts, ton pack docs devient :
+
+- zéro ambiguïté
+- rollback instantané
+- signature multi-locataire béton côté UI
+
+---
+
+# 🚀 Next Step logique (GO 2)
+
+Maintenant qu’on a la doc clean :
+
+## Prochaine étape : Test automatique du workflow signature
+
+Je te prépare un script E2E :
+
+- bail avec 2 locataires
+- signature locataire 1
+- signature locataire 2
+- signature bailleur
+- vérif PDF final généré
+
+👉 Dis juste :
+
+**GO TEST AUTO SIGN FLOW**
+
+et on enchaîne direct.
 
 
 
