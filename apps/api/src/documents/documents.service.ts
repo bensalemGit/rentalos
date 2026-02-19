@@ -554,6 +554,7 @@ export class DocumentsService {
             SELECT COALESCE(
               json_agg(
                 json_build_object(
+                  'tenant_id', tt.id,
                   'full_name', tt.full_name,
                   'email', tt.email,
                   'phone', tt.phone,
@@ -1161,11 +1162,19 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   // helper: normalize
   const norm = (s: any) => String(s || '').trim().toLowerCase();
 
+  // accepte tenant_id OU id (au cas où)
+  let tenantIds = tenants
+    .map(t => t?.tenant_id || t?.id)
+    .filter(Boolean);
+
+  // fallback sur la colonne principale du bail (l.tenant_id)
+  if (tenantIds.length === 0 && leaseRow?.tenant_id) {
+    tenantIds = [leaseRow.tenant_id];
+  }
+
   // ✅ resolve effectiveTenantId (required when LOCATAIRE)
   let effectiveTenantId = '';
   if (signerRole === 'LOCATAIRE') {
-    const tenantIds = tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean);
-
     // mono-locataire: auto
     if (tenantIds.length <= 1) {
       effectiveTenantId = tenantIds[0] || String(signerTenantId || '').trim();
@@ -1240,7 +1249,6 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
         }
       }
 
-      const tenantIds = tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean);
       const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
       const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
       const hasAllTenants = tenantIds.length ? signedTenantIds.length === tenantIds.length : Boolean(Object.keys(latestTenantSigByTenantId).length);
@@ -1335,7 +1343,6 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     }
   }
 
-  const tenantIds = tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean);
   const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
   const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
 
@@ -1422,7 +1429,6 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       signedPdfSha256: mergedSha,
     };
   }
-
   return {
     ok: true,
     pending: true,
