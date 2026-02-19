@@ -1,4 +1,5 @@
 "use client";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 
@@ -15,20 +16,34 @@ type Doc = {
   parent_document_id?: string | null;
 };
 
+type LeaseTenant = {
+  tenant_id?: string; // some endpoints may return tenant_id
+  id?: string; // or id
+  full_name?: string;
+  email?: string | null;
+  phone?: string | null;
+  role?: "principal" | "cotenant" | string;
+};
+
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
 
   const [token, setToken] = useState("");
+
   const [docs, setDocs] = useState<Doc[]>([]);
   const [contractDoc, setContractDoc] = useState<Doc | null>(null);
   const [finalSignedDoc, setFinalSignedDoc] = useState<Doc | null>(null);
 
-  // ✅ NEW: notice + pack docs
+  // notice + pack
   const [noticeDoc, setNoticeDoc] = useState<Doc | null>(null);
   const [packDoc, setPackDoc] = useState<Doc | null>(null);
 
-  // ✅ NEW: lease kind to decide if notice is relevant
-  const [leaseKind, setLeaseKind] = useState<string>("");
+  // lease kind
+  const [leaseKind, setLeaseKind] = useState("");
+
+  // ✅ NEW: tenants list for multi-tenant signature
+  const [tenants, setTenants] = useState<LeaseTenant[]>([]);
+  const [selectedTenantId, setSelectedTenantId] = useState<string>("");
 
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -36,7 +51,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
 
-  // ✅ confirmations
+  // confirmations
   const [tenantSigned, setTenantSigned] = useState(false);
   const [landlordSigned, setLandlordSigned] = useState(false);
 
@@ -68,7 +83,15 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     if (landlordCanvasRef.current) setupCanvas(landlordCanvasRef.current);
   }, [tenantCanvasRef.current, landlordCanvasRef.current]);
 
-  async function loadLeaseKind() {
+  function normalizeTenantId(t: LeaseTenant): string {
+    return String(t.tenant_id || t.id || "").trim();
+  }
+
+  function normalizeTenantName(t: LeaseTenant): string {
+    return String(t.full_name || "").trim() || "Locataire";
+  }
+
+  async function loadLeaseBundle() {
     try {
       const r = await fetch(`${API}/leases/${leaseId}`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -77,9 +100,23 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return;
 
-      // leases/:id => { lease, tenants, amounts }
+      // leases/:id => { lease, tenants, amounts } (expected)
       const l = j?.lease || j;
       setLeaseKind(String(l?.kind || ""));
+
+      const tArr: LeaseTenant[] = Array.isArray(j?.tenants) ? j.tenants : [];
+      setTenants(tArr);
+
+      // default selection = principal tenant if exists, otherwise first
+      const principal =
+        tArr.find((x) => String(x.role || "").toLowerCase() === "principal") ||
+        tArr[0];
+      const principalId = principal ? normalizeTenantId(principal) : "";
+      if (principalId) setSelectedTenantId(principalId);
+
+      // default tenantName from selected
+      const principalName = principal ? normalizeTenantName(principal) : "Locataire";
+      setTenantName(principalName);
     } catch {
       // ignore
     }
@@ -89,43 +126,45 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     setError("");
     setStatus("Chargement…");
     try {
-      // load lease kind (to show/hide notice)
-      await loadLeaseKind();
+      // load lease bundle (kind + tenants)
+      await loadLeaseBundle();
 
       const r = await fetch(`${API}/documents?leaseId=${leaseId}`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
       const j = await r.json();
-      const arr = Array.isArray(j) ? j : [];
+      const arr: Doc[] = Array.isArray(j) ? j : [];
       setDocs(arr);
 
       const contract =
         arr
           .filter((d: any) => d.type === "CONTRAT" && !d.parent_document_id)
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
       setContractDoc(contract);
 
       const signed =
         arr
           .filter((d: any) => (d.filename || "").includes("SIGNED_FINAL"))
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
       setFinalSignedDoc(signed);
 
-      // ✅ NEW: latest notice + pack
       const notice =
         arr
           .filter((d: any) => d.type === "NOTICE")
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
       setNoticeDoc(notice);
 
       const pack =
         arr
           .filter((d: any) => d.type === "PACK")
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
       setPackDoc(pack);
 
-      // ✅ if final exists => both signed
       if (signed?.id) {
         setTenantSigned(true);
         setLandlordSigned(true);
@@ -166,7 +205,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
-  // ✅ NEW: generate notice (RP only)
   async function generateNotice() {
     setError("");
     setStatus("Génération de la notice…");
@@ -191,7 +229,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
-  // ✅ NEW: generate pack
   async function generatePack() {
     setError("");
     setStatus("Génération du pack PDF…");
@@ -231,16 +268,13 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
     const blob = await r.blob();
     const url = URL.createObjectURL(blob);
-
     window.open(url, "_blank", "noopener,noreferrer");
-
     const a = document.createElement("a");
     a.href = url;
     a.download = filename || `document_${documentId}.pdf`;
     document.body.appendChild(a);
     a.click();
     a.remove();
-
     setStatus("Téléchargé ✅");
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
@@ -303,19 +337,37 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     drawingLandlord.current = false;
   }
 
+  const hasFinal = useMemo(() => !!finalSignedDoc?.id, [finalSignedDoc]);
+
+  const isRP = useMemo(() => {
+    const k = String(leaseKind || "").toUpperCase();
+    return k === "MEUBLE_RP" || k === "NU_RP";
+  }, [leaseKind]);
+
+  const hasMultipleTenants = useMemo(() => (tenants?.length || 0) > 1, [tenants]);
+
+  const selectedTenant = useMemo(() => {
+    const id = String(selectedTenantId || "").trim();
+    if (!id) return null;
+    return tenants.find((t) => normalizeTenantId(t) === id) || null;
+  }, [tenants, selectedTenantId]);
+
+  // keep tenantName synced when selection changes (unless user edits manually afterwards)
+  useEffect(() => {
+    if (selectedTenant) setTenantName(normalizeTenantName(selectedTenant));
+  }, [selectedTenantId]);
+
   async function sign(role: "LOCATAIRE" | "BAILLEUR") {
     if (!contractDoc?.id) {
       setError("Aucun contrat. Génère d’abord le contrat.");
       return;
     }
-
     setError("");
     setStatus(role === "LOCATAIRE" ? "Signature locataire…" : "Signature bailleur…");
 
     const signerName = role === "LOCATAIRE" ? tenantName : landlordName;
-    const signatureDataUrl = role === "LOCATAIRE"
-      ? dataUrl(tenantCanvasRef.current)
-      : dataUrl(landlordCanvasRef.current);
+    const signatureDataUrl =
+      role === "LOCATAIRE" ? dataUrl(tenantCanvasRef.current) : dataUrl(landlordCanvasRef.current);
 
     if (!signatureDataUrl) {
       setStatus("");
@@ -323,13 +375,35 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       return;
     }
 
+    // ✅ NEW: signerTenantId required when multiple tenants
+    let signerTenantId: string | undefined = undefined;
+    if (role === "LOCATAIRE") {
+      if (hasMultipleTenants) {
+        signerTenantId = String(selectedTenantId || "").trim();
+        if (!signerTenantId) {
+          setStatus("");
+          setError("Sélectionne le locataire signataire (multi-locataires).");
+          return;
+        }
+      } else {
+        // single tenant: try infer from lease bundle
+        const only = tenants?.[0];
+        const id = only ? normalizeTenantId(only) : "";
+        if (id) signerTenantId = id;
+      }
+    }
+
     try {
+      const payload: any = { signerName, signerRole: role, signatureDataUrl };
+      if (role === "LOCATAIRE" && signerTenantId) payload.signerTenantId = signerTenantId;
+
       const r = await fetch(`${API}/documents/${contractDoc.id}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         credentials: "include",
-        body: JSON.stringify({ signerName, signerRole: role, signatureDataUrl }),
+        body: JSON.stringify(payload),
       });
+
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         setStatus("");
@@ -364,14 +438,18 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         credentials: "include",
         body: JSON.stringify({ leaseId, ttlHours: 48 }),
       });
+
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         setStatus("");
         setError(j?.message || JSON.stringify(j));
         return;
       }
+
       setStatus(`✅ Email envoyé à ${j.sentTo} (lien copié)`);
-      try { await navigator.clipboard.writeText(j.publicUrl); } catch {}
+      try {
+        await navigator.clipboard.writeText(j.publicUrl);
+      } catch {}
       alert(`Email envoyé à ${j.sentTo}\nLien (copié):\n${j.publicUrl}`);
     } catch (e: any) {
       setStatus("");
@@ -379,103 +457,136 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
-  const hasFinal = useMemo(() => !!finalSignedDoc?.id, [finalSignedDoc]);
-
-  const isRP = useMemo(() => {
-    const k = String(leaseKind || "").toUpperCase();
-    return k === "MEUBLE_RP" || k === "NU_RP";
-  }, [leaseKind]);
-
   return (
-    <main style={{ maxWidth: 1100, margin: "0 auto" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+    <div style={{ padding: 18, maxWidth: 980, margin: "0 auto", display: "grid", gap: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
         <div>
-          <h1 style={{ marginTop: 0, marginBottom: 6 }}>Contrat & signatures</h1>
-          <div style={{ color: muted }}>
-            Bail {leaseId.slice(0, 8)}… • Contrat: {contractDoc?.id ? "OK" : "—"} • Notice: {noticeDoc?.id ? "OK" : (isRP ? "—" : "n/a")} • Pack: {packDoc?.id ? "OK" : "—"} • PDF final: {hasFinal ? "OK" : "—"}
+          <h1 style={{ margin: 0 }}>Contrat & signatures</h1>
+          <div style={{ color: muted, marginTop: 6, fontSize: 13 }}>
+            Bail {leaseId.slice(0, 8)}… • Contrat: {contractDoc?.id ? "OK" : "—"} • Notice:{" "}
+            {noticeDoc?.id ? "OK" : isRP ? "—" : "n/a"} • Pack: {packDoc?.id ? "OK" : "—"} • PDF final:{" "}
+            {hasFinal ? "OK" : "—"}
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={loadDocs} style={btnSecondary(border)}>Rafraîchir</button>
-
-          <button onClick={generateContract} style={btnPrimarySmall(blue)}>Générer contrat</button>
-          <button
-            onClick={() => contractDoc?.id && downloadDoc(contractDoc.id, contractDoc.filename)}
-            style={btnAction(border)}
-            disabled={!contractDoc?.id}
-          >
-            Télécharger contrat
-          </button>
-
-          {isRP && (
-            <>
-              <button onClick={generateNotice} style={btnSecondary(border)}>Générer notice</button>
-              <button
-                onClick={() => noticeDoc?.id && downloadDoc(noticeDoc.id, noticeDoc.filename)}
-                style={btnAction(border)}
-                disabled={!noticeDoc?.id}
-              >
-                Télécharger notice
-              </button>
-            </>
-          )}
-
-          <button onClick={generatePack} style={btnPrimarySmall(blue)}>Générer pack</button>
-          <button
-            onClick={() => packDoc?.id && downloadDoc(packDoc.id, packDoc.filename)}
-            style={btnAction(border)}
-            disabled={!packDoc?.id}
-          >
-            Télécharger pack
-          </button>
-
-          <button onClick={sendPublicLink} style={btnPrimarySmall(blue)}>Envoyer lien locataire</button>
-        </div>
+        <button onClick={loadDocs} style={btnSecondary(border)}>
+          Rafraîchir
+        </button>
       </div>
 
-      <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <span style={chip(border, tenantSigned ? green : muted)}>
-          {tenantSigned ? "✅ Locataire signé" : "⏳ Locataire à signer"}
-        </span>
-        <span style={chip(border, landlordSigned ? green : muted)}>
-          {landlordSigned ? "✅ Bailleur signé" : "⏳ Bailleur à signer"}
-        </span>
-        {hasFinal && (
-          <span style={chip(border, green)}>✅ PDF final disponible</span>
-        )}
-      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <button onClick={generateContract} style={btnAction(border)}>
+          Générer contrat
+        </button>
 
-      {status && <p style={{ marginTop: 10, color: "#0a6" }}>{status}</p>}
-      {error && <p style={{ marginTop: 10, color: "crimson" }}>{error}</p>}
+        <button
+          onClick={() => contractDoc?.id && downloadDoc(contractDoc.id, contractDoc.filename)}
+          style={btnAction(border)}
+          disabled={!contractDoc?.id}
+        >
+          Télécharger contrat
+        </button>
 
-      {finalSignedDoc?.id && (
-        <section style={{ marginTop: 14, border: `1px solid rgba(22,163,74,0.35)`, borderRadius: 16, background: "rgba(22,163,74,0.06)", padding: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontWeight: 900 }}>PDF signé final</div>
-              <div style={{ color: muted, fontSize: 12, wordBreak: "break-word" }}>{finalSignedDoc.filename}</div>
-            </div>
-            <button onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)} style={btnPrimarySmall(blue)}>
-              Télécharger PDF signé
+        {isRP && (
+          <>
+            <button onClick={generateNotice} style={btnAction(border)}>
+              Générer notice
             </button>
-          </div>
-        </section>
+            <button
+              onClick={() => noticeDoc?.id && downloadDoc(noticeDoc.id, noticeDoc.filename)}
+              style={btnAction(border)}
+              disabled={!noticeDoc?.id}
+            >
+              Télécharger notice
+            </button>
+          </>
+        )}
+
+        <button onClick={generatePack} style={btnAction(border)}>
+          Générer pack
+        </button>
+        <button
+          onClick={() => packDoc?.id && downloadDoc(packDoc.id, packDoc.filename)}
+          style={btnAction(border)}
+          disabled={!packDoc?.id}
+        >
+          Télécharger pack
+        </button>
+
+        <button onClick={sendPublicLink} style={btnAction(border)}>
+          Envoyer lien locataire
+        </button>
+      </div>
+
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <div style={chip(border, tenantSigned ? green : muted)}>
+          {tenantSigned ? "✅ Locataire signé" : "⏳ Locataire à signer"}
+        </div>
+        <div style={chip(border, landlordSigned ? green : muted)}>
+          {landlordSigned ? "✅ Bailleur signé" : "⏳ Bailleur à signer"}
+        </div>
+        {hasFinal && <div style={chip(border, green)}>✅ PDF final disponible</div>}
+      </div>
+
+      {status && (
+        <div style={{ ...card(border), background: "rgba(31,111,235,0.05)", borderColor: "rgba(31,111,235,0.25)" }}>
+          <b>{status}</b>
+        </div>
+      )}
+      {error && (
+        <div style={{ ...card(border), background: "rgba(220,38,38,0.05)", borderColor: "rgba(220,38,38,0.25)" }}>
+          <b style={{ color: "#b91c1c" }}>{error}</b>
+        </div>
       )}
 
-      <div style={{ marginTop: 14, display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))" }}>
-        <section style={card(border)}>
-          <h2 style={{ marginTop: 0, fontSize: 16 }}>Signature locataire</h2>
+      {finalSignedDoc?.id && (
+        <div style={card(border)}>
+          <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
+          <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
+          <button onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)} style={btnPrimarySmall(blue)}>
+            Télécharger PDF signé
+          </button>
+        </div>
+      )}
 
-          <label style={labelStyle(muted)}>
-            Nom signataire<br />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
+        <div style={card(border)}>
+          <h2 style={{ marginTop: 0 }}>Signature locataire</h2>
+
+          {hasMultipleTenants && (
+            <div style={{ marginBottom: 10, display: "grid", gap: 6 }}>
+              <div style={{ fontSize: 12, color: muted, fontWeight: 700 }}>Locataire signataire (obligatoire)</div>
+              <select
+                value={selectedTenantId}
+                onChange={(e) => setSelectedTenantId(e.target.value)}
+                style={{ ...inputStyle(border), cursor: "pointer" }}
+              >
+                <option value="">— Sélectionner —</option>
+                {tenants.map((t) => {
+                  const id = normalizeTenantId(t);
+                  const label = `${normalizeTenantName(t)}${t.role ? ` (${t.role})` : ""}`;
+                  return (
+                    <option key={id || label} value={id}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+              <div style={{ fontSize: 12, color: muted }}>
+                L’API a besoin de l’UUID du locataire pour gérer la signature multi-locataires.
+              </div>
+            </div>
+          )}
+
+          <div style={labelStyle(muted)}>
+            <div>Nom signataire</div>
             <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} style={inputStyle(border)} />
-          </label>
+          </div>
 
           <div style={{ marginTop: 10 }}>
             <canvas
               ref={tenantCanvasRef}
-              style={{ border: `1px solid ${border}`, borderRadius: 12, touchAction: "none", width: "100%", display: "block" }}
+              style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
               onMouseDown={startTenant}
               onMouseMove={moveTenant}
               onMouseUp={endTenant}
@@ -486,24 +597,28 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
             />
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={() => clearCanvas(tenantCanvasRef.current)} style={btnAction(border)}>Effacer</button>
-            <button onClick={() => sign("LOCATAIRE")} style={btnPrimarySmall(blue)}>Signer</button>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <button onClick={() => clearCanvas(tenantCanvasRef.current)} style={btnAction(border)}>
+              Effacer
+            </button>
+            <button onClick={() => sign("LOCATAIRE")} style={btnPrimarySmall(blue)}>
+              Signer
+            </button>
           </div>
-        </section>
+        </div>
 
-        <section style={card(border)}>
-          <h2 style={{ marginTop: 0, fontSize: 16 }}>Signature bailleur</h2>
+        <div style={card(border)}>
+          <h2 style={{ marginTop: 0 }}>Signature bailleur</h2>
 
-          <label style={labelStyle(muted)}>
-            Nom signataire<br />
+          <div style={labelStyle(muted)}>
+            <div>Nom signataire</div>
             <input value={landlordName} onChange={(e) => setLandlordName(e.target.value)} style={inputStyle(border)} />
-          </label>
+          </div>
 
           <div style={{ marginTop: 10 }}>
             <canvas
               ref={landlordCanvasRef}
-              style={{ border: `1px solid ${border}`, borderRadius: 12, touchAction: "none", width: "100%", display: "block" }}
+              style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
               onMouseDown={startLandlord}
               onMouseMove={moveLandlord}
               onMouseUp={endLandlord}
@@ -514,29 +629,51 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
             />
           </div>
 
-          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button onClick={() => clearCanvas(landlordCanvasRef.current)} style={btnAction(border)}>Effacer</button>
-            <button onClick={() => sign("BAILLEUR")} style={btnPrimarySmall(blue)}>Signer</button>
+          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+            <button onClick={() => clearCanvas(landlordCanvasRef.current)} style={btnAction(border)}>
+              Effacer
+            </button>
+            <button onClick={() => sign("BAILLEUR")} style={btnPrimarySmall(blue)}>
+              Signer
+            </button>
           </div>
-        </section>
+        </div>
       </div>
 
-      <div style={{ marginTop: 14 }}>
-        <Link href="/dashboard/leases"><button style={btnSecondary(border)}>Retour aux baux</button></Link>
+      <div>
+        <Link href="/dashboard/leases" style={{ color: blue, fontWeight: 800 }}>
+          Retour aux baux
+        </Link>
       </div>
-    </main>
+    </div>
   );
 }
 
 function card(border: string) {
-  return { border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14, minWidth: 0 } as const;
+  return {
+    border: `1px solid ${border}`,
+    borderRadius: 16,
+    background: "#fff",
+    padding: 14,
+    minWidth: 0,
+  } as const;
 }
+
 function labelStyle(muted: string) {
   return { display: "grid", gap: 6, fontSize: 12, color: muted, minWidth: 0 } as const;
 }
+
 function inputStyle(border: string) {
-  return { padding: "10px 12px", borderRadius: 12, border: `1px solid ${border}`, width: "100%", minWidth: 0, boxSizing: "border-box" } as const;
+  return {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: `1px solid ${border}`,
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+  } as const;
 }
+
 function btnPrimarySmall(blue: string) {
   return {
     padding: "10px 14px",
@@ -549,6 +686,7 @@ function btnPrimarySmall(blue: string) {
     textAlign: "center" as const,
   } as const;
 }
+
 function btnSecondary(border: string) {
   return {
     padding: "10px 14px",
@@ -559,6 +697,7 @@ function btnSecondary(border: string) {
     fontWeight: 700,
   } as const;
 }
+
 function btnAction(border: string) {
   return {
     padding: "10px 12px",
@@ -571,6 +710,7 @@ function btnAction(border: string) {
     textAlign: "center" as const,
   } as const;
 }
+
 function chip(border: string, color: string) {
   return {
     padding: "8px 10px",
