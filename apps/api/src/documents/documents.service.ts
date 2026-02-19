@@ -182,6 +182,36 @@ export class DocumentsService {
     return row;
   }
 
+  private getTenantsFromLeaseRow(row: any): any[] {
+    const arr = this.parseJsonSafe(row?.tenants_json);
+    const tenants: any[] = Array.isArray(arr) && arr.length ? arr : [];
+    // fallback ultra-safe
+    if (!tenants.length) {
+      tenants.push({
+        full_name: row.tenant_name,
+        birth_date: row.birth_date,
+        birth_place: row.birth_place,
+        current_address: row.current_address,
+        role: 'principal',
+        tenant_id: row.tenant_id, // may be undefined
+      });
+    }
+    return tenants;
+  }
+
+  private pickTenantIdFromSignature(sigRow: any): string {
+    const a = sigRow?.audit_log;
+    if (!a) return '';
+    if (typeof a === 'object' && a.tenantId) return String(a.tenantId);
+    try {
+      const parsed = typeof a === 'string' ? JSON.parse(a) : null;
+      return parsed?.tenantId ? String(parsed.tenantId) : '';
+    } catch {
+      return '';
+    }
+  }
+
+
   // -------------------------------------
   // Blocks
   // -------------------------------------
@@ -1113,7 +1143,7 @@ code{word-break:break-all}
   }
 
   async signDocumentMulti(documentId: string, body: any, req: any) {
-    const { signerName, signerRole, signatureDataUrl } = body || {};
+    const { signerName, signerRole, signatureDataUrl, signerTenantId } = body || {};
     if (!signerName || !signerRole || !signatureDataUrl) {
       throw new BadRequestException('Missing signerName/signerRole/signatureDataUrl');
     }
@@ -1125,8 +1155,32 @@ code{word-break:break-all}
     if (!docR.rowCount) throw new BadRequestException('Unknown document');
     const doc = docR.rows[0];
 
-    // ✅ SIGNATURE GUARD: block signing if any tenant info incomplete
-    await this.assertSignableLeaseOrThrow(doc.lease_id);
+    // ✅ Guard: infos locataires obligatoires complètes
+    const leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
+    const tenants = this.getTenantsFromLeaseRow(leaseRow);
+
+    // ✅ Multi-locataires: un tenantId est obligatoire pour signer côté LOCATAIRE si N>1
+    let effectiveTenantId = '';
+    if (signerRole === 'LOCATAIRE') {
+      if (tenants.length > 1) {
+        effectiveTenantId = String(signerTenantId || '').trim();
+        if (!effectiveTenantId) {
+          throw new BadRequestException('Missing signerTenantId (required when multiple tenants)');
+        }
+      } else {
+        // mono-locataire: on tolère l’absence et on prend le “principal”
+        effectiveTenantId = String((tenants[0] as any)?.tenant_id || signerTenantId || '').trim();
+      }
+
+      // vérifie que tenantId appartient au bail
+      const allowed = new Set(tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean));
+      if (effectiveTenantId && allowed.size && !allowed.has(effectiveTenantId)) {
+        throw new BadRequestException('signerTenantId is not a tenant of this lease');
+      }
+      if (!effectiveTenantId) {
+        throw new BadRequestException('Unable to resolve signerTenantId for tenant signature');
+      }
+    }
 
     const absPdf = path.join(this.storageBase, doc.storage_path);
     if (!fs.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
@@ -1146,6 +1200,19 @@ code{word-break:break-all}
     fs.writeFileSync(sigAbs, imgBuf);
 
     const signedAt = new Date().toISOString();
+
+    // ✅ sequence: locataires d’abord (dans l’ordre tenants_json), bailleur en dernier
+    const tenantIndexById = new Map<string, number>();
+    tenants.forEach((t: any, idx: number) => {
+      const id = String(t?.tenant_id || '').trim();
+      if (id) tenantIndexById.set(id, idx);
+    });
+
+    const sequence =
+      signerRole === 'BAILLEUR'
+        ? tenants.length + 1
+        : (tenantIndexById.get(effectiveTenantId) ?? 0) + 1;
+
     const audit = {
       consent: true,
       signedAt,
@@ -1154,6 +1221,7 @@ code{word-break:break-all}
       documentId,
       signerRole,
       signerName,
+      tenantId: signerRole === 'LOCATAIRE' ? effectiveTenantId : null,
       originalPdfSha256: originalSha,
     };
 
@@ -1169,37 +1237,61 @@ code{word-break:break-all}
         req.headers['user-agent'],
         originalSha,
         audit,
-        signerRole === 'LOCATAIRE' ? 1 : 2,
+        sequence,
       ],
     );
 
+    // Récup signatures
     const sigs = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
 
-    const latestByRole: Record<string, any> = {};
+    // ✅ Locataires: latest signature par tenantId
+    const latestTenantSigByTenantId: Record<string, any> = {};
+    // ✅ Bailleur: latest signature
+    let latestLandlordSig: any = null;
+
     for (const s of sigs.rows) {
-      if (!latestByRole[s.signer_role]) latestByRole[s.signer_role] = s;
+      if (s.signer_role === 'BAILLEUR') {
+        if (!latestLandlordSig) latestLandlordSig = s;
+        continue;
+      }
+      if (s.signer_role === 'LOCATAIRE') {
+        const tid = this.pickTenantIdFromSignature(s);
+        if (!tid) continue;
+        if (!latestTenantSigByTenantId[tid]) latestTenantSigByTenantId[tid] = s;
+      }
     }
 
-    const hasTenant = Boolean(latestByRole['LOCATAIRE']);
-    const hasLandlord = Boolean(latestByRole['BAILLEUR']);
+    const tenantIds = tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean);
+    const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
+    const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
 
-    if (hasTenant && hasLandlord) {
+    const hasAllTenants = tenantIds.length ? signedTenantIds.length === tenantIds.length : Boolean(Object.keys(latestTenantSigByTenantId).length);
+    const hasLandlord = Boolean(latestLandlordSig);
+
+    // ✅ Completed?
+    if (hasAllTenants && hasLandlord) {
       if (doc.signed_final_document_id) {
         const finalDoc = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [doc.signed_final_document_id]);
         return {
           ok: true,
           pending: false,
           finalSignedDocument: finalDoc.rowCount ? finalDoc.rows[0] : null,
-          signatures: Object.values(latestByRole),
+          signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
         };
       }
 
       const unitQ = await this.pool.query(`SELECT code FROM units WHERE id=$1`, [doc.unit_id]);
       const unitCode = unitQ.rowCount ? unitQ.rows[0].code : 'UNIT';
 
-      const sigOrder: any[] = [latestByRole['LOCATAIRE'], latestByRole['BAILLEUR']];
-      const sigPages: Buffer[] = [];
+      // ✅ Order: tenants (sequence asc) then landlord
+      const tenantSigsOrdered = tenantIds
+        .map((id) => latestTenantSigByTenantId[id])
+        .filter(Boolean)
+        .sort((a: any, b: any) => (a.sequence ?? 0) - (b.sequence ?? 0));
 
+      const sigOrder: any[] = [...tenantSigsOrdered, latestLandlordSig].filter(Boolean);
+
+      const sigPages: Buffer[] = [];
       for (const s of sigOrder) {
         const sigImgAbs = path.join(this.storageBase, s.signature_image_path);
         const sigDataUrl = this.fileToDataUrlPng(sigImgAbs);
@@ -1217,12 +1309,22 @@ code{word-break:break-all}
         sigPages.push(pageBuf);
       }
 
-      const mergedBuf = await this.mergePdfs([
-        { filename: doc.filename || 'document.pdf', buffer: originalPdfBuf },
-        { filename: 'signature_locataire.pdf', buffer: sigPages[0] },
-        { filename: 'signature_bailleur.pdf', buffer: sigPages[1] },
-      ]);
+      const mergeParts: Array<{ filename: string; buffer: Buffer }> = [];
+      mergeParts.push({ filename: doc.filename || 'document.pdf', buffer: originalPdfBuf });
 
+      // signature pages
+      let i = 1;
+      for (const s of sigOrder) {
+        if (s.signer_role === 'LOCATAIRE') {
+          const tid = this.pickTenantIdFromSignature(s) || `tenant_${i}`;
+          mergeParts.push({ filename: `signature_locataire_${i}_${tid}.pdf`, buffer: sigPages[i - 1] });
+          i++;
+        }
+      }
+      // landlord is last page in sigPages
+      mergeParts.push({ filename: 'signature_bailleur.pdf', buffer: sigPages[sigPages.length - 1] });
+
+      const mergedBuf = await this.mergePdfs(mergeParts);
       const mergedSha = this.sha256Buffer(mergedBuf);
 
       const signedDir = path.join(this.storageBase, 'units', doc.unit_id, 'leases', doc.lease_id, 'documents');
@@ -1244,16 +1346,20 @@ code{word-break:break-all}
         ok: true,
         pending: false,
         finalSignedDocument: insDoc.rows[0],
-        signatures: Object.values(latestByRole),
+        signatures: sigOrder,
         signedPdfSha256: mergedSha,
       };
     }
-
     return {
       ok: true,
       pending: true,
-      need: { tenant: !hasTenant, landlord: !hasLandlord },
-      signatures: Object.values(latestByRole),
+      need: {
+        landlord: !hasLandlord,
+        tenantsMissing: missingTenantIds,
+        tenantsSigned: signedTenantIds,
+        tenantsTotal: tenantIds.length,
+      },
+      signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
     };
   }
 }
