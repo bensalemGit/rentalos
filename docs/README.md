@@ -1,60 +1,75 @@
-# 📚 RentalOS — Documentation Index
+# RentalOS — Documentation Index
 
 Bienvenue dans la documentation officielle de **RentalOS**.
 
-Ce dossier contient tous les documents nécessaires pour :
+Objectif :
 
-- reprendre le projet rapidement
-- exploiter RentalOS en production
-- restaurer le système en cas d’incident
-- maintenir une spec toujours à jour
-
----
-
-# ⭐ Documents essentiels (ordre recommandé)
-
-## 1. Source of Truth — Master Specification
-
-📌 **RentalOS_MASTER_SPEC.md**  
-→ Document principal : vision produit + architecture + modules + roadmap.
+- centraliser toute la documentation projet
+- permettre une reprise rapide par un nouveau dev/chat
+- garantir un runbook DR complet
+- sécuriser le contrat meublé RP ("bail béton")
+- formaliser le workflow multi-locataires + signatures
 
 ---
 
-## 2. Disaster Recovery (PRA)
+## 📚 Documents disponibles
 
-📌 **DR_RUNBOOK.md**  
-→ Procédure restore complète en <10 minutes.
+### 🔥 Projet & Passation
 
-À ouvrir immédiatement en cas de crash ou corruption DB.
-
----
-
-## 3. Exploitation quotidienne
-
-📌 **OPS_CHECKLIST.md**  
-→ Checklist quotidienne / hebdo / mensuelle :
-
-- backups
-- espace disque
-- tests restore
+- **HANDOVER.md**  
+  Document principal de transmission (nouveau chat/dev)
 
 ---
 
-## 4. Passation rapide
+### 🛡️ Disaster Recovery
 
-📌 **HANDOVER.md**  
-→ Copier/coller pour transmettre le projet à un nouveau dev/chat.
+- **DR_RUNBOOK.md**  
+  Restore complet en moins de 10 minutes
 
----
-
-## 5. Historique officiel
-
-📌 **CHANGELOG.md**  
-→ Journal des décisions techniques majeures.
+- **OPS_CHECKLIST.md**  
+  Checklist exploitation + monitoring
 
 ---
 
-# 🗂 Backup Scripts (référence)
+### 📄 Contrats & Templates
 
-Les scripts critiques sont dans :
+- **TEMPLATES.md**  
+  Gestion SQL des templates (`document_templates`)  
+  Backup + Update UTF-8 safe
 
+---
+
+### ✍️ Signatures électroniques
+
+- **SIGNATURES.md**  
+  Workflow complet multi-locataires + bailleur  
+  Finalisation automatique du PDF signé
+
+---
+
+### 📌 Historique
+
+- **CHANGELOG.md**  
+  Liste des évolutions importantes (commits majeurs)
+
+---
+
+## ✅ Golden Path Terrain (Bail Meublé Béton)
+
+1. Création bail MEUBLE_RP (multi-locataires possible)
+2. Génération contrat via template SQL (`document_templates`)
+3. Signature :
+   - chaque locataire signe avec `signerTenantId`
+   - bailleur signe en dernier
+4. PDF final généré automatiquement :
+
+CONTRAT_MEUBLE_RP_*_SIGNED_FINAL.pdf
+
+
+---
+
+## Next Steps
+
+- Tests automatiques signature multi-tenant
+- UI Visale + garants multiples
+- Finalisation juridique du contrat RP
