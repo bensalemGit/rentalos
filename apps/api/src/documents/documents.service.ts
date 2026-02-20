@@ -677,14 +677,20 @@ export class DocumentsService {
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
-    let unitCity = row.unit_city;
-    let unitPostal = row.unit_postal_code;
+    const unitCity = String(row.unit_city || '').trim();
+    const unitPostal = String(row.unit_postal_code || '').trim();
 
-    if (/^\d{5}$/.test(String(unitCity || '').trim()) && !/^\d{5}$/.test(String(unitPostal || '').trim())) {
-      // swap if city looks like a postal code
-      const tmp = unitCity;
-      unitCity = unitPostal;
-      unitPostal = tmp;
+    // signature city = ville logement par défaut
+    let signatureCity = unitCity;
+
+    // si unit_city ressemble à un CP (ex: "45410")
+    if (/^\d{5}$/.test(signatureCity)) {
+      // si unit_postal_code n'est PAS un CP → c'est probablement la ville
+      if (unitPostal && !/^\d{5}$/.test(unitPostal)) {
+        signatureCity = unitPostal;
+      } else {
+        signatureCity = '—';
+      }
     }
 
     const vars: Record<string, any> = {
@@ -737,7 +743,8 @@ export class DocumentsService {
       irl_revision_date: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
 
-      signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
+      //signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
+      signature_city: this.escapeHtml(signatureCity),
       signature_date: this.formatDateFr(new Date()),
     };
 
