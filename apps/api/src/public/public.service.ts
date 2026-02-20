@@ -70,6 +70,40 @@ export class PublicService {
     };
   }
 
+  async createLandlordSignLink(leaseId: string, ttlHours = 72) {
+  // identique à createTenantSignLink()
+  const link = await this.createTenantSignLink(leaseId, ttlHours);
+  return {
+    ...link,
+    publicUrl: `https://app.rentalos.fr/public/sign/${link.token}?role=landlord`,
+  };
+}
+
+async createLandlordSignLinkAndEmail(leaseId: string, ttlHours = 72, emailOverride?: string | null) {
+  const link = await this.createLandlordSignLink(leaseId, ttlHours);
+
+  const override = emailOverride && String(emailOverride).includes('@') ? String(emailOverride).trim() : '';
+  const toEmail = override || process.env.LANDLORD_EMAIL;
+
+  if (!toEmail) throw new BadRequestException('Missing LANDLORD_EMAIL (or use emailOverride)');
+
+  const subject = `Signature bailleur — Contrat de location`;
+  const html = `
+Bonjour,
+
+Merci de signer le contrat.
+
+Lien de signature :
+${link.publicUrl}
+
+Ce lien expire le : ${String(link.expiresAt).slice(0, 19)}
+
+Bien cordialement,
+RentalOS
+`;
+  await this.mailer.sendMail(toEmail, subject, html);
+  return { ok: true, ...link, sentTo: toEmail, overrideUsed: !!override };
+}
   // ✅ Create + send email to tenant
   // Supports emailOverride (for testing / manual send)
   async createTenantSignLinkAndEmail(
@@ -189,28 +223,27 @@ export class PublicService {
     const absPath = path.join(this.storageBase, row.storage_path);
     return { absPath, filename: row.filename };
   }
-
-  async tenantSign(token: string, body: any, req: any) {
-    // ✅ consume:true => bloque si déjà utilisé + incrémente used_count
+  async publicSign(token: string, body: any, req: any) {
     const row = await this.resolveToken(token, { consume: true });
 
-    const alreadyTenantSigned = await this.pool.query(
-      `SELECT 1 FROM signatures WHERE document_id=$1 AND signer_role='LOCATAIRE' LIMIT 1`,
-      [row.document_id],
-    );
-    if (alreadyTenantSigned.rowCount) {
-      throw new GoneException('Document already signed by tenant');
+    const signerRole = String(body?.signerRole || 'LOCATAIRE').toUpperCase();
+    const signatureDataUrl = body?.signatureDataUrl;
+
+    if (!signatureDataUrl) {
+      throw new BadRequestException('Missing signatureDataUrl');
     }
 
-    const signerName = String(body?.signerName || row.tenant_name || 'Locataire');
-    const signatureDataUrl = body?.signatureDataUrl;
-    if (!signatureDataUrl) throw new BadRequestException('Missing signatureDataUrl');
+    const signerName =
+      String(body?.signerName || '').trim() ||
+      (signerRole === 'BAILLEUR'
+        ? process.env.LANDLORD_NAME || 'Bailleur'
+        : row.tenant_name || 'Locataire');
 
-    // ❌ plus de touchUsage ici (déjà fait dans resolveToken quand consume:true)
+    const signerTenantId = body?.signerTenantId || null;
 
     const result = await this.docs.signDocumentMulti(
       row.document_id,
-      { signerName, signerRole: 'LOCATAIRE', signatureDataUrl },
+      { signerName, signerRole, signatureDataUrl, signerTenantId },
       req,
     );
 
@@ -218,4 +251,5 @@ export class PublicService {
 
     return result;
   }
+
 }

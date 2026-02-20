@@ -41,6 +41,27 @@ export class PublicController {
   // --- Public: tenant signs (no auth, token required) ---
   @Post('public/sign')
   sign(@Query('token') token: string, @Body() body: any, @Req() req: any) {
-    return this.pub.tenantSign(token, body, req);
+    return this.pub.publicSign(token, body, req);
   }
+
+  // --- Admin: create landlord public sign link (requires auth) ---
+@Post('public-links/landlord-sign')
+@UseGuards(JwtGuard)
+createLandlordLink(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  return this.pub.createLandlordSignLink(body.leaseId, ttlHours);
+}
+
+// --- Admin: create landlord link + send email (requires auth) ---
+@Post('public-links/landlord-sign/send')
+@UseGuards(JwtGuard)
+sendLandlordLink(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  const emailOverride = body?.emailOverride ?? null;
+  return this.pub.createLandlordSignLinkAndEmail(
+    body.leaseId,
+    ttlHours,
+    emailOverride,
+  );
+}
 }
