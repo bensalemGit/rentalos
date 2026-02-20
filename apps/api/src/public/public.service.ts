@@ -57,8 +57,8 @@ export class PublicService {
 
     await this.pool.query(
       `INSERT INTO public_links (token_hash, lease_id, document_id, purpose, expires_at)
-       VALUES ($1,$2,$3,$4)`,
-      [tokenHash, leaseId, contractDoc.id, expiresAt],
+       VALUES ($1,$2,$3,$4,$5)`,
+      [tokenHash, leaseId, contractDoc.id, purpose, expiresAt],
     );
 
     return {
