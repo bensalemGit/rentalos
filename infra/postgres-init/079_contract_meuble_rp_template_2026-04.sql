@@ -4,6 +4,7 @@ INSERT INTO document_templates (
   kind,
   lease_kind,
   version,
+  title,
   html_template,
   created_at
 )
@@ -11,6 +12,7 @@ VALUES (
   'CONTRACT',
   'MEUBLE_RP',
   '2026-04',
+  'Contrat de location meublée - Résidence principale (2026-04)',
 $$
 <!doctype html>
 <html lang="fr">
