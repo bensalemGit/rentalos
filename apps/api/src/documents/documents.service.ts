@@ -596,7 +596,7 @@ export class DocumentsService {
       throw new BadRequestException(`Unsupported lease kind for contract: ${leaseKind}`);
     }
 
-    const templateVersion = '2026-02';
+    const templateVersion = '2026-03';
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
@@ -604,12 +604,9 @@ export class DocumentsService {
       template_version: templateVersion,
       lease_id_short: this.leaseIdShort(leaseId),
 
-      start_date: this.isoDate(row.start_date),
-      end_date_theoretical: this.isoDate(row.end_date_theoretical),
-
       // Dates FR
-      start_date_fr: this.formatDateFr(row.start_date),
-      end_date_theoretical_fr: this.formatDateFr(row.end_date_theoretical),
+      start_date: this.formatDateFr(row.start_date),
+      end_date_theoretical: this.formatDateFr(row.end_date_theoretical),
 
       unit_code: this.escapeHtml(row.unit_code),
       unit_label: this.escapeHtml(row.unit_label),
@@ -624,6 +621,7 @@ export class DocumentsService {
       landlord_email: this.escapeHtml(process.env.LANDLORD_EMAIL || '[À compléter]'),
       landlord_phone: this.escapeHtml(process.env.LANDLORD_PHONE || '[À compléter]'),
       landlord_identifiers_html: this.buildLandlordIdentifiersHtml(),
+
 
       tenants_block: this.buildTenantsBlock(row),
       tenant_name: this.escapeHtml(row.tenant_name || ''),
@@ -646,12 +644,30 @@ export class DocumentsService {
       irl_reference_quarter: this.escapeHtml(irl.quarter),
       irl_reference_value: this.escapeHtml(irl.value),
       // ✅ no irl_revision_date column -> use start_date
-      irl_revision_date_fr: this.formatDateFr(row.start_date),
+      irl_revision_date: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
 
       signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
-      signature_date_fr: this.formatDateFr(new Date()),
+      signature_date: this.formatDateFr(new Date()),
     };
+
+    // ----------------------
+    // Guard bailleur “bloquant”
+    // ----------------------
+    const missing: string[] = [];
+    const bad = (v?: string) => !v || v.includes('[À compléter]');
+
+    if (bad(vars.landlord_name)) missing.push('landlord_name');
+    if (bad(vars.landlord_address)) missing.push('landlord_address');
+    if (bad(vars.landlord_email)) missing.push('landlord_email');
+    if (bad(vars.landlord_phone)) missing.push('landlord_phone');
+
+    if (missing.length) {
+      throw new BadRequestException({
+        message: 'Contract not ready: missing landlord information',
+        missing,
+      });
+    }
 
     const html = this.applyVars(tpl.html_template, vars);
     const pdfBuf = await this.htmlToPdfBuffer(html);
@@ -1048,7 +1064,25 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     }
 
     const edl = await this.generateEdlPdf(leaseId);
-    const inv = await this.generateInventoryPdf(leaseId);
+    const inv = await this.generateInventoryPdf(leaseId);    
+
+    // ----- Variables du template 2026-03 -----
+    const signature_date_fr = this.formatDateFr(new Date());
+    const signature_place = row.city; // pas le CP
+    const lease_start_date_fr = this.formatDateFr(row.start_date);
+    const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
+
+    // Durée du bail
+    const lease_duration_label = '1 an'; // ou calcul dynamique si nécessaire
+
+    // Annexes HTML
+    let annexes_list_html = '<ul>';
+    if (contract) annexes_list_html += `<li>Contrat</li>`;
+    if (notice) annexes_list_html += `<li>Avis</li>`;
+    if (edl) annexes_list_html += `<li>État des lieux</li>`;
+    if (inv) annexes_list_html += `<li>Inventaire</li>`;
+    annexes_list_html += '</ul>';
+
 
     const contractBuf = fs.readFileSync(path.join(this.storageBase, contract.storage_path));
     const edlBuf = fs.readFileSync(path.join(this.storageBase, edl.storage_path));
@@ -1061,14 +1095,34 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     parts.push({ filename: edl.filename, buffer: edlBuf });
     parts.push({ filename: inv.filename, buffer: invBuf });
 
+    // Création du HTML d'info avec tes variables (que tu as déjà calculées plus haut)
+    const infoHtml = `
+    <html><head><style>body { font-family: Arial; font-size: 10pt; }</style></head><body>
+      <h2>Informations du pack</h2>
+      <p>Date de signature : ${signature_date_fr}</p>
+      <p>Lieu de signature : ${this.escapeHtml(signature_place)}</p>
+      <p>Période du bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
+      <p>Durée du bail : ${lease_duration_label}</p>
+      <p>Annexes incluses : ${annexes_list_html}</p>
+      &{annexes_list_html}
+    </body></html>`;
+
+    // Génération du PDF buffer à partir de ce HTML
+    const infoPdfBuf = await this.htmlToPdfBuffer(infoHtml);
+
+    // Injection dans la liste des fichiers à fusionner
+    parts.unshift({ filename: 'info_pack.pdf', buffer: infoPdfBuf });
+
     const mergedBuf = await this.mergePdfs(parts);
     const mergedSha = this.sha256Buffer(mergedBuf);
 
+    
     const pdfName = `PACK_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
     fs.writeFileSync(outPdfPath, mergedBuf);
+
 
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
