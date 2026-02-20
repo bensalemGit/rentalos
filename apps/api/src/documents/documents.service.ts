@@ -56,13 +56,44 @@ export class DocumentsService {
 
   private formatDateFr(d: any): string {
     if (!d) return '';
-    const iso = this.isoDate(d);
-    if (!iso) return '';
-    if (/^\d{4}-\d{2}-\d{2}$/.test(iso)) {
-      const [yyyy, mm, dd] = iso.split('-');
-      return `${dd}/${mm}/${yyyy}`;
+
+    // 1) If already a Date
+    let dateObj: Date | null = null;
+
+    if (d instanceof Date) {
+      dateObj = d;
+    } else if (typeof d === 'string') {
+      // 2) If "YYYY-MM-DD" (common from SQL DATE)
+      if (/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+        const [yyyy, mm, dd] = d.split('-').map((x) => parseInt(x, 10));
+        // Use UTC to avoid timezone shifts
+        dateObj = new Date(Date.UTC(yyyy, mm - 1, dd));
+      } else {
+        // 3) If ISO timestamp "2026-02-20T..." or any parseable string
+        const parsed = new Date(d);
+        if (!isNaN(parsed.getTime())) dateObj = parsed;
+      }
+    } else if (typeof d === 'number') {
+      const parsed = new Date(d);
+      if (!isNaN(parsed.getTime())) dateObj = parsed;
     }
-    return iso;
+
+    if (!dateObj) {
+      // last resort: try isoDate helper, but still parse
+      const iso = this.isoDate(d);
+      if (iso && /^\d{4}-\d{2}-\d{2}$/.test(iso)) {
+        const [yyyy, mm, dd] = iso.split('-').map((x) => parseInt(x, 10));
+        dateObj = new Date(Date.UTC(yyyy, mm - 1, dd));
+      } else {
+        return '';
+      }
+    }
+
+    // Output dd/MM/yyyy (your chosen standard)
+    const dd = String(dateObj.getUTCDate()).padStart(2, '0');
+    const mm = String(dateObj.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = dateObj.getUTCFullYear();
+    return `${dd}/${mm}/${yyyy}`;
   }
 
   private toEuros(cents: any): string {
@@ -550,6 +581,7 @@ export class DocumentsService {
           t.birth_date,
           t.birth_place,
           t.current_address,
+          u.project_id as project_id,
           (
             SELECT COALESCE(
               json_agg(
@@ -645,6 +677,16 @@ export class DocumentsService {
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
+    let unitCity = row.unit_city;
+    let unitPostal = row.unit_postal_code;
+
+    if (/^\d{5}$/.test(String(unitCity || '').trim()) && !/^\d{5}$/.test(String(unitPostal || '').trim())) {
+      // swap if city looks like a postal code
+      const tmp = unitCity;
+      unitCity = unitPostal;
+      unitPostal = tmp;
+    }
+
     const vars: Record<string, any> = {
       template_version: templateVersion,
       lease_id_short: this.leaseIdShort(leaseId),
@@ -657,8 +699,9 @@ export class DocumentsService {
       unit_code: this.escapeHtml(row.unit_code),
       unit_label: this.escapeHtml(row.unit_label),
       unit_address_line1: this.escapeHtml(row.unit_address_line1),
-      unit_postal_code: this.escapeHtml(row.unit_postal_code),
-      unit_city: this.escapeHtml(row.unit_city),
+      unit_postal_code: this.escapeHtml(row.unitPostal),
+      unit_city: this.escapeHtml(unitCity),
+      //: this.escapeHtml(process.env.SIGNATURE_CITY || unitCity || '—'),
       project_name: this.escapeHtml(row.project_name || '-'),
       building_name: this.escapeHtml(row.building_name || '-'),
 
