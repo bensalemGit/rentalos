@@ -1419,7 +1419,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       [doc.unit_id, doc.lease_id, signedName, signedAbs2.replace(this.storageBase, ''), mergedSha, doc.id],
     );
 
-    await this.pool.query(`UPDATE documents SET signed_final_document_id=$1 WHERE id=$2`, [insDoc.rows[0].id, doc.id]);
+    await this.pool.query(`UPDATE documents SET signed_final_document_id=$1, finalized_at = NOW(), signed_final_sha256 = $3 WHERE id=$2`, [insDoc.rows[0].id, doc.id, mergedSha]);
 
     return {
       ok: true,
