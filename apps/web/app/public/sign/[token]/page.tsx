@@ -1,12 +1,12 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 const API =
   typeof window !== "undefined"
     ? window.location.origin + "/api"
     : "https://app.rentalos.fr/api";
-
 
 function friendlyMessage(msg: string) {
   const m = (msg || "").toLowerCase();
@@ -20,6 +20,12 @@ function friendlyMessage(msg: string) {
 
 export default function PublicSignPage({ params }: { params: { token: string } }) {
   const token = params.token;
+
+  // 1️⃣ / 2️⃣ : lire le rôle via query param
+  const sp = useSearchParams();
+  const roleParam = (sp.get("role") || "").toLowerCase();
+  const isLandlord = roleParam === "landlord";
+  const signerRole = isLandlord ? "BAILLEUR" : "LOCATAIRE";
 
   const [info, setInfo] = useState<any>(null);
   const [status, setStatus] = useState<string>("");
@@ -43,6 +49,7 @@ export default function PublicSignPage({ params }: { params: { token: string } }
     if (c) setupCanvas(c);
   }, [canvasRef.current]);
 
+  // 4️⃣ loadInfo avec nom par rôle
   async function loadInfo() {
     setError("");
     setStatus("Chargement…");
@@ -51,14 +58,11 @@ export default function PublicSignPage({ params }: { params: { token: string } }
       const r = await fetch(`${API}/public/info?token=${encodeURIComponent(token)}`);
       const j = await r.json();
 
-      // API errors may come as {message:"..."}
-      if (!r.ok) {
-        throw new Error(j?.message || "Lien indisponible");
-      }
+      if (!r.ok) throw new Error(j?.message || "Lien indisponible");
 
       if (j?.documentId) {
         setInfo(j);
-        setSignerName(j.tenantName || "Locataire");
+        setSignerName(isLandlord ? "Bailleur" : (j.tenantName || "Locataire"));
         setStatus("");
       } else {
         throw new Error("Lien indisponible");
@@ -120,6 +124,7 @@ export default function PublicSignPage({ params }: { params: { token: string } }
     window.open(`${API}/public/download?token=${encodeURIComponent(token)}`, "_blank", "noopener,noreferrer");
   }
 
+  // 5️⃣ sign avec signerRole envoyé
   async function sign() {
     setStatus("Signature en cours…");
     setError("");
@@ -129,13 +134,11 @@ export default function PublicSignPage({ params }: { params: { token: string } }
       const r = await fetch(`${API}/public/sign?token=${encodeURIComponent(token)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signerName, signatureDataUrl }),
+        body: JSON.stringify({ signerName, signerRole, signatureDataUrl }),
       });
       const j = await r.json();
 
-      if (!r.ok) {
-        throw new Error(j?.message || JSON.stringify(j));
-      }
+      if (!r.ok) throw new Error(j?.message || JSON.stringify(j));
 
       if (j?.ok) {
         setStatus("✅ Signature enregistrée. Vous pouvez fermer cette page.");
@@ -151,18 +154,19 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
   return (
     <main style={{ padding: 16, fontFamily: "Arial", maxWidth: 900, margin: "0 auto" }}>
-      <h1 style={{ marginTop: 0 }}>Signature du contrat (Locataire)</h1>
+      {/* 3️⃣ titre dynamique */}
+      <h1 style={{ marginTop: 0 }}>
+        Signature du contrat ({isLandlord ? "Bailleur" : "Locataire"})
+      </h1>
 
-		{error && (
-		  <div style={{ border: "1px solid #f3b", borderRadius: 12, padding: 12, background: "#fff5fb" }}>
-			<b>{error}</b>
-			<div style={{ marginTop: 8 }}>
-			  <button onClick={() => window.location.href = "about:blank"}>
-				Fermer cette page
-			  </button>
-			</div>
-		  </div>
-		)}
+      {error && (
+        <div style={{ border: "1px solid #f3b", borderRadius: 12, padding: 12, background: "#fff5fb" }}>
+          <b>{error}</b>
+          <div style={{ marginTop: 8 }}>
+            <button onClick={() => window.location.href = "about:blank"}>Fermer cette page</button>
+          </div>
+        </div>
+      )}
 
       {!info && !error && <p>{status || "…"}</p>}
 
