@@ -583,6 +583,23 @@ export class DocumentsService {
     return q.rows[0];
   }
 
+  private async getLandlordForLease(leaseId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT pl.*
+      FROM leases l
+      JOIN units u ON u.id = l.unit_id
+      JOIN projects p ON p.id = u.project_id
+      LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
+      WHERE l.id = $1
+      `,
+      [leaseId],
+    );
+
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+
   // -------------------------------------
   // CONTRAT (templated)
   // -------------------------------------
@@ -590,32 +607,34 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
-    const projectId = row.project_id;
 
-    const landlordQ = await this.pool.query(
-      `
-      SELECT pl.*
-      FROM projects p
-      JOIN project_landlords pl ON pl.id = p.landlord_id
-      WHERE p.id=$1
-      `,
-      [projectId],
-    );
+    const landlord = await this.getLandlordForLease(leaseId);
 
-    const landlord = landlordQ.rowCount ? landlordQ.rows[0] : null;
+    const missing: string[] = [];
+    const bad = (v?: string) =>
+      !v || String(v).trim().length === 0 || String(v).includes('[À compléter]');
 
     if (!landlord) {
+      missing.push('landlord_profile');
+    } else {
+      if (bad(landlord.name)) missing.push('landlord_name');
+      if (bad(landlord.address)) missing.push('landlord_address');
+      if (bad(landlord.email)) missing.push('landlord_email');
+      if (bad(landlord.phone)) missing.push('landlord_phone');
+    }
+
+    if (missing.length) {
       throw new BadRequestException({
         message: 'Contract not ready: missing landlord information',
-        missing: ['landlord_profile'],
+        missing,
       });
     }
 
     const landlord_identifiers_html = `
-    <div><b>${this.escapeHtml(landlord.name)}</b></div>
-    <div>${this.escapeHtml(landlord.address)}</div>
-    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
-  `.trim();
+      <div><b>${this.escapeHtml(landlord.name)}</b></div>
+      <div>${this.escapeHtml(landlord.address)}</div>
+      <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+    `.trim();
 
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
     if (leaseKind !== 'MEUBLE_RP' && leaseKind !== 'NU_RP' && leaseKind !== 'SAISONNIER') {
@@ -678,24 +697,6 @@ export class DocumentsService {
       signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
       signature_date: this.formatDateFr(new Date()),
     };
-
-    // ----------------------
-    // Guard bailleur “bloquant”
-    // ----------------------
-    const missing: string[] = [];
-    const bad = (v?: string) => !v || v.includes('[À compléter]');
-
-    if (bad(vars.landlord_name)) missing.push('landlord_name');
-    if (bad(vars.landlord_address)) missing.push('landlord_address');
-    if (bad(vars.landlord_email)) missing.push('landlord_email');
-    if (bad(vars.landlord_phone)) missing.push('landlord_phone');
-
-    if (missing.length) {
-      throw new BadRequestException({
-        message: 'Contract not ready: missing landlord information',
-        missing,
-      });
-    }
 
     const html = this.applyVars(tpl.html_template, vars);
     const pdfBuf = await this.htmlToPdfBuffer(html);
