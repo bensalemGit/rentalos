@@ -1355,11 +1355,20 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   if (hasAllTenants && hasLandlord) {
     if (doc.signed_final_document_id) {
       const finalDoc = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [doc.signed_final_document_id]);
+      const finalSignedDocument = finalDoc.rowCount ? finalDoc.rows[0] : null;
+
+      // Option: récupérer signatures existantes pour renvoyer un état cohérent
+      const sigQ = await this.pool.query(
+        `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+        [doc.id],
+      );
       return {
         ok: true,
         pending: false,
-        finalSignedDocument: finalDoc.rowCount ? finalDoc.rows[0] : null,
-        signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
+        alreadyFinalized: true,
+        finalSignedDocument,
+        signatures: sigQ.rows,
+        signaturesPdfSha256: doc.signed_final_sha256 || finalSignedDocument?.sha256 || null,
       };
     }
 
@@ -1419,7 +1428,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       [doc.unit_id, doc.lease_id, signedName, signedAbs2.replace(this.storageBase, ''), mergedSha, doc.id],
     );
 
-    await this.pool.query(`UPDATE documents SET signed_final_document_id=$1 WHERE id=$2`, [insDoc.rows[0].id, doc.id]);
+    await this.pool.query(`UPDATE documents SET signed_final_document_id=$1, finalized_at = NOW(), signed_final_sha256 = $3 WHERE id=$2`, [insDoc.rows[0].id, doc.id, mergedSha]);
 
     return {
       ok: true,

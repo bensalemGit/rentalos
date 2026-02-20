@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
   GoneException,
+  ConflictException,
 } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as crypto from 'crypto';
@@ -28,7 +29,7 @@ export class PublicService {
     return crypto.randomBytes(32).toString('base64url');
   }
 
-  async createTenantSignLink(leaseId: string, ttlHours = 72) {
+  async createTenantSignLink(leaseId: string, ttlHours = 72, purpose = 'TENANT_SIGN_CONTRACT') {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const leaseQ = await this.pool.query(
@@ -51,14 +52,20 @@ export class PublicService {
       contractDoc = await this.docs.generateContractPdf(leaseId);
     }
 
+    if (contractDoc.signed_final_document_id) {
+      throw new ConflictException('Contract already finalized');
+    }
+
+
+
     const token = this.randomToken();
     const tokenHash = this.sha256(token);
     const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
 
     await this.pool.query(
-      `INSERT INTO public_links (token_hash, lease_id, document_id, expires_at)
-       VALUES ($1,$2,$3,$4)`,
-      [tokenHash, leaseId, contractDoc.id, expiresAt],
+      `INSERT INTO public_links (token_hash, lease_id, document_id, purpose, expires_at)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [tokenHash, leaseId, contractDoc.id, purpose, expiresAt],
     );
 
     return {
@@ -72,7 +79,7 @@ export class PublicService {
 
   async createLandlordSignLink(leaseId: string, ttlHours = 72) {
   // identique à createTenantSignLink()
-  const link = await this.createTenantSignLink(leaseId, ttlHours);
+  const link = await this.createTenantSignLink(leaseId, ttlHours,'LANDLORD_SIGN_CONTRACT');
   return {
     ...link,
     publicUrl: `https://app.rentalos.fr/public/sign/${link.token}?role=landlord`,
@@ -178,14 +185,26 @@ RentalOS
       throw new GoneException('Link expired');
     }
 
+
     // ✅ Ne bloquer "already used" QUE si on est en mode consume:true
-    if (consume && (row.used_count ?? 0) >= 1) {
-      throw new GoneException('Link already used');
+    //if (consume && (row.used_count ?? 0) >= 1) {
+      //throw new GoneException('Link already used');
+    //}
+
+    // ✅ Vérification consommation
+    if (consume && row.consumed_at) {
+      throw new GoneException('Token already used');
     }
 
     // ✅ On incrémente used_count uniquement si consume:true
     if (consume) {
       await this.touchUsage(row.id);
+      // ✅ Nouveau : on marque consumed_at uniquement si consume=true
+    await this.pool.query(
+      `UPDATE public_links SET consumed_at=NOW() WHERE id=$1`,
+      [row.id]
+    );
+    row.consumed_at = new Date(); // mettre à jour la copie locale
     }
 
     return row;
@@ -225,6 +244,10 @@ RentalOS
   }
   async publicSign(token: string, body: any, req: any) {
     const row = await this.resolveToken(token, { consume: true });
+    const allowed = new Set(['TENANT_SIGN_CONTRACT', 'LANDLORD_SIGN_CONTRACT']);
+    if (!allowed.has(String(row.purpose || ''))) {
+      throw new UnauthorizedException('Invalid token purpose');
+    }
 
     const signerRole = String(body?.signerRole || 'LOCATAIRE').toUpperCase();
     const signatureDataUrl = body?.signatureDataUrl;
@@ -251,5 +274,67 @@ RentalOS
 
     return result;
   }
+  async createFinalPdfDownloadLink(leaseId: string, ttlHours = 72) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
 
+  const docQ = await this.pool.query(
+    `SELECT * FROM documents
+     WHERE lease_id=$1 AND type='CONTRAT' AND parent_document_id IS NULL
+     ORDER BY created_at DESC LIMIT 1`,
+    [leaseId],
+  );
+
+  if (!docQ.rowCount) throw new BadRequestException('No contract document found');
+
+  const parent = docQ.rows[0];
+  if (!parent.signed_final_document_id) {
+    throw new BadRequestException('Contract not finalized yet');
+  }
+
+  const finalQ = await this.pool.query(
+    `SELECT * FROM documents WHERE id=$1`,
+    [parent.signed_final_document_id],
+  );
+  if (!finalQ.rowCount) throw new BadRequestException('Final signed document not found');
+
+  const finalDoc = finalQ.rows[0];
+
+  const token = this.randomToken();
+  const tokenHash = this.sha256(token);
+  const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
+
+  await this.pool.query(
+    `INSERT INTO public_links (token_hash, lease_id, document_id, purpose, expires_at)
+     VALUES ($1,$2,$3,$4,$5)`,
+    [tokenHash, leaseId, finalDoc.id, 'FINAL_PDF_DOWNLOAD', expiresAt],
+  );
+
+  return {
+    token,
+    expiresAt,
+    leaseId,
+    documentId: finalDoc.id,
+    publicUrl: `https://app.rentalos.fr/public/download/${token}`,
+  };
+}
+async downloadFinalPdf(token: string) {
+  // 1) resolve sans consommer pour vérifier existence et purpose
+  const row = await this.resolveToken(token, { consume: false });
+
+  // 2) vérifier le purpose
+  if (String(row.purpose) !== 'FINAL_PDF_DOWNLOAD') {
+    throw new UnauthorizedException('Invalid token purpose');
+  }
+
+    // 3) si déjà consommé → erreur 410
+  if (row.consumed_at) {
+    throw new GoneException('Token already used');
+  }
+
+  // 4) consommer le token maintenant
+  await this.resolveToken(token, { consume: true });
+
+  const absPath = path.join(this.storageBase, row.storage_path);
+  return { absPath, filename: row.filename };
+}
 }

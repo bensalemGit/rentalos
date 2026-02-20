@@ -1,26 +1,22 @@
-## 1) 🛠 OPS_CHECKLIST.md
-
-```markdown
 # RentalOS — Ops Checklist
 
 ## Quotidien
-- [ ] Backup email reçu (si mode OK-notif activé)
+- [ ] Backup OK (email “FailOnly” => pas d’alerte = OK)
 - [ ] Task Scheduler : dernier résultat = 0
-- [ ] Présence du dernier backup sur R2
+- [ ] Dernier backup présent sur R2
+- [ ] Services Docker up (api/web/postgres)
 
 ## Hebdomadaire
 - [ ] Vérifier taille des dumps (pas anormalement petits)
-- [ ] Vérifier espace disque local (C:\rentalos\backups)
-- [ ] Vérifier rclone remote accessible
+- [ ] Vérifier espace disque local (`C:\rentalos\backups`)
+- [ ] Vérifier accès rclone (R2)
 
 ## Mensuel
 - [ ] Test restore complet sur machine staging
 - [ ] Vérifier manifest + sha256
-- [ ] Rotation credentials si nécessaire
+- [ ] Vérifier rotation des logs / dossiers
 
 ## Trimestriel
 - [ ] Audit secrets (SMTP, JWT, DB)
 - [ ] Vérifier politique retention R2
-```
-
----
+- [ ] Vérifier policies Cloudflare Access

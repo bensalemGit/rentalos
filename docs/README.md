@@ -1,69 +1,44 @@
-# RentalOS — Documentation Index
+# RentalOS — Documentation
 
-Bienvenue dans la documentation officielle de **RentalOS**.
+Bienvenue dans la documentation de **RentalOS**.
 
 Objectifs :
-
-- Centraliser toute la documentation projet
-- Permettre une reprise immédiate par un nouveau dev/chat
-- Garantir un PRA/DR opérationnel (<10 min)
-- Sécuriser le workflow métier : **Bail → Contrat meublé béton**
-- Encadrer la signature électronique multi-locataires
+- reprise immédiate (dev/chat)
+- documentation durable (architecture + runbooks)
+- DR/PRA opérationnel
+- flow signature + finalisation + download PDF final **testé Newman**
 
 ---
 
-## 📌 Documents essentiels
----
+## Démarrer ici (obligatoire)
 
-## 🔗 Liens rapides
-
-- Passation : **HANDOVER.md**
-- Signature électronique : **SIGNATURES.md**
-- Templates contrats : **TEMPLATES.md**
-- PRA / Restore : **DR_RUNBOOK.md**
-
-
-### 🚀 Onboarding / Passation
-
-- **HANDOVER.md**  
-  → Document principal de reprise projet (nouveau dev/chat)
-
-### ✍️ Signatures électroniques
-
-- **SIGNATURES.md**  
-  → Workflow complet multi-locataires + bailleur + finalisation PDF
-
-### 📄 Templates juridiques (contrats)
-
-- **TEMPLATES.md**  
-  → Gestion SQL des templates + variables + versioning
+- **Handover master** : `docs/handover/MASTER_HANDOVER.md`
+- **Signature flow (tech)** : `docs/architecture/SIGNATURE_FLOW.md`
+- **DB finalisation & public links** : `docs/architecture/DATABASE_FINALIZATION.md`
+- **Newman runbook** : `docs/testing/NEWMAN_RUNBOOK.md`
 
 ---
 
-## 🛡️ PRA / DR (Backup & Restore)
+## Arborescence
 
-- **DR_RUNBOOK.md**  
-  → Restore complet en <10 min
-
-- **OPS_CHECKLIST.md**  
-  → Commandes réflexes d’exploitation
-
-- **CHANGELOG.md**  
-  → Historique des évolutions
+- `docs/handover/` : passation + DR
+- `docs/architecture/` : design technique (signature, DB, CF Access)
+- `docs/runbooks/` : exploitation / ops
+- `docs/domain/` : métier (signatures, templates)
+- `docs/testing/` : tests (Newman/CI)
 
 ---
 
-## 📍 État actuel (février 2026)
+## État actuel (février 2026)
 
-✅ Backup daily + R2 chiffré + FailOnly email  
-✅ Contrat MEUBLE_RP multi-locataires + clause colocation  
-✅ Signature multi-tenant : tenantId requis si plusieurs locataires  
-✅ Final PDF généré uniquement quand tous ont signé  
+✅ Signature publique locataire + bailleur (tokens)  
+✅ Finalisation PDF “SIGNED_FINAL” (quand toutes signatures présentes)  
+✅ Champs DB finalisation : `finalized_at`, `signed_final_sha256`  
+✅ Token download PDF final : `FINAL_PDF_DOWNLOAD` **one-time** (2e call => 410 Gone)  
+✅ Enforcements purpose : signature ≠ download  
+✅ Newman : 0 failed sur le flow complet
 
 ---
 
-## Next Step (priorité)
-
-1. Automatiser un test E2E signatures (2 locataires + bailleur)
-2. Finaliser le contrat “bail béton” (garants multi + visale UI)
-3. Améliorer création bail multi-locataires dès l’écran initial
+## Changelog
+- `docs/CHANGELOG.md`
