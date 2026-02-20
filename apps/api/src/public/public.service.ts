@@ -185,14 +185,26 @@ RentalOS
       throw new GoneException('Link expired');
     }
 
+
     // ✅ Ne bloquer "already used" QUE si on est en mode consume:true
-    if (consume && (row.used_count ?? 0) >= 1) {
-      throw new GoneException('Link already used');
+    //if (consume && (row.used_count ?? 0) >= 1) {
+      //throw new GoneException('Link already used');
+    //}
+
+    // ✅ Vérification consommation
+    if (consume && row.consumed_at) {
+      throw new GoneException('Token already used');
     }
 
     // ✅ On incrémente used_count uniquement si consume:true
     if (consume) {
       await this.touchUsage(row.id);
+      // ✅ Nouveau : on marque consumed_at uniquement si consume=true
+    await this.pool.query(
+      `UPDATE public_links SET consumed_at=NOW() WHERE id=$1`,
+      [row.id]
+    );
+    row.consumed_at = new Date(); // mettre à jour la copie locale
     }
 
     return row;
@@ -306,11 +318,21 @@ RentalOS
   };
 }
 async downloadFinalPdf(token: string) {
+  // 1) resolve sans consommer pour vérifier existence et purpose
   const row = await this.resolveToken(token, { consume: false });
 
+  // 2) vérifier le purpose
   if (String(row.purpose) !== 'FINAL_PDF_DOWNLOAD') {
     throw new UnauthorizedException('Invalid token purpose');
   }
+
+    // 3) si déjà consommé → erreur 410
+  if (row.consumed_at) {
+    throw new GoneException('Token already used');
+  }
+
+  // 4) consommer le token maintenant
+  await this.resolveToken(token, { consume: true });
 
   const absPath = path.join(this.storageBase, row.storage_path);
   return { absPath, filename: row.filename };
