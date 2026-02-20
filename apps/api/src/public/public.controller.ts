@@ -64,4 +64,15 @@ sendLandlordLink(@Body() body: any) {
     emailOverride,
   );
 }
+@Post('public-links/final-pdf')
+@UseGuards(JwtGuard)
+createFinalPdfLink(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  return this.pub.createFinalPdfDownloadLink(body.leaseId, ttlHours);
+}
+@Get('public/download-final')
+async downloadFinal(@Query('token') token: string, @Res() res: Response) {
+  const { absPath, filename } = await this.pub.downloadFinalPdf(token);
+  return res.download(absPath, filename);
+}
 }
