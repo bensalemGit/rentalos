@@ -590,6 +590,32 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
+    const projectId = row.project_id;
+
+    const landlordQ = await this.pool.query(
+      `
+      SELECT pl.*
+      FROM projects p
+      JOIN project_landlords pl ON pl.id = p.landlord_id
+      WHERE p.id=$1
+      `,
+      [projectId],
+    );
+
+    const landlord = landlordQ.rowCount ? landlordQ.rows[0] : null;
+
+    if (!landlord) {
+      throw new BadRequestException({
+        message: 'Contract not ready: missing landlord information',
+        missing: ['landlord_profile'],
+      });
+    }
+
+    const landlord_identifiers_html = `
+    <div><b>${this.escapeHtml(landlord.name)}</b></div>
+    <div>${this.escapeHtml(landlord.address)}</div>
+    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+  `.trim();
 
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
     if (leaseKind !== 'MEUBLE_RP' && leaseKind !== 'NU_RP' && leaseKind !== 'SAISONNIER') {
@@ -608,6 +634,7 @@ export class DocumentsService {
       start_date: this.formatDateFr(row.start_date),
       end_date_theoretical: this.formatDateFr(row.end_date_theoretical),
 
+      //Unité et projet
       unit_code: this.escapeHtml(row.unit_code),
       unit_label: this.escapeHtml(row.unit_label),
       unit_address_line1: this.escapeHtml(row.unit_address_line1),
@@ -616,11 +643,12 @@ export class DocumentsService {
       project_name: this.escapeHtml(row.project_name || '-'),
       building_name: this.escapeHtml(row.building_name || '-'),
 
-      landlord_name: this.escapeHtml(process.env.LANDLORD_NAME || 'Bailleur'),
-      landlord_address: this.escapeHtml(process.env.LANDLORD_ADDRESS || '[À compléter]'),
-      landlord_email: this.escapeHtml(process.env.LANDLORD_EMAIL || '[À compléter]'),
-      landlord_phone: this.escapeHtml(process.env.LANDLORD_PHONE || '[À compléter]'),
-      landlord_identifiers_html: this.buildLandlordIdentifiersHtml(),
+      // ✅ Nouveau bloc bailleur
+      landlord_identifiers_html,  // <- on remplace buildLandlordIdentifiersHtml
+      landlord_name: this.escapeHtml(landlord.name),
+      landlord_address: this.escapeHtml(landlord.address),
+      landlord_email: this.escapeHtml(landlord.email),
+      landlord_phone: this.escapeHtml(landlord.phone),
 
 
       tenants_block: this.buildTenantsBlock(row),
@@ -696,6 +724,47 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
+    const projectId = row.project_id;
+
+    const landlordQ = await this.pool.query(
+      `
+      SELECT pl.*
+      FROM projects p
+      JOIN project_landlords pl ON pl.id = p.landlord_id
+      WHERE p.id=$1
+      `,
+      [projectId],
+    );
+
+        const landlord = landlordQ.rowCount ? landlordQ.rows[0] : null;
+
+    const missing: string[] = [];
+    const bad = (v?: string) => !v || String(v).trim().length === 0 || String(v).includes('[À compléter]');
+
+    if (!landlord) {
+      missing.push('landlord_profile');
+    } else {
+      if (bad(landlord.address)) missing.push('landlord_address');
+      if (bad(landlord.email)) missing.push('landlord_email');
+      if (bad(landlord.phone)) missing.push('landlord_phone');
+      if (bad(landlord.name)) missing.push('landlord_name');
+    }
+
+    if (missing.length) {
+      throw new BadRequestException({
+        message: 'Notice not ready: missing landlord information',
+        missing,
+      });
+    }
+
+    if (!landlord) throw new BadRequestException('Missing landlord profile');
+
+    const landlord_identifiers_html = `
+    <div><b>${this.escapeHtml(landlord.name)}</b></div>
+    <div>${this.escapeHtml(landlord.address)}</div>
+    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+  `.trim();
+
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
     if (leaseKind === 'SAISONNIER') {
@@ -841,7 +910,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
           const buf = fs.readFileSync(abs);
           dataUrl = `data:${p.mime_type};base64,${buf.toString('base64')}`;
         } catch {
-          dataUrl = '';
+          dataUrl = '<div class=missing">Photo introuvable</div>';
         }
 
         annexHtml += `
