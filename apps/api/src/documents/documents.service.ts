@@ -641,7 +641,7 @@ export class DocumentsService {
       throw new BadRequestException(`Unsupported lease kind for contract: ${leaseKind}`);
     }
 
-    const templateVersion = '2026-03';
+    const templateVersion = '2026-04';
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
