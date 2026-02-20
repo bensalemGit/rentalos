@@ -1355,11 +1355,20 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   if (hasAllTenants && hasLandlord) {
     if (doc.signed_final_document_id) {
       const finalDoc = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [doc.signed_final_document_id]);
+      const finalSignedDocument = finalDoc.rowCount ? finalDoc.rows[0] : null;
+
+      // Option: récupérer signatures existantes pour renvoyer un état cohérent
+      const sigQ = await this.pool.query(
+        `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+        [doc.id],
+      );
       return {
         ok: true,
         pending: false,
-        finalSignedDocument: finalDoc.rowCount ? finalDoc.rows[0] : null,
-        signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
+        alreadyFinalized: true,
+        finalSignedDocument,
+        signatures: sigQ.rows,
+        signaturesPdfSha256: doc.signed_final_sha256 || finalSignedDocument?.sha256 || null,
       };
     }
 

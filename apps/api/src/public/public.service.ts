@@ -3,6 +3,7 @@ import {
   Injectable,
   UnauthorizedException,
   GoneException,
+  ConflictException,
 } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as crypto from 'crypto';
@@ -50,6 +51,12 @@ export class PublicService {
     if (!contractDoc) {
       contractDoc = await this.docs.generateContractPdf(leaseId);
     }
+
+    if (contractDoc.signed_final_document_id) {
+      throw new ConflictException('Contract already finalized');
+    }
+
+
 
     const token = this.randomToken();
     const tokenHash = this.sha256(token);
