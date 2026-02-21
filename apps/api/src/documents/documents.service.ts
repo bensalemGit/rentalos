@@ -56,11 +56,32 @@ export class DocumentsService {
 
   private isoDate(d: any): string {
     if (!d) return '';
-    const s = String(d);
+
+    // Date object
+    if (d instanceof Date) {
+      // -> YYYY-MM-DD
+      return d.toISOString().slice(0, 10);
+    }
+
+    // numeric timestamp
+    if (typeof d === 'number') {
+      return new Date(d).toISOString().slice(0, 10);
+    }
+
+    const s = String(d).trim();
+
+    // already YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    // starts with YYYY-MM-DD (ex: 2026-02-21T00:00:00.000Z)
     const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];
-    return s.slice(0, 10);
+
+    // last resort: try Date parse
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
+
+    return '';
   }
 
   private formatDateFr(d: any): string {
@@ -580,6 +601,7 @@ export class DocumentsService {
           u.postal_code as unit_postal_code,
           u.surface_m2,
           u.floor,
+          u.project_id as project_id,
           p.name as project_name,
           b.name as building_name,
           t.full_name as tenant_name,
@@ -621,6 +643,21 @@ export class DocumentsService {
     return q.rows[0];
   }
 
+  private async getLandlordForLease(leaseId: string) {
+  const q = await this.pool.query(
+    `
+    SELECT pl.*
+    FROM leases l
+    JOIN units u ON u.id = l.unit_id
+    JOIN projects p ON p.id = u.project_id
+    LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
+    WHERE l.id = $1
+    `,
+    [leaseId],
+  );
+  return q.rowCount ? q.rows[0] : null;
+}
+
   // -------------------------------------
   // CONTRAT (templated)
   // -------------------------------------
@@ -628,19 +665,7 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
-    const projectId = row.project_id;
-
-    const landlordQ = await this.pool.query(
-      `
-      SELECT pl.*
-      FROM projects p
-      JOIN project_landlords pl ON pl.id = p.landlord_id
-      WHERE p.id=$1
-      `,
-      [projectId],
-    );
-
-    const landlord = landlordQ.rowCount ? landlordQ.rows[0] : null;
+    const landlord = await this.getLandlordForLease(leaseId);
 
     if (!landlord) {
       throw new BadRequestException({
@@ -660,7 +685,7 @@ export class DocumentsService {
       throw new BadRequestException(`Unsupported lease kind for contract: ${leaseKind}`);
     }
 
-    const templateVersion = '2026-03';
+    const templateVersion = '2026-04';
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
@@ -764,17 +789,14 @@ export class DocumentsService {
     const row = await this.fetchLeaseBundle(leaseId);
     const projectId = row.project_id;
 
-    const landlordQ = await this.pool.query(
-      `
-      SELECT pl.*
-      FROM projects p
-      JOIN project_landlords pl ON pl.id = p.landlord_id
-      WHERE p.id=$1
-      `,
-      [projectId],
-    );
+    const landlord = await this.getLandlordForLease(leaseId);
 
-        const landlord = landlordQ.rowCount ? landlordQ.rows[0] : null;
+    if (!landlord) {
+      throw new BadRequestException({
+        message: 'Contract not ready: missing landlord information',
+        missing: ['landlord_profile'],
+      });
+    }
 
     const missing: string[] = [];
     const bad = (v?: string) => !v || String(v).trim().length === 0 || String(v).includes('[À compléter]');
