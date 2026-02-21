@@ -91,4 +91,11 @@ MEUBLE_RP_contract_*.html
 test.pdf
 -e
 apps/api/=1
-tests/
+
+# keep tests/postman versioned, ignore local artifacts
+tests/**/newman/
+tests/**/reports/
+tests/**/*.pdf
+tests/**/*.html
+tests/**/*.log
+tests/**/.env*
