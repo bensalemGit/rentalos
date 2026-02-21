@@ -75,4 +75,16 @@ async downloadFinal(@Query('token') token: string, @Res() res: Response) {
   const { absPath, filename } = await this.pub.downloadFinalPdf(token);
   return res.download(absPath, filename);
 }
+  @Post('public-links/final-pack')
+  @UseGuards(JwtGuard)
+  createFinalPackLink(@Body() body: any) {
+    const ttlHours = body?.ttlHours ?? 72;
+    return this.pub.createFinalPackDownloadLink(body.leaseId, ttlHours);
+  }
+
+  @Get('public/download-pack')
+  async downloadPack(@Query('token') token: string, @Res() res: Response) {
+    const { absPath, filename } = await this.pub.downloadFinalPack(token);
+    return res.download(absPath, filename);
+  }
 }
