@@ -456,33 +456,6 @@ export default function LeasesPage() {
     }
   }
 
-  async function sendTenantLink(id: string) {
-    setError("");
-    setStatus("Envoi du lien locataire…");
-    try {
-      const r = await fetch(`${API}/public-links/tenant-sign/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        credentials: "include",
-        body: JSON.stringify({ leaseId: id, ttlHours: 48 }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        return;
-      }
-      setStatus(`Email envoyé à ${j.sentTo} ✅ (lien copié)`);
-      try {
-        await navigator.clipboard.writeText(j.publicUrl);
-      } catch {}
-      alert(`Email envoyé à ${j.sentTo}\nLien (copié):\n${j.publicUrl}`);
-    } catch (e: any) {
-      setStatus("");
-      setError(String(e?.message || e));
-    }
-  }
-
   const leasesSorted = useMemo(() => {
     return [...leases].sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
   }, [leases]);
@@ -1168,7 +1141,6 @@ export default function LeasesPage() {
                                     <Link href={`/edl/${l.id}`}><button style={btnAction(border)}>EDL</button></Link>
                   <Link href={`/inventory/${l.id}`}><button style={btnAction(border)}>Inventaire</button></Link>
                   <Link href={`/sign/${l.id}`}><button style={btnAction(border)}>Contrat + signatures</button></Link>
-                  <button onClick={() => sendTenantLink(l.id)} style={btnPrimarySmall(blue)}>Envoyer lien locataire</button>
                 </div>
               </div>
             </div>

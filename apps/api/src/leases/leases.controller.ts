@@ -64,4 +64,11 @@ export class LeasesController {
   updateDesignation(@Param('id') id: string, @Body() body: any) {
     return this.leases.updateDesignationAndIrl(id, body);
   }
+
+  // ✅ NEW: update contract clauses (lease_terms jsonb)
+  @Patch(':id/terms')
+  updateTerms(@Param('id') id: string, @Body() body: any) {
+    return this.leases.updateTerms(id, body);
+  }
+
 }
