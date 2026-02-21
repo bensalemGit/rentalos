@@ -1,0 +1,742 @@
+{
+  "info": {
+    "_postman_id": "c941a897-e749-4489-9572-5c5a3246cfd7",
+    "name": "RentalOS Public Signature Flow (auto fresh token) - v9 (CF Access Service Token)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin - Login (get JWT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{cfAccessClientId}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{cfAccessClientSecret}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{adminEmail}}\", \"password\": \"{{adminPassword}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "var ct = pm.response.headers.get('Content-Type') || '';",
+              "pm.test('Status is 200 or 201', function () { pm.expect([200,201]).to.include(pm.response.code); });",
+              "pm.test('Response is JSON (not Cloudflare HTML)', function () { pm.expect(ct.toLowerCase()).to.not.include('text/html'); });",
+              "",
+              "var body = pm.response.text();",
+              "var json;",
+              "try { json = pm.response.json(); } catch (e) {",
+              "  console.log('Non-JSON response (first 200 chars):', body.slice(0,200));",
+              "  throw e;",
+              "}",
+              "",
+              "var jwt = json.token || json.accessToken || json.jwt || json?.data?.token || json?.data?.accessToken;",
+              "pm.test('JWT present', function(){ pm.expect(jwt, 'JWT missing in response').to.be.ok; });",
+              "",
+              "pm.environment.set('adminJwt', jwt);",
+              "pm.environment.set('jwt', jwt);",
+              "",
+              "console.log('JWT =', jwt);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Create tenant public sign link (get public token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt}}"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{cfAccessClientId}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{cfAccessClientSecret}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/public-links/tenant-sign/send",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "public-links",
+            "tenant-sign",
+            "send"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"leaseId\": \"{{leaseId}}\", \"ttlHours\": {{ttlHours}}}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "console.log('STATUS', pm.response.code);",
+              "console.log('BODY', pm.response.text());",
+              "var ct = pm.response.headers.get('Content-Type') || '';",
+              "pm.test('Response is JSON (not Cloudflare HTML)', function () { pm.expect(ct.toLowerCase()).to.not.include('text/html'); });",
+              "",
+              "pm.test('Status is 200/201/409/400', function () {",
+              "  pm.expect([200,201,409,400]).to.include(pm.response.code);",
+              "});",
+              "",
+              "if (pm.response.code === 409) {",
+              "  console.log('Already finalized');",
+              "} else if (pm.response.code === 200 || pm.response.code === 201) {",
+              "  var json = pm.response.json();",
+              "  var token = json.token || json.publicToken || json?.data?.token;",
+              "  pm.test('Public token present', function() { pm.expect(token, 'public token missing').to.be.ok; });",
+              "  pm.environment.set('publicToken', token);",
+              "  pm.environment.set('leaseId', json.leaseId || pm.environment.get('leaseId'));",
+              "  pm.environment.set('documentId', json.documentId || pm.environment.get('documentId'));",
+              "} else {",
+              "  console.log('BadRequest on tenant-sign/send, see BODY above');",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Info (token check)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/public/info?token={{publicToken}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "info"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{publicToken}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+      "if (!pm.environment.get('publicToken')) {",
+      "    console.log('Token absent → skipping tests for public info');",
+      "} else {",
+      "    pm.test('Status is 200', function () { pm.expect(pm.response.code).to.eql(200); });",
+      "    var json = pm.response.json();",
+      "    pm.test('ok=true (or no ok but data present)', function(){",
+      "      if (Object.prototype.hasOwnProperty.call(json,'ok')) pm.expect(json.ok).to.eql(true);",
+      "      else pm.expect(json).to.be.an('object');",
+      "    });",
+      "    pm.environment.set('signerName', json.tenantName);",
+      "    pm.environment.set('signerTenantId', json.tenantId || json.signerTenantId);",
+      "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Sign (tenant)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/public/sign?token={{publicToken}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "sign"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{publicToken}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"consent\": true, \"signerName\": \"{{signerName}}\", \"signerRole\": \"LOCATAIRE\", \"signatureDataUrl\": \"{{signatureDataUrl}}\", \"signerTenantId\": \"{{signerTenantId}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+      "if (!pm.environment.get('publicToken')) {",
+      "    console.log('Token absent → skipping tests for public sign tenant');",
+      "} else {",
+      "    console.log('STATUS', pm.response.code);",
+      "    console.log('CT', pm.response.headers.get('Content-Type'));",
+      "    console.log('BODY', pm.response.text());",
+      "    pm.test('Status is 200, 201 or 410 (already used)', function () { pm.expect([200,201,410]).to.include(pm.response.code); });",
+      "    var json = pm.response.json();",
+      "    if (pm.response.code === 410) {",
+      "      pm.test('Link already used (410)', function(){ pm.expect(json.statusCode || 410).to.eql(410); });",
+      "    } else {",
+      "      pm.test('ok=true', function(){ pm.expect(json.ok).to.eql(true); });",
+      "    }",
+      "}"
+            ]
+          }
+        }
+      ]
+    },
+      {
+  "name": "Admin - Create landlord public sign link",
+  "request": {
+    "method": "POST",
+    "header": [
+      { "key": "Content-Type", "value": "application/json" },
+      { "key": "Authorization", "value": "Bearer {{jwt}}" },
+      { "key": "CF-Access-Client-Id", "value": "{{cfAccessClientId}}" },
+      { "key": "CF-Access-Client-Secret", "value": "{{cfAccessClientSecret}}" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public-links/landlord-sign",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public-links","landlord-sign"]
+    },
+    "body": { "mode": "raw", "raw": "{\"leaseId\": \"{{leaseId}}\", \"ttlHours\": {{ttlHours}}}" }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+                "exec": [
+          "console.log('STATUS', pm.response.code);",
+          "console.log('BODY', pm.response.text());",
+          "",
+          "pm.test('Status is 200/201/409/400', function () {",
+          "  pm.expect([200,201,409,400]).to.include(pm.response.code);",
+          "});",
+          "",
+          "if (pm.response.code === 200 || pm.response.code === 201) {",
+          "  var json = pm.response.json();",
+          "  pm.test('Token present', function(){ pm.expect(json.token).to.be.ok; });",
+          "  pm.environment.set('landlordToken', json.token);",
+          "} else {",
+          "  console.log('No landlord token (finalized or bad request).');",
+          "}"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Public - Sign (landlord)",
+  "request": {
+    "method": "POST",
+    "header": [{ "key": "Content-Type", "value": "application/json" }],
+    "url": {
+      "raw": "{{baseUrl}}/api/public/sign?token={{landlordToken}}&role=landlord",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public","sign"],
+      "query":[
+        { "key":"token","value":"{{landlordToken}}" },
+        { "key":"role","value":"landlord" }
+      ]
+    },
+    "body": {
+      "mode": "raw",
+      "raw": "{\"signerName\": \"Monsieur Bailleur\", \"signerRole\": \"BAILLEUR\", \"signatureDataUrl\": \"{{signatureDataUrl}}\"}"
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('landlordToken')) {",
+          "  console.log('Landlord token absent → skipping tests for public sign landlord');",
+          "} else {",
+          "  console.log('STATUS', pm.response.code);",
+          "  console.log('CT', pm.response.headers.get('Content-Type'));",
+          "  console.log('BODY', pm.response.text());",
+          "",
+          "  pm.test('Status is 200 or 201', function () { pm.expect([200,201]).to.include(pm.response.code); });",
+          "  var json = pm.response.json();",
+          "  pm.test('ok=true', function(){ pm.expect(json.ok).to.eql(true); });",
+          "  pm.test('pending=false', function(){ pm.expect(json.pending).to.eql(false); });",
+          "  pm.test('finalSignedDocument present', function(){ pm.expect(json.finalSignedDocument).to.be.ok; });",
+          "",
+          "  // ✅ NEW: PACK_FINAL must be created when pending=false",
+          "  pm.test('packFinalDocument present', function(){ pm.expect(json.packFinalDocument, 'packFinalDocument missing').to.be.ok; });",
+          "  pm.test('packFinalDocument.type = PACK_FINAL', function(){ pm.expect(json.packFinalDocument.type).to.eql('PACK_FINAL'); });",
+          "  pm.test('packFinalDocument filename contains _PACK_FINAL', function(){",
+          "    pm.expect(String(json.packFinalDocument.filename || '')).to.match(/_PACK_FINAL\\.pdf$/i);",
+          "  });",
+          "",
+          "  // Store for later usage",
+          "  pm.environment.set('packFinalDocumentId', json.packFinalDocument.id);",
+          "  pm.environment.set('packFinalFilename', json.packFinalDocument.filename);",
+          "}"
+
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Admin - List documents by lease (check PACK_FINAL)",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/json" },
+      { "key": "Authorization", "value": "Bearer {{jwt}}" },
+      { "key": "CF-Access-Client-Id", "value": "{{cfAccessClientId}}" },
+      { "key": "CF-Access-Client-Secret", "value": "{{cfAccessClientSecret}}" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/documents?leaseId={{leaseId}}",
+      "host": ["{{baseUrl}}"],
+      "path": ["api", "documents"],
+      "query": [
+        { "key": "leaseId", "value": "{{leaseId}}" }
+      ]
+    }
+  },
+  "event": [
+  {
+  "listen": "test",
+  "script": {
+    "type": "text/javascript",
+    "exec": [
+      "pm.test('Status is 200', function () {",
+      "  pm.expect(pm.response.code).to.eql(200);",
+      "});",
+      "",
+      "let json = null;",
+      "try { json = pm.response.json(); } catch (e) {}",
+      "",
+      "const arr = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);",
+      "pm.test('Response is an array', function () {",
+      "  pm.expect(arr).to.be.an('array');",
+      "});",
+      "",
+      "// --- pick doc: PACK_FINAL ---",
+      "const pack =",
+      "  arr.find(d => String(d?.type || '') === 'PACK_FINAL') ||",
+      "  arr.find(d => String(d?.filename || '').toUpperCase().includes('_PACK_FINAL.PDF')) ||",
+      "  arr.find(d => String(d?.filename || '').toUpperCase().includes('PACK_FINAL'));",
+      "",
+      "pm.test('PACK_FINAL exists (type or filename)', function () {",
+      "  pm.expect(pack, 'No PACK_FINAL found').to.be.ok;",
+      "});",
+      "",
+      "if (pack) {",
+      "  pm.environment.set('packFinalDocumentId', pack.id);",
+      "  pm.environment.set('packFinalFilename', pack.filename || '');",
+      "  pm.environment.set('packFinalStoragePath', pack.storage_path || '');",
+      "  console.log('PACK_FINAL id=', pack.id, 'filename=', pack.filename);",
+      "}"
+    ]
+  }
+}
+]
+},
+{
+  "name": "Admin - Download PACK_FINAL (by documentId)",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/pdf" },
+      { "key": "Authorization", "value": "Bearer {{jwt}}" },
+      { "key": "CF-Access-Client-Id", "value": "{{cfAccessClientId}}" },
+      { "key": "CF-Access-Client-Secret", "value": "{{cfAccessClientSecret}}" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/documents/{{packFinalDocumentId}}/download",
+      "host": ["{{baseUrl}}"],
+      "path": ["api", "documents", "{{packFinalDocumentId}}", "download"]
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('packFinalDocumentId is set', () => {",
+          "  pm.expect(pm.environment.get('packFinalDocumentId')).to.be.ok;",
+          "});",
+          "",
+          "pm.test('Status is 200', function () {",
+          "  pm.expect(pm.response.code).to.eql(200);",
+          "});",
+          "",
+          "pm.test('Content-Type is PDF', function () {",
+          "  pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/pdf');",
+          "});"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Admin - Create final PDF download link",
+  "request": {
+    "method": "POST",
+    "header": [
+      { "key": "Content-Type", "value": "application/json" },
+      { "key": "Authorization", "value": "Bearer {{jwt}}" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public-links/final-pdf",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public-links","final-pdf"]
+    },
+    "body": {
+      "mode": "raw",
+      "raw": "{\"leaseId\": \"{{leaseId}}\", \"ttlHours\": 72}"
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Status is 200 or 201', function () {pm.expect(pm.response.code).to.be.oneOf([200, 201]);});",
+          "const json = pm.response.json();",
+          "pm.test('Token present', () => { pm.expect(json.token).to.be.ok; });",
+          "pm.test('publicUrl contains /public/download/', () => { pm.expect(json.publicUrl).to.include('/public/download/'); });",
+          "pm.environment.set('finalToken', json.token);"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Admin - Create final PACK download link",
+  "request": {
+    "method": "POST",
+    "header": [
+      { "key": "Content-Type", "value": "application/json" },
+      { "key": "Authorization", "value": "Bearer {{jwt}}" },
+      { "key": "CF-Access-Client-Id", "value": "{{cfAccessClientId}}" },
+      { "key": "CF-Access-Client-Secret", "value": "{{cfAccessClientSecret}}" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public-links/final-pack",
+      "host": ["{{baseUrl}}"],
+      "path": ["api", "public-links", "final-pack"]
+    },
+    "body": {
+      "mode": "raw",
+      "raw": "{\"leaseId\":\"{{leaseId}}\",\"ttlHours\":72}"
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "var ct = pm.response.headers.get('Content-Type') || '';",
+          "pm.test('Response is JSON (not Cloudflare HTML)', function () { pm.expect(ct.toLowerCase()).to.not.include('text/html'); });",
+          "pm.test('Status is 200 or 201', function () { pm.expect([200,201]).to.include(pm.response.code); });",
+          "const json = pm.response.json();",
+          "pm.test('Token present', () => { pm.expect(json.token).to.be.ok; });",
+          "pm.test('publicUrl contains /public/download-pack/', () => {",
+          "  pm.expect(String(json.publicUrl || '')).to.include('/public/download-pack/');",
+          "});",
+          "pm.environment.set('finalPackToken', json.token);"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Public - Download final PACK",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/pdf" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public/download-pack?token={{finalPackToken}}",
+      "host": ["{{baseUrl}}"],
+      "path": ["api", "public", "download-pack"],
+      "query": [
+        { "key": "token", "value": "{{finalPackToken}}" }
+      ]
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('finalPackToken')) {",
+          "  console.log('finalPackToken absent → skipping download pack');",
+          "} else {",
+          "  pm.test('Status is 200', () => { pm.expect(pm.response.code).to.eql(200); });",
+          "  pm.test('Content-Type is PDF', () => {",
+          "    pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/pdf');",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Public - Download final PACK again",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/pdf" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public/download-pack?token={{finalPackToken}}",
+      "host": ["{{baseUrl}}"],
+      "path": ["api", "public", "download-pack"],
+      "query": [
+        { "key": "token", "value": "{{finalPackToken}}" }
+      ]
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "if (!pm.environment.get('finalPackToken')) {",
+          "  console.log('finalPackToken absent → skipping download pack again');",
+          "} else {",
+          "  console.log('STATUS', pm.response.code);",
+          "  console.log('BODY', pm.response.text());",
+          "  pm.test('Status is 410 Gone', function() { pm.expect(pm.response.code).to.eql(410); });",
+          "  pm.test('Token already used message', function() {",
+          "    let json = {};",
+          "    try { json = pm.response.json(); } catch(e) {}",
+          "    if (json.message) pm.expect(String(json.message).toLowerCase()).to.include('token already used');",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Public - Download final PDF",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/pdf" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public/download-final?token={{finalToken}}",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public","download-final"],
+      "query": [
+        { "key": "token", "value": "{{finalToken}}" }
+      ]
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "pm.test('Status is 200', () => { pm.response.to.have.status(200); });",
+          "pm.test('Content-Type is PDF', () => { pm.expect(pm.response.headers.get('Content-Type')).to.include('application/pdf'); });"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Admin - Create final PDF download link",
+  "request": {
+    "method": "POST",
+    "header": [
+      { "key": "Content-Type", "value": "application/json" },
+      { "key": "Authorization", "value": "Bearer {{jwt}}" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public-links/final-pdf",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public-links","final-pdf"]
+    },
+    "body": {
+      "mode": "raw",
+      "raw": "{\"leaseId\": \"{{leaseId}}\", \"ttlHours\": 72}"
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "console.log('STATUS', pm.response.code);",
+          "console.log('BODY', pm.response.text());",
+          "",
+          "pm.test('Status is 200/201 or 400 (not finalized yet)', function () {",
+          "  pm.expect([200,201,400]).to.include(pm.response.code);",
+          "});",
+          "",
+          "if (pm.response.code === 200 || pm.response.code === 201) {",
+          "  var json = pm.response.json();",
+          "  pm.test('Token present', function(){ pm.expect(json.token).to.be.ok; });",
+          "  pm.test('publicUrl contains /public/download/', function(){",
+          "    pm.expect(json.publicUrl).to.include('/public/download/');",
+          "  });",
+          "  pm.environment.set('finalToken', json.token);",
+          "} else {",
+          "  console.log('Final PDF link not available yet (expected if pending=true).');",
+          "}"
+        ]
+      }
+    }
+  ]
+},
+{
+  "name": "Public - Download final PDF",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/pdf" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public/download-final?token={{finalToken}}",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public","download-final"],
+      "query": [
+        { "key": "token", "value": "{{finalToken}}" }
+      ]
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "console.log('STATUS', pm.response.code);",
+          "console.log('BODY', pm.response.text());",
+          "",
+          "if (!pm.environment.get('finalToken')) {",
+          "  console.log('Final token absent → skipping download final PDF');",
+          "} else {",
+          "  pm.test('Status is 200', function () {",
+          "    pm.expect(pm.response.code).to.eql(200);",
+          "  });",
+          "  pm.test('Content-Type is PDF', function () {",
+          "    pm.expect(pm.response.headers.get('Content-Type') || '').to.include('application/pdf');",
+          "  });",
+          "}"
+        ]
+      }
+    }
+  ]
+},
+  {
+  "name": "Public - Download final PDF again",
+  "request": {
+    "method": "GET",
+    "header": [
+      { "key": "Accept", "value": "application/pdf" }
+    ],
+    "url": {
+      "raw": "{{baseUrl}}/api/public/download-final?token={{finalToken}}",
+      "host": ["{{baseUrl}}"],
+      "path": ["api","public","download-final"],
+      "query": [
+        { "key": "token", "value": "{{finalToken}}" }
+      ]
+    }
+  },
+  "event": [
+    {
+      "listen": "test",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "console.log('STATUS', pm.response.code);",
+          "console.log('BODY', pm.response.text());",
+          "pm.test('Status is 401 or 410', function() { pm.expect([401, 410]).to.include(pm.response.code); });",
+          "pm.test('Token already used message', function() {",
+          "    var json = {};",
+          "    try { json = pm.response.json(); } catch(e) {}",
+          "    if (json.message) pm.expect(json.message.toLowerCase()).to.include('token already used');",
+          "});"
+        ]
+      }
+    }
+  ]
+}
+  ]
+}
