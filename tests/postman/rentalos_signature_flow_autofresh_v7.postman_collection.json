@@ -1,0 +1,223 @@
+{
+  "info": {
+    "_postman_id": "c941a897-e749-4489-9572-5c5a3246cfd7",
+    "name": "RentalOS Public Signature Flow (auto fresh token) - v6 (CF Access Service Token)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin - Login (get JWT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{cfAccessClientId}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{cfAccessClientSecret}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/auth/login",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{adminEmail}}\", \"password\": \"{{adminPassword}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "var ct = pm.response.headers.get('Content-Type') || '';",
+              "pm.test('Status is 200 or 201', function () { pm.expect([200,201]).to.include(pm.response.code); });",
+              "pm.test('Response is JSON (not Cloudflare HTML)', function () { pm.expect(ct.toLowerCase()).to.not.include('text/html'); });",
+              "var body = pm.response.text();",
+              "var json;",
+              "try { json = pm.response.json(); } catch (e) {",
+              "  // If CF Access blocked, body is HTML; print a hint",
+              "  console.log('Non-JSON response (first 200 chars):', body.slice(0,200));",
+              "  throw e;",
+              "}",
+              "// Accept either {token} or {accessToken} or {jwt}",
+              "var jwt = json.token || json.accessToken || json.jwt || json?.data?.token || json?.data?.accessToken;",
+              "pm.test('JWT present', function(){ pm.expect(jwt, 'JWT missing in response').to.be.ok; });",
+              "pm.environment.set('adminJwt', jwt);",
+              "pm.environment.set('jwt', jwt);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Create tenant public sign link (get public token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{jwt}}"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{cfAccessClientId}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{cfAccessClientSecret}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/public-links/tenant-sign/send",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "public-links",
+            "tenant-sign",
+            "send"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"leaseId\": \"{{leaseId}}\", \"ttlHours\": \"{{ttlHours}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "var ct = pm.response.headers.get('Content-Type') || '';",
+              "pm.test('Status is 200 or 201', function () { pm.expect([200,201]).to.include(pm.response.code); });",
+              "pm.test('Response is JSON (not Cloudflare HTML)', function () { pm.expect(ct.toLowerCase()).to.not.include('text/html'); });",
+              "var json = pm.response.json();",
+              "var token = json.token || json.publicToken || json?.data?.token;",
+              "pm.test('Public token present', function(){ pm.expect(token, 'public token missing').to.be.ok; });",
+              "pm.environment.set('publicToken', token);",
+              "pm.environment.set('leaseId', json.leaseId || pm.environment.get('leaseId'));",
+              "pm.environment.set('documentId', json.documentId || pm.environment.get('documentId'));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Info (token check)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/public/info?token={{publicToken}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "info"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{publicToken}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () { pm.expect(pm.response.code).to.eql(200); });",
+              "var json = pm.response.json();",
+              "pm.test('ok=true (or no ok but data present)', function(){",
+              "  if (Object.prototype.hasOwnProperty.call(json,'ok')) pm.expect(json.ok).to.eql(true);",
+              "  else pm.expect(json).to.be.an('object');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Sign (tenant)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/public/sign?token={{publicToken}}",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "sign"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{publicToken}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"consent\": true, \"signerName\": \"{{signerName}}\", \"signerRole\": \"LOCATAIRE\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200 or 410 (already used)', function () { pm.expect([200,410]).to.include(pm.response.code); });",
+              "var json = pm.response.json();",
+              "if (pm.response.code === 410) {",
+              "  pm.test('Link already used (410)', function(){ pm.expect(json.statusCode || 410).to.eql(410); });",
+              "} else {",
+              "  pm.test('ok=true', function(){ pm.expect(json.ok).to.eql(true); });",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

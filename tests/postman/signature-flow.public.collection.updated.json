@@ -1,0 +1,133 @@
+{
+  "info": {
+    "_postman_id": "e61220b5-58e7-4c60-9735-e8541cdb8ffd",
+    "name": "RentalOS Public Signature Flow (Token from /public/sign/<token>)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Public - Info (token check)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{PUBLIC_LINK_TOKEN}}"
+          },
+          {
+            "key": "x-public-token",
+            "value": "{{PUBLIC_LINK_TOKEN}}"
+          }
+        ],
+        "url": {
+          "raw": "{{BASE_URL}}/api/public/info?token={{PUBLIC_LINK_TOKEN}}",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "info"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{PUBLIC_LINK_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"Status is 200\", function () {",
+              "  pm.response.to.have.status(200);",
+              "});",
+              "",
+              "// Info endpoint may not return {ok:true}; just ensure we got JSON",
+              "pm.test(\"Response is JSON\", function () {",
+              "  pm.response.to.be.json;",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Sign (tenant)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{PUBLIC_LINK_TOKEN}}"
+          },
+          {
+            "key": "x-public-token",
+            "value": "{{PUBLIC_LINK_TOKEN}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{PUBLIC_LINK_TOKEN}}\",\n  \"documentId\": \"{{DOCUMENT_ID}}\",\n  \"consent\": \"{{CONSENT}}\",\n  \"signerName\": \"{{SIGNER_NAME}}\",\n  \"signerRole\": \"{{SIGNER_ROLE}}\"\n}"
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/api/public/sign?token={{PUBLIC_LINK_TOKEN}}",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "sign"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{PUBLIC_LINK_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "// Expected: 200 when token is valid and signature payload is accepted.",
+              "// 410 usually means the link/token is expired or already consumed (already signed).",
+              "pm.test(\"Status is 200 (or 410 if link already consumed)\", function () {",
+              "  pm.expect([200, 410]).to.include(pm.response.code);",
+              "});",
+              "",
+              "if (pm.response.code === 200) {",
+              "  pm.test(\"ok=true (when 200)\", function () {",
+              "    const jsonData = pm.response.json();",
+              "    pm.expect(jsonData).to.have.property(\"ok\", true);",
+              "  });",
+              "} else {",
+              "  console.log(\"SIGN returned 410 Gone:\", pm.response.text());",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

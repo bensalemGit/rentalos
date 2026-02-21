@@ -85,3 +85,19 @@ _dr_work/
 infra/storage_before_restore_*/
 
 infra/_compose_resolved.yml
+
+# local dumps / scratch
+MEUBLE_RP_contract_*.html
+test.pdf
+-e
+apps/api/=1
+
+# keep tests/postman versioned, ignore local artifacts
+tests/**/newman/
+tests/**/reports/
+tests/**/*.pdf
+tests/**/*.html
+tests/**/*.log
+tests/**/.env*
+
+PACK_FINAL_test.pdf

@@ -1,0 +1,214 @@
+{
+  "info": {
+    "name": "RentalOS Public Signature Flow (auto fresh token)",
+    "_postman_id": "3a12596b-50fa-455d-a5dc-c8cc93747b5d",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin - Login (get JWT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{CF_ACCESS_CLIENT_ID}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{CF_ACCESS_CLIENT_SECRET}}"
+          }
+        ],
+        "url": {
+          "raw": "{{BASE_URL}}/api/auth/login",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{ADMIN_EMAIL}}\", \"password\": \"{{ADMIN_PASSWORD}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+              "let jsonData = {}; try { jsonData = pm.response.json(); } catch (e) {}",
+              "const jwt = jsonData.access_token || jsonData.accessToken || jsonData.token || jsonData.jwt;",
+              "pm.expect(jwt, 'JWT missing in response').to.be.ok;",
+              "pm.environment.set('ADMIN_JWT', jwt);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Create tenant public sign link (get public token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{ADMIN_JWT}}"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{CF_ACCESS_CLIENT_ID}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{CF_ACCESS_CLIENT_SECRET}}"
+          }
+        ],
+        "url": {
+          "raw": "{{BASE_URL}}/api/public-links/tenant-sign/send",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public-links",
+            "tenant-sign",
+            "send"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"leaseId\": \"{{LEASE_ID}}\", \"ttlHours\": \"{{TTL_HOURS}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+              "const jsonData = pm.response.json();",
+              "pm.expect(jsonData).to.have.property('ok');",
+              "pm.expect(jsonData.ok).to.eql(true);",
+              "pm.expect(jsonData).to.have.property('token');",
+              "pm.environment.set('PUBLIC_TOKEN', jsonData.token);",
+              "if (jsonData.publicUrl) pm.environment.set('PUBLIC_URL', jsonData.publicUrl);"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Info (token check)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{CF_ACCESS_CLIENT_ID}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{CF_ACCESS_CLIENT_SECRET}}"
+          }
+        ],
+        "url": {
+          "raw": "{{BASE_URL}}/api/public/info?token={{PUBLIC_TOKEN}}",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "info"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{PUBLIC_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+              "let jsonData = {}; try { jsonData = pm.response.json(); } catch (e) {}",
+              "// On ne force pas 'ok' ici car selon implémentation ça peut être un payload 'info' sans ok",
+              "pm.environment.set('PUBLIC_INFO_RAW', pm.response.text());"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Sign (tenant)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{CF_ACCESS_CLIENT_ID}}"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{CF_ACCESS_CLIENT_SECRET}}"
+          }
+        ],
+        "url": {
+          "raw": "{{BASE_URL}}/api/public/sign?token={{PUBLIC_TOKEN}}",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "sign"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{PUBLIC_TOKEN}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"consent\": true, \"signerName\": \"{{SIGNER_NAME}}\", \"signerRole\": \"LOCATAIRE\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "exec": [
+              "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+              "const jsonData = pm.response.json();",
+              "pm.expect(jsonData).to.have.property('ok');",
+              "pm.expect(jsonData.ok).to.eql(true);"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

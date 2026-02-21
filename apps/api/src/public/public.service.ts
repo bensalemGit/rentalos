@@ -317,6 +317,7 @@ RentalOS
     publicUrl: `https://app.rentalos.fr/public/download/${token}`,
   };
 }
+
 async downloadFinalPdf(token: string) {
   // 1) resolve sans consommer pour vérifier existence et purpose
   const row = await this.resolveToken(token, { consume: false });
@@ -337,4 +338,61 @@ async downloadFinalPdf(token: string) {
   const absPath = path.join(this.storageBase, row.storage_path);
   return { absPath, filename: row.filename };
 }
+  async createFinalPackDownloadLink(leaseId: string, ttlHours = 72) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    // Pack final must exist (generated after final signature)
+    const packQ = await this.pool.query(
+      `SELECT *
+       FROM documents
+       WHERE lease_id=$1
+         AND type='PACK_FINAL'
+       ORDER BY created_at DESC
+       LIMIT 1`,
+      [leaseId],
+    );
+
+    if (!packQ.rowCount) {
+      throw new BadRequestException('No final pack document found');
+    }
+
+    const packDoc = packQ.rows[0];
+
+    const token = this.randomToken();
+    const tokenHash = this.sha256(token);
+    const expiresAt = new Date(Date.now() + ttlHours * 3600 * 1000).toISOString();
+
+    await this.pool.query(
+      `INSERT INTO public_links (token_hash, lease_id, document_id, purpose, expires_at)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [tokenHash, leaseId, packDoc.id, 'FINAL_PACK_DOWNLOAD', expiresAt],
+    );
+
+    return {
+      token,
+      expiresAt,
+      leaseId,
+      documentId: packDoc.id,
+      publicUrl: `https://app.rentalos.fr/public/download-pack/${token}`,
+    };
+  }
+
+  async downloadFinalPack(token: string) {
+    // 1) resolve without consuming: validate token + purpose
+    const row = await this.resolveToken(token, { consume: false });
+
+    if (String(row.purpose) !== 'FINAL_PACK_DOWNLOAD') {
+      throw new UnauthorizedException('Invalid token purpose');
+    }
+
+    if (row.consumed_at) {
+      throw new GoneException('Token already used');
+    }
+
+    // 2) consume now (increments + consumed_at)
+    await this.resolveToken(token, { consume: true });
+
+    const absPath = path.join(this.storageBase, row.storage_path);
+    return { absPath, filename: row.filename };
+  }
 }
