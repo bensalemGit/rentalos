@@ -95,8 +95,23 @@ apps/api/=1
 # ignore all tests by default
 tests/
 
-# but keep Postman collections/environments
-!tests/postman/
-!tests/postman/**
+# local dumps / scratch
+MEUBLE_RP_contract_*.html
+test.pdf
+PACK_FINAL_test.pdf
+-e
+apps/api/=1
+
+# test artifacts (keep tests tracked)
+tests/**/newman/*.html
+tests/**/newman/*.xml
+tests/**/output/**
+tests/**/.env
 
 PACK_FINAL_test.pdf
+
+# Generated PDFs at repo root (should not be committed)
+CONTRAT_*.pdf
+EDL_*.pdf
+PACK_*.pdf
+*_SIGNED*.pdf
