@@ -99,3 +99,5 @@ tests/**/*.pdf
 tests/**/*.html
 tests/**/*.log
 tests/**/.env*
+
+PACK_FINAL_test.pdf
