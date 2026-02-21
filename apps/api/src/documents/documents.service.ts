@@ -1,7 +1,9 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as crypto from 'crypto';
-import * as fs from 'fs';
+import * as fsSync from 'fs';
+import { PDFDocument } from 'pdf-lib';
+import * as fs from 'fs/promises';
 import * as path from 'path';
 
 type SignRole = 'BAILLEUR' | 'LOCATAIRE';
@@ -28,7 +30,14 @@ export class DocumentsService {
   // Helpers
   // -------------------------------------
   private ensureDir(p: string) {
-    fs.mkdirSync(p, { recursive: true });
+    fsSync.mkdirSync(p, { recursive: true });
+  }
+
+
+  // helper compatible with previous snippets
+  private sha256(bytes: Uint8Array | Buffer): string {
+    const buf = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+    return this.sha256Buffer(buf);
   }
 
   private sha256Buffer(buf: Buffer) {
@@ -36,22 +45,43 @@ export class DocumentsService {
   }
 
   private sha256File(absPath: string) {
-    const buf = fs.readFileSync(absPath);
+    const buf = fsSync.readFileSync(absPath);
     return this.sha256Buffer(buf);
   }
 
   private fileToDataUrlPng(absPath: string) {
-    const b = fs.readFileSync(absPath);
+    const b = fsSync.readFileSync(absPath);
     return `data:image/png;base64,${b.toString('base64')}`;
   }
 
   private isoDate(d: any): string {
     if (!d) return '';
-    const s = String(d);
+
+    // Date object
+    if (d instanceof Date) {
+      // -> YYYY-MM-DD
+      return d.toISOString().slice(0, 10);
+    }
+
+    // numeric timestamp
+    if (typeof d === 'number') {
+      return new Date(d).toISOString().slice(0, 10);
+    }
+
+    const s = String(d).trim();
+
+    // already YYYY-MM-DD
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    // starts with YYYY-MM-DD (ex: 2026-02-21T00:00:00.000Z)
     const m = s.match(/^(\d{4}-\d{2}-\d{2})/);
     if (m) return m[1];
-    return s.slice(0, 10);
+
+    // last resort: try Date parse
+    const dt = new Date(s);
+    if (!isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
+
+    return '';
   }
 
   private formatDateFr(d: any): string {
@@ -134,6 +164,35 @@ export class DocumentsService {
     const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, { method: 'POST', body: form as any });
     if (!resp.ok) throw new BadRequestException(`PDF generation failed: ${await resp.text()}`);
     return Buffer.from(await resp.arrayBuffer());
+  }
+
+
+  // -------------------------------------
+  // PDF merge helpers (PACK_FINAL)
+  // -------------------------------------
+  private async mergePdfs(absPaths: string[]): Promise<Uint8Array> {
+    const merged = await PDFDocument.create();
+
+    for (const p of absPaths) {
+      const bytes = await fs.readFile(p);
+      const pdf = await PDFDocument.load(bytes);
+      const pages = await merged.copyPages(pdf, pdf.getPageIndices());
+      pages.forEach((pg) => merged.addPage(pg));
+    }
+
+    return await merged.save();
+  }
+
+  private async listDocsForLease(leaseId: string) {
+    const r = await this.pool.query(
+      `SELECT * FROM documents WHERE lease_id=$1 ORDER BY created_at ASC`,
+      [leaseId],
+    );
+    return r.rows;
+  }
+
+  private pickDoc(docs: any[], type: string) {
+    return docs.find((d) => d.type === type) || null;
   }
 
   // -------------------------------------
@@ -542,6 +601,7 @@ export class DocumentsService {
           u.postal_code as unit_postal_code,
           u.surface_m2,
           u.floor,
+          u.project_id as project_id,
           p.name as project_name,
           b.name as building_name,
           t.full_name as tenant_name,
@@ -583,6 +643,21 @@ export class DocumentsService {
     return q.rows[0];
   }
 
+  private async getLandlordForLease(leaseId: string) {
+  const q = await this.pool.query(
+    `
+    SELECT pl.*
+    FROM leases l
+    JOIN units u ON u.id = l.unit_id
+    JOIN projects p ON p.id = u.project_id
+    LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
+    WHERE l.id = $1
+    `,
+    [leaseId],
+  );
+  return q.rowCount ? q.rows[0] : null;
+}
+
   // -------------------------------------
   // CONTRAT (templated)
   // -------------------------------------
@@ -590,13 +665,27 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
+    const landlord = await this.getLandlordForLease(leaseId);
+
+    if (!landlord) {
+      throw new BadRequestException({
+        message: 'Contract not ready: missing landlord information',
+        missing: ['landlord_profile'],
+      });
+    }
+
+    const landlord_identifiers_html = `
+    <div><b>${this.escapeHtml(landlord.name)}</b></div>
+    <div>${this.escapeHtml(landlord.address)}</div>
+    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+  `.trim();
 
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
     if (leaseKind !== 'MEUBLE_RP' && leaseKind !== 'NU_RP' && leaseKind !== 'SAISONNIER') {
       throw new BadRequestException(`Unsupported lease kind for contract: ${leaseKind}`);
     }
 
-    const templateVersion = '2026-02';
+    const templateVersion = '2026-04';
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
     const irl = this.defaultIrl(row);
 
@@ -604,13 +693,11 @@ export class DocumentsService {
       template_version: templateVersion,
       lease_id_short: this.leaseIdShort(leaseId),
 
-      start_date: this.isoDate(row.start_date),
-      end_date_theoretical: this.isoDate(row.end_date_theoretical),
-
       // Dates FR
-      start_date_fr: this.formatDateFr(row.start_date),
-      end_date_theoretical_fr: this.formatDateFr(row.end_date_theoretical),
+      start_date: this.formatDateFr(row.start_date),
+      end_date_theoretical: this.formatDateFr(row.end_date_theoretical),
 
+      //Unité et projet
       unit_code: this.escapeHtml(row.unit_code),
       unit_label: this.escapeHtml(row.unit_label),
       unit_address_line1: this.escapeHtml(row.unit_address_line1),
@@ -619,11 +706,13 @@ export class DocumentsService {
       project_name: this.escapeHtml(row.project_name || '-'),
       building_name: this.escapeHtml(row.building_name || '-'),
 
-      landlord_name: this.escapeHtml(process.env.LANDLORD_NAME || 'Bailleur'),
-      landlord_address: this.escapeHtml(process.env.LANDLORD_ADDRESS || '[À compléter]'),
-      landlord_email: this.escapeHtml(process.env.LANDLORD_EMAIL || '[À compléter]'),
-      landlord_phone: this.escapeHtml(process.env.LANDLORD_PHONE || '[À compléter]'),
-      landlord_identifiers_html: this.buildLandlordIdentifiersHtml(),
+      // ✅ Nouveau bloc bailleur
+      landlord_identifiers_html,  // <- on remplace buildLandlordIdentifiersHtml
+      landlord_name: this.escapeHtml(landlord.name),
+      landlord_address: this.escapeHtml(landlord.address),
+      landlord_email: this.escapeHtml(landlord.email),
+      landlord_phone: this.escapeHtml(landlord.phone),
+
 
       tenants_block: this.buildTenantsBlock(row),
       tenant_name: this.escapeHtml(row.tenant_name || ''),
@@ -646,12 +735,30 @@ export class DocumentsService {
       irl_reference_quarter: this.escapeHtml(irl.quarter),
       irl_reference_value: this.escapeHtml(irl.value),
       // ✅ no irl_revision_date column -> use start_date
-      irl_revision_date_fr: this.formatDateFr(row.start_date),
+      irl_revision_date: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
 
       signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
-      signature_date_fr: this.formatDateFr(new Date()),
+      signature_date: this.formatDateFr(new Date()),
     };
+
+    // ----------------------
+    // Guard bailleur “bloquant”
+    // ----------------------
+    const missing: string[] = [];
+    const bad = (v?: string) => !v || v.includes('[À compléter]');
+
+    if (bad(vars.landlord_name)) missing.push('landlord_name');
+    if (bad(vars.landlord_address)) missing.push('landlord_address');
+    if (bad(vars.landlord_email)) missing.push('landlord_email');
+    if (bad(vars.landlord_phone)) missing.push('landlord_phone');
+
+    if (missing.length) {
+      throw new BadRequestException({
+        message: 'Contract not ready: missing landlord information',
+        missing,
+      });
+    }
 
     const html = this.applyVars(tpl.html_template, vars);
     const pdfBuf = await this.htmlToPdfBuffer(html);
@@ -660,7 +767,7 @@ export class DocumentsService {
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
-    fs.writeFileSync(outPdfPath, pdfBuf);
+    fsSync.writeFileSync(outPdfPath, pdfBuf);
 
     const sha = this.sha256File(outPdfPath);
 
@@ -680,6 +787,44 @@ export class DocumentsService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
+    const projectId = row.project_id;
+
+    const landlord = await this.getLandlordForLease(leaseId);
+
+    if (!landlord) {
+      throw new BadRequestException({
+        message: 'Contract not ready: missing landlord information',
+        missing: ['landlord_profile'],
+      });
+    }
+
+    const missing: string[] = [];
+    const bad = (v?: string) => !v || String(v).trim().length === 0 || String(v).includes('[À compléter]');
+
+    if (!landlord) {
+      missing.push('landlord_profile');
+    } else {
+      if (bad(landlord.address)) missing.push('landlord_address');
+      if (bad(landlord.email)) missing.push('landlord_email');
+      if (bad(landlord.phone)) missing.push('landlord_phone');
+      if (bad(landlord.name)) missing.push('landlord_name');
+    }
+
+    if (missing.length) {
+      throw new BadRequestException({
+        message: 'Notice not ready: missing landlord information',
+        missing,
+      });
+    }
+
+    if (!landlord) throw new BadRequestException('Missing landlord profile');
+
+    const landlord_identifiers_html = `
+    <div><b>${this.escapeHtml(landlord.name)}</b></div>
+    <div>${this.escapeHtml(landlord.address)}</div>
+    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+  `.trim();
+
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
     if (leaseKind === 'SAISONNIER') {
@@ -726,7 +871,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
-    fs.writeFileSync(outPdfPath, pdfBuf);
+    fsSync.writeFileSync(outPdfPath, pdfBuf);
 
     const sha = this.sha256File(outPdfPath);
 
@@ -822,10 +967,10 @@ h1{font-size:16pt;margin:0 0 10px 0}
         const abs = path.join(this.storageBase, p.storage_path);
         let dataUrl = '';
         try {
-          const buf = fs.readFileSync(abs);
+          const buf = fsSync.readFileSync(abs);
           dataUrl = `data:${p.mime_type};base64,${buf.toString('base64')}`;
         } catch {
-          dataUrl = '';
+          dataUrl = '<div class=missing">Photo introuvable</div>';
         }
 
         annexHtml += `
@@ -893,7 +1038,7 @@ ${annexHtml}
     const outPdfPath = path.join(outDir, pdfName);
 
     const pdfBuf = await this.htmlToPdfBuffer(html);
-    fs.writeFileSync(outPdfPath, pdfBuf);
+    fsSync.writeFileSync(outPdfPath, pdfBuf);
 
     const sha = this.sha256File(outPdfPath);
 
@@ -1018,7 +1163,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     const outPdfPath = path.join(outDir, pdfName);
 
     const pdfBuf = await this.htmlToPdfBuffer(html);
-    fs.writeFileSync(outPdfPath, pdfBuf);
+    fsSync.writeFileSync(outPdfPath, pdfBuf);
 
     const sha = this.sha256File(outPdfPath);
 
@@ -1048,12 +1193,30 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     }
 
     const edl = await this.generateEdlPdf(leaseId);
-    const inv = await this.generateInventoryPdf(leaseId);
+    const inv = await this.generateInventoryPdf(leaseId);    
 
-    const contractBuf = fs.readFileSync(path.join(this.storageBase, contract.storage_path));
-    const edlBuf = fs.readFileSync(path.join(this.storageBase, edl.storage_path));
-    const invBuf = fs.readFileSync(path.join(this.storageBase, inv.storage_path));
-    const noticeBuf = notice ? fs.readFileSync(path.join(this.storageBase, notice.storage_path)) : null;
+    // ----- Variables du template 2026-03 -----
+    const signature_date_fr = this.formatDateFr(new Date());
+    const signature_place = row.city; // pas le CP
+    const lease_start_date_fr = this.formatDateFr(row.start_date);
+    const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
+
+    // Durée du bail
+    const lease_duration_label = '1 an'; // ou calcul dynamique si nécessaire
+
+    // Annexes HTML
+    let annexes_list_html = '<ul>';
+    if (contract) annexes_list_html += `<li>Contrat</li>`;
+    if (notice) annexes_list_html += `<li>Avis</li>`;
+    if (edl) annexes_list_html += `<li>État des lieux</li>`;
+    if (inv) annexes_list_html += `<li>Inventaire</li>`;
+    annexes_list_html += '</ul>';
+
+
+    const contractBuf = fsSync.readFileSync(path.join(this.storageBase, contract.storage_path));
+    const edlBuf = fsSync.readFileSync(path.join(this.storageBase, edl.storage_path));
+    const invBuf = fsSync.readFileSync(path.join(this.storageBase, inv.storage_path));
+    const noticeBuf = notice ? fsSync.readFileSync(path.join(this.storageBase, notice.storage_path)) : null;
 
     const parts: Array<{ filename: string; buffer: Buffer }> = [];
     parts.push({ filename: contract.filename, buffer: contractBuf });
@@ -1061,14 +1224,34 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     parts.push({ filename: edl.filename, buffer: edlBuf });
     parts.push({ filename: inv.filename, buffer: invBuf });
 
-    const mergedBuf = await this.mergePdfs(parts);
+    // Création du HTML d'info avec tes variables (que tu as déjà calculées plus haut)
+    const infoHtml = `
+    <html><head><style>body { font-family: Arial; font-size: 10pt; }</style></head><body>
+      <h2>Informations du pack</h2>
+      <p>Date de signature : ${signature_date_fr}</p>
+      <p>Lieu de signature : ${this.escapeHtml(signature_place)}</p>
+      <p>Période du bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
+      <p>Durée du bail : ${lease_duration_label}</p>
+      <p>Annexes incluses : ${annexes_list_html}</p>
+      &{annexes_list_html}
+    </body></html>`;
+
+    // Génération du PDF buffer à partir de ce HTML
+    const infoPdfBuf = await this.htmlToPdfBuffer(infoHtml);
+
+    // Injection dans la liste des fichiers à fusionner
+    parts.unshift({ filename: 'info_pack.pdf', buffer: infoPdfBuf });
+
+    const mergedBuf = await this.mergePdfsGotenberg(parts);
     const mergedSha = this.sha256Buffer(mergedBuf);
 
+    
     const pdfName = `PACK_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
-    fs.writeFileSync(outPdfPath, mergedBuf);
+    fsSync.writeFileSync(outPdfPath, mergedBuf);
+
 
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
@@ -1082,7 +1265,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   // ---------------------------------------------
   // Merge PDFs via Gotenberg
   // ---------------------------------------------
-  private async mergePdfs(pdfs: Array<{ filename: string; buffer: Buffer }>): Promise<Buffer> {
+  private async mergePdfsGotenberg(pdfs: Array<{ filename: string; buffer: Buffer }>): Promise<Buffer> {
     const form = new FormData();
     for (const p of pdfs) {
       form.append('files', new Blob([new Uint8Array(p.buffer)], { type: 'application/pdf' }), p.filename);
@@ -1214,9 +1397,9 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   }
 
   const absPdf = path.join(this.storageBase, doc.storage_path);
-  if (!fs.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
+  if (!fsSync.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
 
-  const originalPdfBuf = fs.readFileSync(absPdf);
+  const originalPdfBuf = fsSync.readFileSync(absPdf);
   const originalSha = this.sha256Buffer(originalPdfBuf);
 
   // ✅ anti double signature (tenant)
@@ -1282,7 +1465,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       : `signature_${documentId}_${signerRole}_${Date.now()}.png`;
 
   const sigAbs = path.join(sigDir, sigFile);
-  fs.writeFileSync(sigAbs, imgBuf);
+  fsSync.writeFileSync(sigAbs, imgBuf);
 
   const signedAt = new Date().toISOString();
 
@@ -1412,7 +1595,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       }
     });
 
-    const mergedBuf = await this.mergePdfs(mergeParts);
+    const mergedBuf = await this.mergePdfsGotenberg(mergeParts);
     const mergedSha = this.sha256Buffer(mergedBuf);
 
     const signedDir = path.join(this.storageBase, 'units', doc.unit_id, 'leases', doc.lease_id, 'documents');
@@ -1420,7 +1603,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
     const signedName = (doc.filename || 'document.pdf').replace(/\.pdf$/i, '') + `_SIGNED_FINAL.pdf`;
     const signedAbs2 = path.join(signedDir, signedName);
-    fs.writeFileSync(signedAbs2, mergedBuf);
+    fsSync.writeFileSync(signedAbs2, mergedBuf);
 
     const insDoc = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
@@ -1430,10 +1613,63 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
     await this.pool.query(`UPDATE documents SET signed_final_document_id=$1, finalized_at = NOW(), signed_final_sha256 = $3 WHERE id=$2`, [insDoc.rows[0].id, doc.id, mergedSha]);
 
+        const finalSignedDocument = insDoc.rows[0];
+
+    // --- Build PACK_FINAL (contract + annexes) ---
+    const leaseId = finalSignedDocument.lease_id;
+
+    // 1) Contract final signed PDF
+    const contractAbs = path.join(this.storageBase, finalSignedDocument.storage_path);
+
+    // 2) Annexes (optional but in correct order)
+    const docs = await this.listDocsForLease(leaseId);
+
+    const notice = this.pickDoc(docs, 'NOTICE');
+    const edl = this.pickDoc(docs, 'EDL');
+    const inventaire = this.pickDoc(docs, 'INVENTAIRE');
+
+    // You can add DDT later if you implement it as a document type
+    const annexes = [notice, edl, inventaire].filter(Boolean);
+
+    // 3) Merge paths: contract first, then annexes
+    const absPaths = [contractAbs, ...annexes.map((d: any) => path.join(this.storageBase, d.storage_path))];
+
+    const packBytes = await this.mergePdfs(absPaths);
+
+    // 4) Storage path
+    const packFilename = finalSignedDocument.filename.replace(/\.pdf$/i, '') + '_PACK_FINAL.pdf';
+    const packStoragePath = finalSignedDocument.storage_path.replace(/\.pdf$/i, '') + '_PACK_FINAL.pdf';
+    const packAbs = path.join(this.storageBase, packStoragePath);
+
+    await fs.mkdir(path.dirname(packAbs), { recursive: true });
+    await fs.writeFile(packAbs, packBytes);
+
+    // 5) SHA
+    const packSha256 = this.sha256(packBytes);
+
+    // 6) Insert PACK_FINAL document row
+    const packIns = await this.pool.query(
+      `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+       RETURNING *`,
+      [
+        finalSignedDocument.unit_id,
+        finalSignedDocument.lease_id,
+        'PACK_FINAL',
+        packFilename,
+        packStoragePath,
+        packSha256,
+        doc.id,
+      ],
+    );
+
+    const packFinalDocument = packIns.rows[0];
+
     return {
       ok: true,
       pending: false,
-      finalSignedDocument: insDoc.rows[0],
+      finalSignedDocument,
+      packFinalDocument,
       signatures: sigOrder,
       signedPdfSha256: mergedSha,
     };
