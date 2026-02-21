@@ -1,0 +1,235 @@
+{
+  "info": {
+    "name": "RentalOS Public Signature Flow (auto fresh token) - v5",
+    "_postman_id": "5bece85b-ebdd-4c1e-8a03-b9e52ac5e73f",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Admin - Login (get JWT)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{cf_access_client_id}}",
+            "type": "text"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{cf_access_client_secret}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/auth/login",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"email\": \"{{admin_email}}\", \"password\": \"{{admin_password}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200 or 201', function () {",
+              "  pm.expect([200,201]).to.include(pm.response.code);",
+              "});",
+              "",
+              "// Cloudflare Access redirect returns HTML; fail fast with a helpful message",
+              "pm.test('Response is JSON (not Cloudflare HTML)', function () {",
+              "  pm.expect(pm.response.headers.get('content-type') || '').to.not.include('text/html');",
+              "});",
+              "",
+              "var res = pm.response.json();",
+              "pm.environment.set('admin_jwt', res.access_token || res.token || '');",
+              "pm.test('JWT stored', function () {",
+              "  pm.expect(pm.environment.get('admin_jwt')).to.be.a('string');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin - Create tenant public sign link (get public token)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{admin_jwt}}"
+          },
+          {
+            "key": "CF-Access-Client-Id",
+            "value": "{{cf_access_client_id}}",
+            "type": "text"
+          },
+          {
+            "key": "CF-Access-Client-Secret",
+            "value": "{{cf_access_client_secret}}",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/public-links/tenant-sign/send",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "public-links",
+            "tenant-sign",
+            "send"
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"leaseId\": \"{{lease_id}}\", \"ttlHours\": \"{{ttl_hours}}\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200 or 201', function () {",
+              "  pm.expect([200,201]).to.include(pm.response.code);",
+              "});",
+              "pm.test('Response is JSON (not Cloudflare HTML)', function () {",
+              "  pm.expect(pm.response.headers.get('content-type') || '').to.not.include('text/html');",
+              "});",
+              "var res = pm.response.json();",
+              "pm.environment.set('public_token', res.token || '');",
+              "pm.test('public token present', function () {",
+              "  pm.expect(pm.environment.get('public_token')).to.be.a('string').and.not.equal('');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Info (token check)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/public/info?token={{public_token}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "info"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{public_token}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () {",
+              "  pm.expect(pm.response.code).to.eql(200);",
+              "});",
+              "var res = pm.response.json();",
+              "pm.test('ok=true', function () {",
+              "  pm.expect(res).to.have.property('ok', true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Sign (tenant)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/public/sign?token={{public_token}}",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "sign"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{public_token}}"
+            }
+          ]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\"consent\": true, \"signerName\": \"Newman Test\", \"signerRole\": \"LOCATAIRE\"}"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200 or 410 (already used)', function () {",
+              "  pm.expect([200,410]).to.include(pm.response.code);",
+              "});",
+              "var res = pm.response.json();",
+              "if (pm.response.code === 410) {",
+              "  pm.test('Link already used (410)', function () {",
+              "    pm.expect(res).to.have.property('statusCode', 410);",
+              "  });",
+              "} else {",
+              "  pm.test('ok=true', function () {",
+              "    pm.expect(res).to.have.property('ok', true);",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

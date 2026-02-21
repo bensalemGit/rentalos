@@ -1,0 +1,123 @@
+{
+  "info": {
+    "_postman_id": "e61220b5-58e7-4c60-9735-e8541cdb8ffd",
+    "name": "RentalOS Public Signature Flow (Token from /public/sign/<token>)",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Public - Info (token check)",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{PUBLIC_LINK_TOKEN}}"
+          },
+          {
+            "key": "x-public-token",
+            "value": "{{PUBLIC_LINK_TOKEN}}"
+          }
+        ],
+        "url": {
+          "raw": "{{BASE_URL}}/api/public/info?token={{PUBLIC_LINK_TOKEN}}",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "info"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{PUBLIC_LINK_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('ok=true', function () {",
+              "  const j = pm.response.json();",
+              "  pm.expect(j).to.have.property('ok');",
+              "  pm.expect(j.ok).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Public - Sign (tenant)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{PUBLIC_LINK_TOKEN}}"
+          },
+          {
+            "key": "x-public-token",
+            "value": "{{PUBLIC_LINK_TOKEN}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"token\": \"{{PUBLIC_LINK_TOKEN}}\",\n  \"documentId\": \"{{DOCUMENT_ID}}\",\n  \"consent\": \"{{CONSENT}}\",\n  \"signerName\": \"{{SIGNER_NAME}}\",\n  \"signerRole\": \"{{SIGNER_ROLE}}\"\n}"
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/api/public/sign?token={{PUBLIC_LINK_TOKEN}}",
+          "host": [
+            "{{BASE_URL}}"
+          ],
+          "path": [
+            "api",
+            "public",
+            "sign"
+          ],
+          "query": [
+            {
+              "key": "token",
+              "value": "{{PUBLIC_LINK_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Status is 200', function () { pm.response.to.have.status(200); });",
+              "pm.test('ok=true', function () {",
+              "  const j = pm.response.json();",
+              "  pm.expect(j).to.have.property('ok');",
+              "  pm.expect(j.ok).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
