@@ -45,6 +45,8 @@ export class LeasesService {
 
       // ✅ designation, IRL and keys
       leaseDesignation,
+      // ✅ NEW: contract clauses (jsonb)
+      leaseTerms,
       keysCount,
       irlReferenceQuarter,
       irlReferenceValue,
@@ -65,6 +67,17 @@ export class LeasesService {
         leaseDesignationJson = JSON.parse(leaseDesignation);
       } catch {
         leaseDesignationJson = { description: leaseDesignation };
+      }
+    }
+
+    // ✅ normalize leaseTerms (jsonb object)
+    let leaseTermsJson: any = {};
+    if (leaseTerms && typeof leaseTerms === 'object') leaseTermsJson = leaseTerms;
+    else if (typeof leaseTerms === 'string' && leaseTerms.trim()) {
+      try {
+        leaseTermsJson = JSON.parse(leaseTerms);
+      } catch {
+        leaseTermsJson = { raw: leaseTerms };
       }
     }
 
@@ -100,11 +113,12 @@ export class LeasesService {
            status, kind,
            guarantor_full_name, guarantor_email, guarantor_phone, guarantor_address,
            lease_designation,
+           lease_terms,
            keys_count,
            irl_reference_quarter, irl_reference_value,
            charges_mode
          )
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft',$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
          RETURNING *`,
         [
           unitId,
@@ -121,6 +135,7 @@ export class LeasesService {
           guarantorPhone ? String(guarantorPhone) : null,
           guarantorAddress ? String(guarantorAddress) : null,
           leaseDesignationJson ? JSON.stringify(leaseDesignationJson) : null,
+                    JSON.stringify(leaseTermsJson),
           Number.isFinite(keysCountInt as any) ? keysCountInt : null,
           irlReferenceQuarter ? String(irlReferenceQuarter) : null,
           Number.isFinite(irlValueNum as any) ? irlValueNum : null,
@@ -213,6 +228,28 @@ export class LeasesService {
 
     if (!r.rowCount) throw new BadRequestException('Unknown leaseId');
     return { ok: true, lease: r.rows[0] };
+  }
+
+
+  // ✅ NEW: store/update contract clauses (source of truth)
+  async updateTerms(id: string, body: any) {
+    const terms = body?.leaseTerms ?? body?.terms ?? body;
+    let json: any = {};
+    if (terms && typeof terms === 'object') json = terms;
+    else if (typeof terms === 'string' && terms.trim()) {
+      try {
+        json = JSON.parse(terms);
+      } catch {
+        json = { raw: terms };
+      }
+    }
+
+    const r = await this.pool.query(
+      `UPDATE leases SET lease_terms = $2::jsonb WHERE id=$1 RETURNING id, lease_terms`,
+      [id, JSON.stringify(json)],
+    );
+    if (!r.rowCount) throw new BadRequestException('Unknown lease');
+    return r.rows[0];
   }
 
   async activateLease(leaseId: string) {
