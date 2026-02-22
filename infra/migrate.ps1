@@ -1,4 +1,4 @@
-param(
+﻿param(
   [switch]$Status,
   [switch]$Apply,
   [switch]$DryRun,
