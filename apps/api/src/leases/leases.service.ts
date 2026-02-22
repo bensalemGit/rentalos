@@ -233,24 +233,44 @@ export class LeasesService {
 
   // ✅ NEW: store/update contract clauses (source of truth)
   async updateTerms(id: string, body: any) {
-    const terms = body?.leaseTerms ?? body?.terms ?? body;
-    let json: any = {};
-    if (terms && typeof terms === 'object') json = terms;
-    else if (typeof terms === 'string' && terms.trim()) {
-      try {
-        json = JSON.parse(terms);
-      } catch {
-        json = { raw: terms };
-      }
-    }
+  const terms = body?.leaseTerms ?? body?.terms ?? body;
 
-    const r = await this.pool.query(
-      `UPDATE leases SET lease_terms = $2::jsonb WHERE id=$1 RETURNING id, lease_terms`,
-      [id, JSON.stringify(json)],
-    );
-    if (!r.rowCount) throw new BadRequestException('Unknown lease');
-    return r.rows[0];
+  if (!terms || typeof terms !== 'object') {
+    throw new BadRequestException('leaseTerms must be an object');
   }
+
+  // Defaults “Option A”
+  const normalized: any = {
+    leaseType: terms.leaseType,
+    durationMonths: terms.durationMonths ?? 12,
+    tacitRenewal: terms.tacitRenewal ?? true,
+    noticeTenantMonths: terms.noticeTenantMonths ?? 1,
+    noticeLandlordMonths: terms.noticeLandlordMonths ?? 3,
+    solidarityClause: terms.solidarityClause ?? false,
+    insuranceRequired: terms.insuranceRequired ?? true,
+    sublettingAllowed: terms.sublettingAllowed ?? false,
+    petsPolicy: terms.petsPolicy ?? 'UNKNOWN',
+    specialClauses: terms.specialClauses ?? '',
+    irlIndexation: terms.irlIndexation ?? { enabled: false },
+  };
+
+  // Règle métier IRL
+  if (normalized.irlIndexation?.enabled === true) {
+    if (!normalized.irlIndexation.referenceQuarter || normalized.irlIndexation.referenceValue === undefined) {
+      throw new BadRequestException('irlIndexation.referenceQuarter and referenceValue are required when enabled=true');
+    }
+  } else {
+    // si disabled, on nettoie (évite états bizarres)
+    normalized.irlIndexation = { enabled: false };
+  }
+
+  const r = await this.pool.query(
+    `UPDATE leases SET lease_terms = $2::jsonb WHERE id=$1 RETURNING id, lease_terms`,
+    [id, JSON.stringify(normalized)],
+  );
+  if (!r.rowCount) throw new BadRequestException('Unknown lease');
+  return r.rows[0];
+}
 
   async activateLease(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
