@@ -124,3 +124,19 @@ Commande :
 ```powershell
 cd C:\rentalos\tests\postman
 newman run .\rentalos_signature_flow_autofresh_v8.postman_collection.json -e .\rentalos_env_autofresh_v8.postman_environment.json
+
+### ✅ Bloc 4 — à ajouter dans `docs/handover/MASTER_HANDOVER.md`
+```md
+## Git workflow (règles)
+
+- `main` = branche de production (source de vérité)
+- Chaque changement passe par une branche courte + PR :
+  - `feat/...` ou `fix/...`
+- Après merge PR :
+  - suppression de la branche distante + locale recommandée
+
+### Protection recommandée (GitHub)
+
+- Interdire les push directs sur `main`
+- Exiger une PR + checks (même minimal)
+- Squash merge ou merge commit : au choix (le projet utilise déjà des "Merge pull request #X")
