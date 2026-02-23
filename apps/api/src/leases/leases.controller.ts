@@ -1,7 +1,8 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { LeasesService } from './leases.service';
 import { JwtGuard } from '../auth/jwt.guard';
 import { CreateLeaseDto } from './dto/create-lease.dto';
+import { UpdateLeaseTermsDto } from './dto/update-lease-terms.dto';
 
 
 @Controller('leases')
@@ -67,7 +68,8 @@ export class LeasesController {
 
   // ✅ NEW: update contract clauses (lease_terms jsonb)
   @Patch(':id/terms')
-  updateTerms(@Param('id') id: string, @Body() body: any) {
+  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  updateTerms(@Param('id') id: string, @Body() body: UpdateLeaseTermsDto) {
     return this.leases.updateTerms(id, body);
   }
 

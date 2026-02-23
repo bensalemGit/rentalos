@@ -1,34 +1,30 @@
-Parfait.
-Là on parle sérieux 👍
-
-Je vais te produire **une v11 réellement supérieure à la v10**, structurée comme un vrai document d’architecture + produit + juridique + ops.
-
-Ce qui suit est **la version complète**, prête à remplacer intégralement v10 dans `/docs/RentalOS_MASTER_SPEC_v11.md`.
-
 ---
 
 # RentalOS — Audit & Spécification Détaillée
 
-## MASTER v11 (Source of Truth Unique)
+## MASTER v11 — Source of Truth Unique
 
-Date : 2026-02-21
+Date : 2026-02-23
 Repo : [https://github.com/bensalemGit/rentalos](https://github.com/bensalemGit/rentalos)
-Statut : Infra PROD READY — Moteur Bail en consolidation juridique
+Branche : chore/audit-docs
+Statut : Infra PROD READY — Moteur Bail MEUBLÉ RP stabilisé — Freeze Template sécurisé
 
 ---
 
 # 0. PHILOSOPHIE DU PROJET
 
-RentalOS repose sur 6 principes structurants :
+RentalOS repose sur 8 principes structurants :
 
 1. Stack simple et maîtrisée
-2. Zéro ORM, SQL explicite
-3. Versionnement SQL incrémental clair
+2. Zéro ORM — SQL explicite
+3. Versionnement SQL incrémental traçable
 4. Sécurité par conception
-5. Documents juridiquement fiables
+5. Documents juridiquement robustes
 6. PRA validé en conditions réelles
+7. Templates contractuels versionnés et figés
+8. Séparation stricte UI / API / DB
 
-Ce document remplace intégralement le MASTER v10.
+Ce document remplace intégralement v10.
 
 ---
 
@@ -39,11 +35,12 @@ Ce document remplace intégralement le MASTER v10.
 * OS : Windows 11
 * Docker Desktop
 * Postgres 16
-* Node / NestJS (API)
+* Node + NestJS (API)
 * Next.js 14 (App Router)
-* Gotenberg (génération PDF)
+* Gotenberg (PDF engine)
 * rclone (Cloudflare R2)
 * Brevo (notifications)
+* Cloudflare Access (protection API)
 
 ---
 
@@ -69,16 +66,13 @@ Architecture mono-host, multi-container.
 
 ## 1.3 Politique ORM
 
-⚠️ Aucun Prisma
-⚠️ Aucun ORM
+Aucun Prisma.
+Aucun ORM.
+
 ✔ SQL natif via `pg` pool
-
-Raison :
-
-* Maîtrise complète des requêtes
-* Pas d’abstraction fragile
-* Contrôle fin migrations
-* Prévisibilité production
+✔ Requêtes explicites
+✔ Migrations versionnées
+✔ Contrôle total en production
 
 ---
 
@@ -92,8 +86,16 @@ Dossier :
 infra/postgres-init/
 ```
 
-Fichiers 001 → 081
-Versionnement incrémental.
+Migrations incrémentales 001 → 088.
+
+### Migrations récentes majeures
+
+086_contract_meuble_rp_template_2026-04_freeze.sql
+087_contract_meuble_rp_template_2026-04_freeze_fix.sql
+087_contract_meuble_rp_template_2026-04_freeze_from_repo.sql
+088_sanitize_document_templates_contract_meuble_rp_2026-04.sql
+
+Toutes APPLIED.
 
 ---
 
@@ -128,6 +130,7 @@ Versionnement incrémental.
 
 * MEUBLE_RP
 * NU_RP
+* SAISONNIER (prévu)
 
 ### doc_type
 
@@ -151,99 +154,40 @@ Versionnement incrémental.
 
 ---
 
-## 3.1 Types supportés
+## 3.1 MEUBLE_RP (stabilisé terrain)
 
-### 3.1.1 MEUBLE_RP
-
-✔ Durée 1 an
-✔ Dépôt max 2 mois
-✔ Liste mobilier
+✔ Durée 12 mois
+✔ Dépôt ≤ 2 mois
 ✔ IRL
 ✔ Colocation
 ✔ Garants multiples
 ✔ Visale
+✔ Bloc désignation complet
+✔ Charges forfait / provision
 
-### 3.1.2 NU_RP (à finaliser)
+Normalisation des clauses via :
 
-* Durée 3 ans
-* Dépôt max 1 mois
-* Diagnostics spécifiques
-* Clause vide (pas de mobilier)
+```
+normalizeLeaseTermsForContract()
+```
+
+Source de vérité : `lease_terms` JSON en DB.
 
 ---
 
-## 3.2 Structure d’un bail
+## 3.2 Structure complète d’un bail
 
-Un bail est composé de :
+Un bail contient :
 
-* Identité bailleur (project_landlords)
+* Bailleur (project_landlords)
 * 1..n locataires (lease_tenants)
-* Conditions financières (lease_amounts)
-* Paramètres IRL
-* Mode charges (forfait / provision)
-* Dépôt
-* Clauses spécifiques
-* Annexes
+* Montants (lease_amounts)
+* lease_terms JSON
+* Désignation structurée
+* Bloc IRL
+* Bloc garants
+* Bloc colocation
 * Documents générés
-
----
-
-## 3.3 Colocation
-
-Gérée via lease_tenants.
-
-Points juridiques à solidifier :
-
-* Clause solidarité complète
-* Gestion départ colocataire
-* Remplacement colocataire
-* Répartition loyer interne
-
----
-
-## 3.4 Garants
-
-Support :
-
-* 1..n personnes physiques
-* Visale
-
-À renforcer :
-
-* Bloc caution multi-signature
-* Mention manuscrite légale
-* Plafond et durée engagement
-
----
-
-## 3.5 Charges
-
-Modes :
-
-### Forfait
-
-* Non régularisable
-
-### Provision
-
-* Régularisation annuelle
-* Justificatifs requis
-* Historique à prévoir
-
----
-
-## 3.6 IRL
-
-Stockage :
-
-* irl_reference_quarter
-* irl_reference_value
-
-À développer :
-
-* Calcul révision automatique
-* Historique des indexations
-* Avenant généré automatiquement
 
 ---
 
@@ -251,50 +195,176 @@ Stockage :
 
 ---
 
-## 4.1 Templates
+## 4.1 Templates versionnés
 
-Stockés en base :
+Stockés en DB : `document_templates`
 
-document_templates
+Version active MEUBLE_RP :
+`2026-04`
 
-Versions :
+Source physique figée :
 
-* 2026-02
-* 2026-03
-* 2026-04
-
----
-
-## 4.2 Génération
-
-Process :
-
-1. Récupération template
-2. Injection variables
-3. HTML généré
-4. Envoi à Gotenberg
-5. PDF retourné
-6. Stockage FS local
+```
+infra/templates/contract/MEUBLE_RP_2026-04.html
+```
 
 ---
 
-## 4.3 Signature
+## 4.2 Freeze Template — Historique réel
 
-Flux :
+Problèmes rencontrés :
+
+1. CRLF en tête du HTML (`0d0a3c21...`)
+2. Pollution export SQL (ligne "(1 row)")
+3. Mojibake UTF-8 (Ã / Â)
+4. Téléchargement PDF retournant HTML Cloudflare
+
+Solution progressive :
+
+### 086
+
+Premier freeze manuel
+
+### 087_fix
+
+Correction intermédiaire
+
+### 087_from_repo
+
+Source de vérité = fichier repo versionné
+
+### 088_sanitize
+
+Nettoyage DB :
+
+* suppression `\r`
+* `ltrim()`
+* garantie que le template commence par `<!doctype html>`
+
+---
+
+## 4.3 Hardening newline
+
+Ajout `.gitattributes` :
+
+Forcer LF sur :
+
+* *.sql
+* *.html
+* *.md
+
+Évite CRLF Windows dans migrations.
+
+---
+
+## 4.4 Génération PDF
+
+Flow :
+
+1. fetchLeaseBundle()
+2. normalizeLeaseTermsForContract()
+3. Injection vars
+4. applyVars()
+5. Guard placeholders non résolus
+6. htmlToPdfBuffer (Gotenberg)
+7. SHA256
+8. Insert table documents
+
+---
+
+## 4.5 Sécurisation applyVars
+
+Ajout :
+
+* log clés non résolues
+* guard si `{{...}}` reste dans HTML
+* log mojibake si "Ã" ou "Â" détecté
+
+---
+
+## 4.6 Téléchargement PDF — Protection Cloudflare
+
+Problème identifié :
+
+Si CF headers absents → HTML Cloudflare téléchargé au lieu PDF.
+
+Solution script :
+
+* Inclure `CF-Access-Client-Id`
+* Inclure `CF-Access-Client-Secret`
+* Vérifier magic bytes `%PDF`
+
+---
+
+# 5. UI — NORMALISATION A1 (CRITIQUE)
+
+---
+
+## 5.1 Problème
+
+`GET /leases/:id` retournait plusieurs shapes :
+
+* { lease, tenants, amounts }
+* { data: { ... } }
+* objet direct
+* array fallback
+
+Cela cassait certaines pages.
+
+---
+
+## 5.2 Solution
+
+Ajout :
+
+```
+apps/web/app/_lib/extractLease.ts
+```
+
+Fonction :
+
+```
+extractLeaseBundle(bundle)
+```
+
+Retourne toujours :
+
+{
+lease,
+tenants,
+amounts
+}
+
+---
+
+## 5.3 Pages patchées
+
+* dashboard/leases/page.tsx
+* sign/[leaseId]/page.tsx
+
+Aucun accès direct à j.lease désormais.
+
+---
+
+# 6. SIGNATURE FLOW
+
+---
+
+## 6.1 Flux complet
 
 1. Génération contrat
 2. Lien public locataire
 3. Signature canvas
 4. Lien public bailleur
-5. Signature
-6. Finalisation
-7. Génération PACK_FINAL
+5. Finalisation
+6. Génération PACK_FINAL
+7. One-shot download
 
 ---
 
-## 4.4 Finalisation
+## 6.2 Finalisation
 
-Ajouts récents :
+Colonnes ajoutées :
 
 * parent_document_id
 * signed_final_document_id
@@ -303,15 +373,13 @@ Ajouts récents :
 
 ---
 
-# 5. PUBLIC LINKS — SÉCURITÉ
+# 7. PUBLIC LINKS — SÉCURITÉ
 
 ---
 
-## 5.1 Structure
+Structure :
 
-public_links :
-
-* token_hash
+* token_hash (SHA256)
 * lease_id
 * document_id
 * purpose
@@ -319,139 +387,107 @@ public_links :
 * used_count
 * consumed_at
 
----
+One-shot enforced.
 
-## 5.2 Sécurité
+410 Gone après usage.
 
-* Token jamais stocké en clair
-* Hash SHA256
-* One-shot pour final-pdf et final-pack
-* consumed_at rempli à première utilisation
-* 410 Gone ensuite
-
-Testé via Postman v9 (32 assertions OK).
+Testé via Postman (32 assertions OK).
 
 ---
 
-# 6. FINAL PDF / FINAL PACK
-
-Endpoints :
-
-* /api/public/download-final
-* /api/public/download-pack
-
-PACK_FINAL inclut :
-
-* Contrat signé
-* Notice
-* EDL
-* Inventaire
-* Annexes
+# 8. PRA — BACKUP & RESTORE
 
 ---
 
-# 7. PRA — BACKUP & RESTORE
-
----
-
-## 7.1 Backup quotidien
-
-03:00 via Task Scheduler
+## Backup quotidien 03:00
 
 Génère :
 
-* Dump PGDMP
-* Schema SQL
-* Zip storage
-* Zip config
-* Manifest JSON
+* dump PGDMP
+* schema SQL
+* zip storage
+* zip config
+* manifest JSON
 * SHA256
-* Upload R2 crypté
+* upload R2
 
 Notification Brevo.
 
 ---
 
-## 7.2 Restore
+## Restore validé
 
-Procédure validée :
+Temps < 10 minutes.
 
-* pg_restore
-* Vérification intégrité
-* Temps < 10 minutes
-
-Statut : Production-ready.
+Statut : PROD READY.
 
 ---
 
-# 8. MIGRATIONS CRITIQUES RÉCENTES
-
-* 075_documents_finalization.sql
-* 076_backfill_documents_finalization.sql
-* 077_public_links_consumed_at.sql
-* 080_doc_type_pack_final.sql
-* 081_public_links_purpose_final_pack.sql
-
----
-
-# 9. ÉTAT ACTUEL DU PROJET
+# 9. ÉTAT ACTUEL
 
 ---
 
 ## Stable
 
-✔ Infra
-✔ Docker
-✔ Signature flow
-✔ Final pack
-✔ Public links sécurisés
-✔ Backup PROD READY
+✔ Infra Docker
+✔ Migrations 001 → 088
+✔ Freeze template sécurisé
+✔ Sanitization CRLF
+✔ Mojibake contrôlé
+✔ UI A1 stabilisée
+✔ Signature flow complet
+✔ Public links one-shot
+✔ Backup validé
 
 ---
 
-## Chantier en cours
+## En cours
 
 🔧 Consolidation juridique MEUBLE_RP
-🔧 Implémentation complète NU_RP
-🔧 Automatisation IRL
+🔧 Implémentation NU_RP
+🔧 IRL automation
 
 ---
 
-# 10. RISQUES & CONTRÔLES
+# 10. RISQUES
 
-| Risque                          | Niveau | Mitigation        |
-| ------------------------------- | ------ | ----------------- |
-| Erreur clause juridique         | Moyen  | Relecture expert  |
-| Mauvaise régularisation charges | Moyen  | Historique dédié  |
-| Perte données                   | Faible | PRA validé        |
-| Token leak                      | Faible | SHA256 + one-shot |
-
----
-
-# 11. ROADMAP STRATÉGIQUE 2026
-
-1. Finaliser MEUBLE_RP juridiquement béton
-2. Déployer NU_RP
-3. IRL automation
-4. Avenants automatiques
-5. Gestion remplacement colocataire
-6. Paiements & quittances avancés
+| Risque              | Niveau | Mitigation        |
+| ------------------- | ------ | ----------------- |
+| Clause incorrecte   | Moyen  | Audit juridique   |
+| Mauvais IRL         | Moyen  | Automatisation    |
+| Mauvais template    | Faible | Freeze + sanitize |
+| HTML Cloudflare PDF | Faible | Magic byte check  |
+| Token leak          | Faible | SHA256 + one-shot |
 
 ---
 
-# 12. HANDOVER NOUVEAU CHAT
+# 11. ROADMAP 2026
 
-Stack confirmée :
-Windows 11 + Docker + Postgres 16 + NestJS + Next 14
-SQL natif uniquement
-Aucun Prisma
+1. Finaliser MEUBLE_RP juridiquement
+2. NU_RP complet
+3. IRL automatique
+4. Avenants
+5. Remplacement colocataire
+6. Paiements & quittances avancées
 
-Moteur signature complet
-Public links one-shot
-Backup validé
+---
+
+# 12. HANDOVER READY
+
+Stack confirmée
+SQL natif
+Aucun ORM
+Template figé repo
+Sanitization DB en place
+UI shape normalisée
+Cloudflare PDF protégé
 
 Objectif 2026 :
-Transformer RentalOS en moteur bail juridiquement irréprochable.
+Moteur bail juridiquement irréprochable.
 
 ---
 
+✔ documents.service.ts non commité volontairement
+✔ Suite à traiter dans nouveau chat
+
+---
