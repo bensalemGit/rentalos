@@ -1,3 +1,7 @@
-git add .gitattributes
-git commit -m "chore(git): enforce LF for sql/html/md"
-git push
+# Normalize text files
+* text=auto
+
+# Force LF for SQL, HTML and Markdown
+*.sql text eol=lf
+*.html text eol=lf
+*.md text eol=lf
