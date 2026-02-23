@@ -5,6 +5,7 @@ import * as fsSync from 'fs';
 import { PDFDocument } from 'pdf-lib';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { writeFileSync } from 'fs';
 
 type SignRole = 'BAILLEUR' | 'LOCATAIRE';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
@@ -138,7 +139,8 @@ export class DocumentsService {
   // -------------------------------------
   // Templates
   // -------------------------------------
-  private async getTemplate(kind: string, leaseKind: LeaseKind, version = '2026-02'): Promise<TemplateRow> {
+  private async getTemplate(kind: string, leaseKind: LeaseKind, version = '2026-04'): Promise<TemplateRow> {
+    console.warn("[TPL VERSION USED]", { kind, leaseKind, version });
     const r = await this.pool.query(
       `SELECT * FROM document_templates
        WHERE kind=$1 AND lease_kind=$2 AND version=$3
@@ -158,14 +160,39 @@ export class DocumentsService {
   }
 
   private async htmlToPdfBuffer(html: string): Promise<Buffer> {
-    // Node 18+ : fetch / FormData / Blob are available. Otherwise polyfill required.
+    // Double sécurité côté HTML
+    if (!/<meta\s+charset=/i.test(html)) {
+      html = html.replace(/<head>/i, '<head><meta charset="utf-8">');
+    }
+    if (!/http-equiv=["']Content-Type["']/i.test(html)) {
+      html = html.replace(
+        /<head>/i,
+        '<head><meta http-equiv="Content-Type" content="text/html; charset=utf-8" />'
+      );
+    }
+
+    // BOM + UTF-8
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const htmlBuf = Buffer.concat([bom, Buffer.from(html, 'utf8')]);
+
     const form = new FormData();
-    form.append('files', new Blob([new Uint8Array(Buffer.from(html, 'utf-8'))], { type: 'text/html' }), 'index.html');
-    const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, { method: 'POST', body: form as any });
+    form.append(
+      'files',
+      new Blob([new Uint8Array(htmlBuf)], { type: 'text/html; charset=utf-8' }),
+      'index.html'
+    );
+    if (process.env.DEBUG_CONTRACT_HTML === '1') {
+      writeFileSync('/tmp/contract_debug.html', html, { encoding: 'utf8' });
+    }
+
+    const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, {
+      method: 'POST',
+      body: form as any,
+    });
+
     if (!resp.ok) throw new BadRequestException(`PDF generation failed: ${await resp.text()}`);
     return Buffer.from(await resp.arrayBuffer());
   }
-
 
   // -------------------------------------
   // PDF merge helpers (PACK_FINAL)
@@ -520,6 +547,55 @@ export class DocumentsService {
     return { quarter: String(q), value: String(v) };
   }
 
+  private normalizeLeaseTermsForContract(row: any) {
+  // row.lease_terms peut déjà être un objet (pg) ou une string
+  let t: any = {};
+  try {
+    if (row?.lease_terms && typeof row.lease_terms === 'object') t = row.lease_terms;
+    else if (typeof row?.lease_terms === 'string' && row.lease_terms.trim()) t = JSON.parse(row.lease_terms);
+  } catch {
+    t = {};
+  }
+
+  const leaseType = String(t.leaseType || t.leaseKind || row?.kind || 'MEUBLE_RP').toUpperCase();
+
+  // rétrocompat: specialClause -> specialClauses
+  const specialClauses = String(t.specialClauses ?? t.specialClause ?? '').trim();
+
+  // IRL indexation bloc
+  const irlIdx = t.irlIndexation && typeof t.irlIndexation === 'object' ? t.irlIndexation : {};
+  const irlEnabled = !!irlIdx.enabled;
+
+  const out = {
+    leaseType,
+
+    durationMonths: Number.isFinite(+t.durationMonths) ? +t.durationMonths : 12,
+    tacitRenewal: t.tacitRenewal ?? true,
+
+    noticeTenantMonths: Number.isFinite(+t.noticeTenantMonths) ? +t.noticeTenantMonths : 1,
+    noticeLandlordMonths: Number.isFinite(+t.noticeLandlordMonths) ? +t.noticeLandlordMonths : 3,
+
+    solidarityClause: !!t.solidarityClause,
+
+    irlIndexation: {
+      enabled: irlEnabled,
+      referenceQuarter: irlEnabled ? (irlIdx.referenceQuarter ?? null) : null,
+      referenceValue: irlEnabled ? (irlIdx.referenceValue ?? null) : null,
+    },
+
+    insuranceRequired: t.insuranceRequired ?? true,
+    sublettingAllowed: t.sublettingAllowed ?? false,
+
+    petsPolicy: ['UNKNOWN', 'ALLOWED', 'FORBIDDEN'].includes(String(t.petsPolicy))
+      ? String(t.petsPolicy)
+      : 'UNKNOWN',
+
+    specialClauses,
+  };
+
+  return out;
+}
+
   private buildLandlordIdentifiersHtml(): string {
     const parts: string[] = [];
     const siren = (process.env.LANDLORD_SIREN || '').trim();
@@ -687,7 +763,16 @@ export class DocumentsService {
 
     const templateVersion = '2026-04';
     const tpl = await this.getTemplate('CONTRACT', leaseKind, templateVersion);
+    console.warn("[TPL DEBUG]", {
+      id: tpl.id,
+      kind: tpl.kind,
+      lease_kind: tpl.lease_kind,
+      version: tpl.version,
+      len: tpl.html_template?.length,
+      head: (tpl.html_template || "").slice(0, 120),
+    });
     const irl = this.defaultIrl(row);
+    const terms = this.normalizeLeaseTermsForContract(row);
 
     const vars: Record<string, any> = {
       template_version: templateVersion,
@@ -738,6 +823,28 @@ export class DocumentsService {
       irl_revision_date: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
 
+            // ✅ Lease terms (clauses) — source of truth
+      terms_lease_type: this.escapeHtml(String(terms.leaseType)),
+
+      terms_duration_months: String(terms.durationMonths ?? 12),
+      terms_tacit_renewal: (terms.tacitRenewal ?? true) ? 'Oui' : 'Non',
+
+      terms_notice_tenant_months: String(terms.noticeTenantMonths ?? 1),
+      terms_notice_landlord_months: String(terms.noticeLandlordMonths ?? 3),
+
+      terms_solidarity_clause: terms.solidarityClause ? 'Oui' : 'Non',
+
+      terms_insurance_required: (terms.insuranceRequired ?? true) ? 'Oui' : 'Non',
+      terms_subletting_allowed: (terms.sublettingAllowed ?? false) ? 'Oui' : 'Non',
+
+      terms_pets_policy: this.escapeHtml(String(terms.petsPolicy ?? 'UNKNOWN')),
+
+      terms_irl_enabled: terms.irlIndexation?.enabled ? 'Oui' : 'Non',
+      terms_irl_reference_quarter: this.escapeHtml(String(terms.irlIndexation?.referenceQuarter ?? '')),
+      terms_irl_reference_value: this.escapeHtml(String(terms.irlIndexation?.referenceValue ?? '')),
+
+      terms_special_clauses: this.escapeHtml(String(terms.specialClauses ?? '')),
+
       signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
       signature_date: this.formatDateFr(new Date()),
     };
@@ -759,10 +866,20 @@ export class DocumentsService {
         missing,
       });
     }
+    // 1) check template DB tel que lu par le code
+    if (tpl.html_template.includes("Ã") || tpl.html_template.includes("Â")) {
+      console.warn("[TPL ENCODING] template already mojibake");
+    }
 
+    // 2) génération html final
     const html = this.applyVars(tpl.html_template, vars);
-    const pdfBuf = await this.htmlToPdfBuffer(html);
 
+    // 3) check html final
+    if (html.includes("Ã") || html.includes("Â")) {
+      console.warn("[HTML ENCODING] after applyVars mojibake");
+    }
+
+    const pdfBuf = await this.htmlToPdfBuffer(html);
     const pdfName = `CONTRAT_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
