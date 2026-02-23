@@ -81,6 +81,33 @@ export class LeasesService {
       }
     }
 
+    // ✅ default lease_terms for contract-ready MEUBLE_RP
+    // ✅ default lease_terms for contract-ready MEUBLE_RP (creation)
+    const isEmptyTerms =
+      !leaseTermsJson ||
+      (typeof leaseTermsJson === 'object' &&
+        !Array.isArray(leaseTermsJson) &&
+        Object.keys(leaseTermsJson).length === 0);
+
+    if (leaseKind === 'MEUBLE_RP' && isEmptyTerms) {
+      // coTenantIds already normalized into coIds (excludes principal)
+      const coTenantCount = coIds.length;
+
+      leaseTermsJson = {
+        leaseType: 'MEUBLE_RP',
+        durationMonths: 12,
+        tacitRenewal: true,
+        noticeTenantMonths: 1,
+        noticeLandlordMonths: 3,
+        solidarityClause: coTenantCount > 0,
+        insuranceRequired: true,
+        sublettingAllowed: false,
+        petsPolicy: 'UNKNOWN', // allowed: UNKNOWN | ALLOWED | FORBIDDEN
+        irlIndexation: { enabled: false, referenceQuarter: null, referenceValue: null },
+        specialClauses: '',
+      };
+    }
+    
     const keysCountInt = keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
 
     const irlValueNum =
