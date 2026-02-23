@@ -2,6 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import ImportHousingButton from "./ImportHousingButton";
+import { extractLeaseBundle } from "../../_lib/extractLease";
 
 const API =
   typeof window !== "undefined"
@@ -490,16 +491,37 @@ export default function LeasesPage() {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
-      const j = await r.json().catch(() => ({}));
+      
+      
+      const bundle = await r.json().catch(() => ({}));
       if (!r.ok) {
         setStatus("");
-        setError(j?.message || JSON.stringify(j));
+        setError((bundle as any)?.message || JSON.stringify(bundle));
         return;
       }
-      setDetails(j);
+
+      const { lease, tenants, amounts } = extractLeaseBundle(bundle);
+
+      if (!lease?.id) {
+        setStatus("");
+        setError("Lease bundle invalid");
+        return;
+      }
+
+      // On stocke dans le state un objet au format attendu par la modale
+      setDetails({ lease, tenants, amounts });
 
       // ✅ hydrate edit designation & meta from API response
-      const lease = j?.lease || {};
+      const leaseObj = lease || {};
+      setEditDesignation(coerceLeaseDesignation(leaseObj));
+      setEditKeysCount(leaseObj?.keys_count ?? leaseObj?.keysCount ?? 2);
+      setEditIrlQuarter(String(leaseObj?.irl_reference_quarter ?? leaseObj?.irlReferenceQuarter ?? ""));
+      const irlVal1 = leaseObj?.irl_reference_value ?? leaseObj?.irlReferenceValue ?? "";
+      setEditIrlValue(irlVal1 === null || irlVal1 === undefined ? "" : String(irlVal1));
+
+      setStatus("");
+
+
       setEditDesignation(coerceLeaseDesignation(lease));
       setEditKeysCount(lease?.keys_count ?? lease?.keysCount ?? 2);
       setEditIrlQuarter(String(lease?.irl_reference_quarter ?? lease?.irlReferenceQuarter ?? ""));
@@ -521,15 +543,16 @@ export default function LeasesPage() {
     });
     const j = await r.json().catch(() => ({}));
     if (r.ok) {
-      setDetails(j);
+      const { lease, tenants, amounts } = extractLeaseBundle(j);
 
-      // keep modal in sync (if something changed server-side)
-      const lease = j?.lease || {};
-      setEditDesignation(coerceLeaseDesignation(lease));
-      setEditKeysCount(lease?.keys_count ?? lease?.keysCount ?? 2);
-      setEditIrlQuarter(String(lease?.irl_reference_quarter ?? lease?.irlReferenceQuarter ?? ""));
-      const v = lease?.irl_reference_value ?? lease?.irlReferenceValue ?? "";
-      setEditIrlValue(v === null || v === undefined ? "" : String(v));
+      setDetails({ lease, tenants, amounts });
+
+      const leaseObj = lease || {};
+      setEditDesignation(coerceLeaseDesignation(leaseObj));
+      setEditKeysCount(leaseObj?.keys_count ?? leaseObj?.keysCount ?? 2);
+      setEditIrlQuarter(String(leaseObj?.irl_reference_quarter ?? leaseObj?.irlReferenceQuarter ?? ""));
+      const irlVal2 = leaseObj?.irl_reference_value ?? leaseObj?.irlReferenceValue ?? "";
+      setEditIrlValue(irlVal2 === null || irlVal2 === undefined ? "" : String(irlVal2));
     }
   }
 
@@ -558,9 +581,13 @@ export default function LeasesPage() {
         return;
       }
 
-      setStatus("Désignation enregistrée ✅");
+      
       await refreshLeaseDetails();
       await loadAll();
+      setStatus("Désignation enregistrée ✅");
+      setTimeout(() => setStatus(""), 2500);
+
+
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -1236,21 +1263,53 @@ export default function LeasesPage() {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
-              <div>
-                <div style={{ fontWeight: 900, fontSize: 16 }}>Modifier bail</div>
-                <div style={{ color: muted, fontSize: 12 }}>{editingLease.id}</div>
-              </div>
-              <button
-                onClick={() => {
-                  setEditingLease(null);
-                  setDetails(null);
-                }}
-                style={btnSecondary(border)}
-              >
-                Fermer
-              </button>
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 16 }}>Modifier bail</div>
+              <div style={{ color: muted, fontSize: 12 }}>{editingLease.id}</div>
             </div>
 
+            <button
+              onClick={() => {
+                setEditingLease(null);
+                setDetails(null);
+              }}
+              style={btnSecondary(border)}
+            >
+              Fermer
+            </button>
+          </div>
+
+          {status && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: `1px solid rgba(31,111,235,0.35)`,
+                background: "rgba(31,111,235,0.08)",
+                fontWeight: 800,
+                color: "#0b2a6f",
+              }}
+            >
+              {status}
+            </div>
+          )}
+
+          {error && (
+            <div
+              style={{
+                marginTop: 10,
+                padding: "10px 12px",
+                borderRadius: 12,
+                border: `1px solid rgba(220,38,38,0.35)`,
+                background: "rgba(220,38,38,0.08)",
+                fontWeight: 800,
+                color: "#7f1d1d",
+              }}
+            >
+              {error}
+            </div>
+          )}
             {!details && <div style={{ marginTop: 12, color: muted }}>Chargement…</div>}
 
             {details && (

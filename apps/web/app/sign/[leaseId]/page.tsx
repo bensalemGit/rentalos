@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { extractLeaseBundle } from "../../_lib/extractLease";
 
 const API =
   typeof window !== "undefined"
@@ -97,16 +98,22 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
+      
+      
+      
       const j = await r.json().catch(() => ({}));
       if (!r.ok) return;
 
-      // leases/:id => { lease, tenants, amounts } (expected)
-      const l = j?.lease || j;
-      setLeaseKind(String(l?.kind || ""));
+      const { lease, tenants } = extractLeaseBundle(j);
 
-      const tArr: LeaseTenant[] = Array.isArray(j?.tenants) ? j.tenants : [];
+      setLeaseKind(String(lease?.kind || ""));
+
+      const tArr: LeaseTenant[] = Array.isArray(tenants) ? (tenants as LeaseTenant[]) : [];
       setTenants(tArr);
 
+      
+      
+      
       // default selection = principal tenant if exists, otherwise first
       const principal =
         tArr.find((x) => String(x.role || "").toLowerCase() === "principal") ||
