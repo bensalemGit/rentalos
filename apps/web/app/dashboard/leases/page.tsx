@@ -1529,7 +1529,26 @@ export default function LeasesPage() {
                 {/* MONTANTS */}
                 <section style={{ border: `1px solid ${border}`, borderRadius: 16, padding: 12 }}>
                   <div style={{ fontWeight: 900 }}>Évolution des montants</div>
-
+                      {details?.lease?.charges_mode && (
+                        <div style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                          <div
+                            style={{
+                              padding: "6px 10px",
+                              borderRadius: 999,
+                              border: `1px solid ${border}`,
+                              background: "#fff",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              color: "#111827",
+                            }}
+                          >
+                            Charges :{" "}
+                            {String(details.lease.charges_mode).toUpperCase() === "PROVISION"
+                              ? "Provision (régularisation annuelle)"
+                              : "Forfait (non régularisable)"}
+                          </div>
+                        </div>
+                      )}
                   <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
                     <label style={labelStyle(muted)}>
                       Date d’effet *
