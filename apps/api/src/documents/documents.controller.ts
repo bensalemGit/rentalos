@@ -46,6 +46,11 @@ export class DocumentsController {
     return this.docs.generatePackPdf(body.leaseId);
   }
 
+  @Post('guarantor-act')
+  generateGuarantorAct(@Body() body: any) {
+    return this.docs.generateGuarantorActPdf(body.leaseId);
+  }
+
   @Post(':id/sign')
   sign(@Param('id') id: string, @Body() body: any, @Req() req: any) {
     return this.docs.signDocumentMulti(id, body, req);
