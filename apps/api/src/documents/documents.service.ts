@@ -471,7 +471,8 @@ export class DocumentsService {
     }
 
     if (!guarantors.length) {
-      return `<div class="small"><b>Caution solidaire :</b> aucune (non prévue).</div>`;
+      return `<div class="small" style="margin-top:6px"><b>Caution solidaire :</b> aucune (non prévue).</div>
+    <div style="margin-top:10px; border-top:1px solid #e5e7eb"></div>`;
     }
 
     const items = guarantors
@@ -495,11 +496,12 @@ export class DocumentsService {
       .join('');
 
     return `
-      <div class="small">
+      <div style="margin-top:6px" class="small">
         <b>Caution solidaire :</b> oui (garant(s) ci-dessous).<br/>
         La/Les caution(s) s’engage(nt) solidairement au paiement des sommes dues au titre du bail selon l’acte de cautionnement annexé.
       </div>
       <div style="margin-top:8px">${items}</div>
+      <div style="margin-top:10px; border-top:1px solid #e5e7eb"></div>
     `;
   }
 
@@ -514,7 +516,10 @@ export class DocumentsService {
 
     // ✅ NEW: read from lease_terms.visale (source métier récente)
     // row.lease_terms peut être un objet (pg) ou une string JSON
-    const terms = this.parseJsonSafe(row?.lease_terms) || row?.lease_terms || {};
+    const terms =
+      typeof row?.lease_terms === 'string'
+        ? (this.parseJsonSafe(row.lease_terms) || {})
+        : (row?.lease_terms || {});
     const vTerms = (terms && typeof terms === 'object') ? (terms.visale || {}) : {};
 
     const enabledTerms = vTerms?.enabled === true;
@@ -535,7 +540,7 @@ export class DocumentsService {
     );
 
     if (!enabled) {
-      return `<div class="small"><b>Garantie Visale :</b> non (non prévue).</div>`;
+      return `<div class="small" style="margin-top:10px"><b>Garantie Visale :</b> non (non prévue).</div>`;
     }
 
     // ✅ values: priorité v.*, sinon lease_terms.visale.*, sinon fallback colonnes
@@ -567,7 +572,7 @@ export class DocumentsService {
     const end = endRaw ? this.escapeHtml(this.formatDateFr(endRaw)) : '—';
 
     return `
-      <div class="small">
+      <div class="small" style="margin-top:10px">
         <b>Garantie Visale :</b> oui.<br/>
         <b>Visa / Référence :</b> ${visaNumber}<br/>
         <b>Référence locataire :</b> ${tenantRef} — <b>Référence bailleur :</b> ${landlordRef}<br/>
