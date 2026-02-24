@@ -113,6 +113,9 @@ export default function LeasesPage() {
   const [error, setError] = useState("");
 
   const [showCreateLease, setShowCreateLease] = useState(false);
+  const [createMounted, setCreateMounted] = useState(false); // keep in DOM for close animation
+  const [createOpen, setCreateOpen] = useState(false);       // drives the CSS transition
+
   const [showArchives, setShowArchives] = useState(false);
 
   // -------------------------
@@ -128,6 +131,19 @@ export default function LeasesPage() {
   setCoTenantIds((prev) => prev.filter((id) => id && id !== tenantId));
   setNewCoTenantIdCreate("");
   }, [tenantId]);
+
+  useEffect(() => {
+  if (showCreateLease) {
+    // mount then animate in
+    setCreateMounted(true);
+    requestAnimationFrame(() => setCreateOpen(true));
+  } else {
+    // animate out then unmount
+    setCreateOpen(false);
+    const t = setTimeout(() => setCreateMounted(false), 220);
+    return () => clearTimeout(t);
+  }
+}, [showCreateLease]);
 
 
   const [startDate, setStartDate] = useState("");
@@ -519,17 +535,8 @@ export default function LeasesPage() {
       setEditIrlQuarter(String(leaseObj?.irl_reference_quarter ?? leaseObj?.irlReferenceQuarter ?? ""));
       const irlVal1 = leaseObj?.irl_reference_value ?? leaseObj?.irlReferenceValue ?? "";
       setEditIrlValue(irlVal1 === null || irlVal1 === undefined ? "" : String(irlVal1));
-
       setStatus("");
 
-
-      setEditDesignation(coerceLeaseDesignation(lease));
-      setEditKeysCount(lease?.keys_count ?? lease?.keysCount ?? 2);
-      setEditIrlQuarter(String(lease?.irl_reference_quarter ?? lease?.irlReferenceQuarter ?? ""));
-      const v = lease?.irl_reference_value ?? lease?.irlReferenceValue ?? "";
-      setEditIrlValue(v === null || v === undefined ? "" : String(v));
-
-      setStatus("");
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -729,7 +736,10 @@ export default function LeasesPage() {
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
           <button
             type="button"
-            onClick={() => setShowCreateLease((v) => !v)}
+            onClick={() => {
+              setShowCreateLease((v) => !v);
+              // si tu veux, on peut scroller ensuite (mais ça nécessite un ref)
+            }}
             style={btnSecondary(border)}
           >
             {showCreateLease ? "Masquer" : "➕ Nouveau bail"}
@@ -744,8 +754,27 @@ export default function LeasesPage() {
       {status && <p style={{ marginTop: 10, color: "#0a6" }}>{status}</p>}
       {error && <p style={{ marginTop: 10, color: "crimson" }}>{error}</p>}
 
-      {showCreateLease && (
-        <section style={{ marginTop: 14, border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
+      {createMounted && (
+        <section
+          style={{
+            marginTop: 14,
+            border: `1px solid ${border}`,
+            borderRadius: 16,
+            background: "#fff",
+            padding: 14,
+
+            // --- animation ---
+            overflow: "hidden",
+            maxHeight: createOpen ? 4000 : 0,
+            opacity: createOpen ? 1 : 0,
+            transform: createOpen ? "translateY(0px)" : "translateY(-6px)",
+            transition: "max-height 220ms ease, opacity 180ms ease, transform 220ms ease",
+            willChange: "max-height, opacity, transform",
+
+            // UX: pas cliquable quand fermé (pendant la fermeture)
+            pointerEvents: createOpen ? "auto" : "none",
+          }}
+        >
           <h2 style={{ marginTop: 0, fontSize: 16 }}>Nouveau bail</h2>
 
           <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))" }}>
@@ -1637,25 +1666,27 @@ function btnPrimarySmall(blue: string) {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: `1px solid rgba(31,111,235,0.35)`,
-    background: "rgba(31,111,235,0.10)",
-    color: "#0b2a6f",
+    border: `1px solid ${blue}55`,       // 55 = ~35% opacity
+    background: `${blue}1A`,             // 1A = ~10% opacity
+    color: blue,
     fontWeight: 900,
     cursor: "pointer",
   } as const;
 }
+
 function btnPrimaryWide(blue: string) {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: `1px solid rgba(31,111,235,0.35)`,
-    background: "rgba(31,111,235,0.10)",
-    color: "#0b2a6f",
+    border: `1px solid ${blue}55`,
+    background: `${blue}1A`,
+    color: blue,
     fontWeight: 900,
     cursor: "pointer",
     width: "fit-content",
   } as const;
 }
+
 function btnSecondary(border: string) {
   return {
     padding: "10px 14px",
