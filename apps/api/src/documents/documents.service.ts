@@ -512,23 +512,59 @@ export class DocumentsService {
   private buildVisaleBlock(row: AnyRow): string {
     if (row.visale_block && String(row.visale_block).includes('<')) return String(row.visale_block);
 
+    // ✅ NEW: read from lease_terms.visale (source métier récente)
+    // row.lease_terms peut être un objet (pg) ou une string JSON
+    const terms = this.parseJsonSafe(row?.lease_terms) || row?.lease_terms || {};
+    const vTerms = (terms && typeof terms === 'object') ? (terms.visale || {}) : {};
+
+    const enabledTerms = vTerms?.enabled === true;
+    const visaNumberTerms = vTerms?.visaNumber ? String(vTerms.visaNumber) : '';
+
+    // Existing: visale_json (legacy)
     const v = this.parseJsonSafe(row.visale_json) || null;
 
     // fallback simple (si tu as déjà des colonnes)
     const enabledFallback = String(row.visale_enabled ?? '').toLowerCase() === 'true' || row.visale_enabled === 1;
     const visaNumberFallback = row.visale_visa_number || row.visaleVisaNumber;
 
-    const enabled = Boolean(v?.enabled ?? enabledFallback ?? false);
+    // ✅ enabled: priorité v.enabled, sinon lease_terms.visale.enabled, sinon fallback colonnes
+    const enabled = Boolean(
+      (v?.enabled === true) ||
+      (enabledTerms === true) ||
+      (enabledFallback === true)
+    );
+
     if (!enabled) {
       return `<div class="small"><b>Garantie Visale :</b> non (non prévue).</div>`;
     }
 
-    const visaNumber = this.escapeHtml(v?.visaNumber || visaNumberFallback || '—');
-    const tenantRef = this.escapeHtml(v?.tenantRef || v?.locataireRef || '—');
-    const landlordRef = this.escapeHtml(v?.landlordRef || v?.bailleurRef || '—');
-    const plafond = v?.maxAmountEur != null ? this.escapeHtml(v.maxAmountEur) : '—';
-    const start = v?.startDate ? this.escapeHtml(this.formatDateFr(v.startDate)) : '—';
-    const end = v?.endDate ? this.escapeHtml(this.formatDateFr(v.endDate)) : '—';
+    // ✅ values: priorité v.*, sinon lease_terms.visale.*, sinon fallback colonnes
+    const visaNumberRaw =
+      (v?.visaNumber != null ? String(v.visaNumber) : '') ||
+      visaNumberTerms ||
+      (visaNumberFallback != null ? String(visaNumberFallback) : '');
+
+    const tenantRefRaw =
+      (v?.tenantRef ?? v?.locataireRef ?? vTerms?.tenantRef ?? vTerms?.locataireRef ?? '');
+
+    const landlordRefRaw =
+      (v?.landlordRef ?? v?.bailleurRef ?? vTerms?.landlordRef ?? vTerms?.bailleurRef ?? '');
+
+    const plafondRaw =
+      (v?.maxAmountEur ?? vTerms?.maxAmountEur ?? null);
+
+    const startRaw =
+      (v?.startDate ?? vTerms?.startDate ?? null);
+
+    const endRaw =
+      (v?.endDate ?? vTerms?.endDate ?? null);
+
+    const visaNumber = this.escapeHtml(visaNumberRaw || '—');
+    const tenantRef = this.escapeHtml(tenantRefRaw || '—');
+    const landlordRef = this.escapeHtml(landlordRefRaw || '—');
+    const plafond = plafondRaw != null ? this.escapeHtml(plafondRaw) : '—';
+    const start = startRaw ? this.escapeHtml(this.formatDateFr(startRaw)) : '—';
+    const end = endRaw ? this.escapeHtml(this.formatDateFr(endRaw)) : '—';
 
     return `
       <div class="small">
@@ -837,7 +873,13 @@ export class DocumentsService {
       terms_insurance_required: (terms.insuranceRequired ?? true) ? 'Oui' : 'Non',
       terms_subletting_allowed: (terms.sublettingAllowed ?? false) ? 'Oui' : 'Non',
 
-      terms_pets_policy: this.escapeHtml(String(terms.petsPolicy ?? 'UNKNOWN')),
+      terms_pets_policy: this.escapeHtml(
+        terms.petsPolicy === 'ALLOWED'
+          ? 'Animaux autorisés'
+          : terms.petsPolicy === 'FORBIDDEN'
+          ? 'Animaux interdits'
+          : 'Animaux non précisés'
+      ),
 
       terms_irl_enabled: terms.irlIndexation?.enabled ? 'Oui' : 'Non',
       terms_irl_reference_quarter: this.escapeHtml(String(terms.irlIndexation?.referenceQuarter ?? '')),
@@ -1350,7 +1392,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       <p>Période du bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
       <p>Durée du bail : ${lease_duration_label}</p>
       <p>Annexes incluses : ${annexes_list_html}</p>
-      &{annexes_list_html}
+      ${annexes_list_html}
     </body></html>`;
 
     // Génération du PDF buffer à partir de ce HTML

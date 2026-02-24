@@ -133,6 +133,17 @@ export class LeasesService {
         }
       }
 
+      // 🔒 Dépôt légal check
+      const rent = Number(rentCents ?? 0);
+      const deposit = Number(depositCents ?? 0);
+
+      if (leaseKind === 'MEUBLE_RP' && deposit > rent * 2) {
+        throw new BadRequestException('Deposit exceeds legal maximum (2 months rent for furnished lease)');
+      }
+
+      if (leaseKind === 'NU_RP' && deposit > rent) {
+        throw new BadRequestException('Deposit exceeds legal maximum (1 month rent for unfurnished lease)');
+      }
       const leaseRes = await client.query(
         `INSERT INTO leases (
            unit_id, tenant_id, start_date, end_date_theoretical,
@@ -444,6 +455,19 @@ export class LeasesService {
     const depositCents = Number(body?.depositCents ?? 0);
     const paymentDay = Number(body?.paymentDay ?? 5);
 
+    const leaseR = await this.pool.query(`SELECT kind FROM leases WHERE id=$1`, [leaseId]);
+    if (!leaseR.rowCount) throw new BadRequestException('Unknown leaseId');
+
+    const leaseKind = leaseR.rows[0].kind;
+
+    if (leaseKind === 'MEUBLE_RP' && depositCents > rentCents * 2) {
+      throw new BadRequestException('Deposit exceeds legal maximum (2 months rent for furnished lease)');
+    }
+
+    if (leaseKind === 'NU_RP' && depositCents > rentCents) {
+      throw new BadRequestException('Deposit exceeds legal maximum (1 month rent for unfurnished lease)');
+    }
+
     if (Number.isNaN(rentCents)) throw new BadRequestException('rentCents must be a number');
     if (Number.isNaN(chargesCents)) throw new BadRequestException('chargesCents must be a number');
     if (Number.isNaN(depositCents)) throw new BadRequestException('depositCents must be a number');
@@ -527,4 +551,72 @@ export class LeasesService {
 
     return r.rows;
   }
+  async updateGuarantor(leaseId: string, body: any) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+  const full = body?.guarantorFullName ?? null;
+  const email = body?.guarantorEmail ?? null;
+  const phone = body?.guarantorPhone ?? null;
+  const addr = body?.guarantorAddress ?? null;
+
+  // Si visale activée -> on bloque la caution (règle métier)
+  const cur = await this.pool.query(`SELECT lease_terms FROM leases WHERE id=$1`, [leaseId]);
+  if (!cur.rowCount) throw new BadRequestException('Unknown leaseId');
+  const terms = cur.rows[0]?.lease_terms || {};
+  const visaleEnabled = terms?.visale?.enabled === true;
+
+  if (visaleEnabled && (full || email || phone || addr)) {
+    throw new BadRequestException('Visale enabled: cannot set physical guarantor (caution).');
+  }
+
+  const r = await this.pool.query(
+    `UPDATE leases
+     SET guarantor_full_name=$2,
+         guarantor_email=$3,
+         guarantor_phone=$4,
+         guarantor_address=$5
+     WHERE id=$1
+     RETURNING id, guarantor_full_name, guarantor_email, guarantor_phone, guarantor_address`,
+    [leaseId, full, email, phone, addr],
+  );
+
+  if (!r.rowCount) throw new BadRequestException('Unknown leaseId');
+  return { ok: true, guarantor: r.rows[0] };
+}
+
+async updateVisale(leaseId: string, body: any) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+  const enabled = body?.enabled === true;
+  const visaNumber = body?.visaNumber ? String(body.visaNumber).trim() : null;
+
+  // Si visale activée: on vide la caution (évite états interdits)
+  // (Visale ne se cumule pas avec autres garanties)
+  if (enabled) {
+    await this.pool.query(
+      `UPDATE leases
+       SET guarantor_full_name=NULL, guarantor_email=NULL, guarantor_phone=NULL, guarantor_address=NULL
+       WHERE id=$1`,
+      [leaseId],
+    );
+  }
+
+  const visaleObj = enabled ? { enabled: true, visaNumber } : { enabled: false };
+
+  const r = await this.pool.query(
+    `UPDATE leases
+     SET lease_terms = jsonb_set(
+       COALESCE(lease_terms,'{}'::jsonb),
+       '{visale}',
+       $2::jsonb,
+       true
+     )
+     WHERE id=$1
+     RETURNING id, lease_terms`,
+    [leaseId, JSON.stringify(visaleObj)],
+  );
+
+  if (!r.rowCount) throw new BadRequestException('Unknown leaseId');
+  return { ok: true, lease: r.rows[0] };
+}
 }
