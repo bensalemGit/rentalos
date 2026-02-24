@@ -1298,7 +1298,7 @@ export default function LeasesPage() {
           )}
 
           <div style={{ marginTop: 12 }}>
-            <button onClick={createLease} style={btnPrimaryWide(blue)}>
+            <button onClick={createLease} style={btnPrimaryWide(blue)} disabled={useVisale && !visaNumber.trim()}>
               Créer le bail
             </button>
           </div>
@@ -1507,7 +1507,7 @@ export default function LeasesPage() {
                       <div style={{ fontWeight: 900 }}>Désignation (contrat)</div>
                       <div style={{ color: muted, fontSize: 12 }}>Modifiable a posteriori (repris dans le contrat PDF).</div>
                     </div>
-                    <button onClick={saveDesignation} style={btnPrimarySmall(blue)}>Enregistrer</button>
+                    <button onClick={saveDesignation} style={btnPrimarySmall(blue)} disabled={editVisaleEnabled && !editVisaNumber.trim()}>Enregistrer</button>
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
