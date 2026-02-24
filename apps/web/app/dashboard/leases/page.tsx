@@ -104,19 +104,18 @@ function toggleArrayValueIn(
 
 export default function LeasesPage() {
   const [token, setToken] = useState("");
-
   const [units, setUnits] = useState<Unit[]>([]);
   const [tenants, setTenants] = useState<Tenant[]>([]);
   const [leases, setLeases] = useState<Lease[]>([]);
-
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
-
   const [showCreateLease, setShowCreateLease] = useState(false);
   const [createMounted, setCreateMounted] = useState(false); // keep in DOM for close animation
   const [createOpen, setCreateOpen] = useState(false);       // drives the CSS transition
-
   const [showArchives, setShowArchives] = useState(false);
+    // visale optional (RP only)
+  const [useVisale, setUseVisale] = useState(false);
+  const [visaNumber, setVisaNumber] = useState("");
 
   // -------------------------
   // CREATE FORM
@@ -198,6 +197,8 @@ export default function LeasesPage() {
   const [editIrlValue, setEditIrlValue] = useState<string>("");
 
   const [newCoTenantId, setNewCoTenantId] = useState<string>("");
+  const [editVisaleEnabled, setEditVisaleEnabled] = useState(false);
+  const [editVisaNumber, setEditVisaNumber] = useState("");
 
   // amounts form (UPSERT by date)
   const [amountDate, setAmountDate] = useState<string>("");
@@ -287,7 +288,7 @@ export default function LeasesPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unitId]);
 
-  // guarantor only for RP kinds
+  // guarantees only for RP kinds (no guarantor/visale for SAISONNIER)
   useEffect(() => {
     if (kind === "SAISONNIER") {
       setUseGuarantor(false);
@@ -295,8 +296,30 @@ export default function LeasesPage() {
       setGEmail("");
       setGPhone("");
       setGAddress("");
+
+      setUseVisale(false);
+      setVisaNumber("");
     }
   }, [kind]);
+
+  // exclusivity: Visale disables physical guarantor
+  useEffect(() => {
+    if (useVisale) {
+      setUseGuarantor(false);
+      setGName("");
+      setGEmail("");
+      setGPhone("");
+      setGAddress("");
+    }
+  }, [useVisale]);
+
+  // exclusivity: guarantor disables Visale
+  useEffect(() => {
+    if (useGuarantor) {
+      setUseVisale(false);
+      setVisaNumber("");
+    }
+  }, [useGuarantor]);
 
   async function createLease() {
     setError("");
@@ -361,8 +384,36 @@ export default function LeasesPage() {
         return;
       }
 
-      // (keys/IRL already sent in POST payload)
+            // ✅ If Visale enabled at creation: patch right after lease is created
+      const createdLeaseId =
+        j?.lease?.id || j?.leaseId || j?.id || j?.created?.id || null;
 
+      if (useVisale) {
+        if (!createdLeaseId) {
+          setStatus("");
+          setError("Bail créé mais impossible d'activer Visale: id bail introuvable dans la réponse API.");
+          return;
+        }
+
+        const vr = await fetch(`${API}/leases/${createdLeaseId}/visale`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          credentials: "include",
+          body: JSON.stringify({
+            enabled: true,
+            visaNumber: visaNumber.trim() || null,
+          }),
+        });
+
+        const vj = await vr.json().catch(() => ({}));
+        if (!vr.ok) {
+          setStatus("");
+          setError(vj?.message || JSON.stringify(vj));
+          return;
+        }
+      }
+
+      // (keys/IRL already sent in POST payload)
       setStatus("Bail créé ✅");
       setShowCreateLease(false);
 
@@ -372,6 +423,9 @@ export default function LeasesPage() {
       setGEmail("");
       setGPhone("");
       setGAddress("");
+      // reset visale
+      setUseVisale(false);
+      setVisaNumber("");
 
       await loadAll();
     } catch (e: any) {
@@ -535,6 +589,11 @@ export default function LeasesPage() {
       setEditIrlQuarter(String(leaseObj?.irl_reference_quarter ?? leaseObj?.irlReferenceQuarter ?? ""));
       const irlVal1 = leaseObj?.irl_reference_value ?? leaseObj?.irlReferenceValue ?? "";
       setEditIrlValue(irlVal1 === null || irlVal1 === undefined ? "" : String(irlVal1));
+      // ✅ hydrate Visale from terms (defensive naming)
+      const terms = leaseObj?.lease_terms ?? leaseObj?.leaseTerms ?? leaseObj?.terms ?? {};
+      const v = terms?.visale ?? leaseObj?.visale ?? {};
+      setEditVisaleEnabled(v?.enabled === true);
+      setEditVisaNumber(v?.visaNumber ? String(v.visaNumber) : "");
       setStatus("");
 
     } catch (e: any) {
@@ -561,6 +620,11 @@ export default function LeasesPage() {
       setEditIrlQuarter(String(leaseObj?.irl_reference_quarter ?? leaseObj?.irlReferenceQuarter ?? ""));
       const irlVal2 = leaseObj?.irl_reference_value ?? leaseObj?.irlReferenceValue ?? "";
       setEditIrlValue(irlVal2 === null || irlVal2 === undefined ? "" : String(irlVal2));
+      // ✅ hydrate Visale from terms (defensive naming)
+      const terms = leaseObj?.lease_terms ?? leaseObj?.leaseTerms ?? leaseObj?.terms ?? {};
+      const v = terms?.visale ?? leaseObj?.visale ?? {};
+      setEditVisaleEnabled(v?.enabled === true);
+      setEditVisaNumber(v?.visaNumber ? String(v.visaNumber) : "");
     }
   }
 
@@ -660,6 +724,39 @@ export default function LeasesPage() {
     }
   }
 
+    async function saveVisale() {
+    if (!editingLease) return;
+    setError("");
+    setStatus("Enregistrement Visale…");
+
+    try {
+      const r = await fetch(`${API}/leases/${editingLease.id}/visale`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({
+          enabled: editVisaleEnabled === true,
+          visaNumber: editVisaleEnabled ? (editVisaNumber.trim() || null) : null,
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      await refreshLeaseDetails();
+      await loadAll();
+      setStatus("Visale enregistrée ✅");
+      setTimeout(() => setStatus(""), 2500);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+  
   async function addAmountsRow() {
     if (!editingLease) return;
 
@@ -749,6 +846,11 @@ export default function LeasesPage() {
             Rafraîchir
           </button>
         </div>
+        {useVisale && (
+          <div style={{ marginTop: 10, color: "#7f1d1d", fontWeight: 800, fontSize: 12 }}>
+            Visale activée → caution solidaire indisponible.
+          </div>
+        )}
       </div>
 
       {status && <p style={{ marginTop: 10, color: "#0a6" }}>{status}</p>}
@@ -1105,6 +1207,50 @@ export default function LeasesPage() {
             </div>
           </div>
 
+                    {/* Visale optionnel RP */}
+          {kind !== "SAISONNIER" && (
+            <div style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 16, padding: 12, background: "#fff" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                <div>
+                  <div style={{ fontWeight: 900 }}>Garantie Visale (optionnel)</div>
+                  <div style={{ color: muted, fontSize: 12 }}>
+                    Visale ne se cumule pas avec une caution solidaire.
+                  </div>
+                </div>
+                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
+                  <input
+                    type="checkbox"
+                    checked={useVisale}
+                    onChange={(e) => setUseVisale(e.target.checked)}
+                    disabled={useGuarantor}
+                  />
+                  Activer
+                </label>
+              </div>
+
+              {useGuarantor && (
+                <div style={{ marginTop: 10, color: "#7f1d1d", fontWeight: 800, fontSize: 12 }}>
+                  Caution solidaire activée → Visale indisponible.
+                </div>
+              )}
+
+              {useVisale && (
+                <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+                  <label style={labelStyle(muted)}>
+                    N° VISA (référence Visale) *
+                    <br />
+                    <input
+                      value={visaNumber}
+                      onChange={(e) => setVisaNumber(e.target.value)}
+                      placeholder="ex: VISA-123456"
+                      style={inputStyle(border)}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Garant optionnel RP */}
           {kind !== "SAISONNIER" && (
             <div style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 16, padding: 12, background: "#fff" }}>
@@ -1114,7 +1260,12 @@ export default function LeasesPage() {
                   <div style={{ color: muted, fontSize: 12 }}>Si vous souhaitez ajouter un garant au contrat.</div>
                 </div>
                 <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
-                  <input type="checkbox" checked={useGuarantor} onChange={(e) => setUseGuarantor(e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={useGuarantor}
+                    onChange={(e) => setUseGuarantor(e.target.checked)}
+                    disabled={useVisale}
+                  />
                   Activer
                 </label>
               </div>
@@ -1637,6 +1788,39 @@ export default function LeasesPage() {
                       </div>
                     ))}
                     {!details.amounts.length && <div style={{ color: muted }}>Aucune ligne.</div>}
+                  </div>
+                </section>
+                                {/* VISALE */}
+                <section style={{ border: `1px solid ${border}`, borderRadius: 16, padding: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <div>
+                      <div style={{ fontWeight: 900 }}>Garantie Visale</div>
+                      <div style={{ color: muted, fontSize: 12 }}>Ne se cumule pas avec une caution solidaire.</div>
+                    </div>
+                    <button onClick={saveVisale} style={btnPrimarySmall(blue)}>Enregistrer</button>
+                  </div>
+
+                  <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+                    <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
+                      <input
+                        type="checkbox"
+                        checked={editVisaleEnabled}
+                        onChange={(e) => setEditVisaleEnabled(e.target.checked)}
+                      />
+                      Activer Visale
+                    </label>
+
+                    <label style={labelStyle(muted)}>
+                      N° VISA
+                      <br />
+                      <input
+                        value={editVisaNumber}
+                        onChange={(e) => setEditVisaNumber(e.target.value)}
+                        placeholder="ex: VISA-123456"
+                        style={inputStyle(border)}
+                        disabled={!editVisaleEnabled}
+                      />
+                    </label>
                   </div>
                 </section>
               </div>
