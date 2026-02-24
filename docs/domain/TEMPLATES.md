@@ -105,3 +105,7 @@ FROM document_templates
 WHERE kind='CONTRACT'
   AND lease_kind='MEUBLE_RP'
   AND version='2026-02';
+
+
+Template contrat MEUBLE_RP contient {{guarantor_block}} et {{visale_block}}
+Rendu construit côté documents.service.ts via buildGuarantorBlock() / buildVisaleBlock()
