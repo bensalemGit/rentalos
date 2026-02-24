@@ -7,7 +7,7 @@ import * as fs from 'fs/promises';
 import * as path from 'path';
 import { writeFileSync } from 'fs';
 
-type SignRole = 'BAILLEUR' | 'LOCATAIRE';
+type SignRole = 'BAILLEUR' | 'LOCATAIRE' | 'GARANT';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
 
 type TemplateRow = {
@@ -944,6 +944,110 @@ export class DocumentsService {
     return ins.rows[0];
   }
 
+  // -------------------------------------
+// ACTE DE CAUTIONNEMENT (GUARANTOR_ACT)
+// -------------------------------------
+async generateGuarantorActPdf(leaseId: string) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+  const row = await this.fetchLeaseBundle(leaseId);
+  const landlord = await this.getLandlordForLease(leaseId);
+
+  if (!landlord) {
+    throw new BadRequestException({
+      message: 'Guarantor act not ready: missing landlord information',
+      missing: ['landlord_profile'],
+    });
+  }
+
+  const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
+
+  // ✅ On réutilise la version/template que tu utilises déjà
+  const templateVersion = '2026-04';
+  const tpl = await this.getTemplate('GUARANTOR_ACT', leaseKind, templateVersion);
+
+  // ✅ Récupération garant (legacy + fallback guarantors_json)
+  const gArr = this.parseJsonSafe((row as any).guarantors_json);
+  const guarantors: any[] = Array.isArray(gArr) ? gArr : [];
+
+  const legacy = {
+    full_name: row.guarantor_full_name,
+    email: row.guarantor_email,
+    phone: row.guarantor_phone,
+    address: row.guarantor_address,
+  };
+
+  const g0 = guarantors[0] || legacy;
+
+  const guarantorName = String(g0?.full_name || g0?.name || '').trim();
+  const guarantorEmail = String(g0?.email || '').trim();
+  const guarantorPhone = String(g0?.phone || '').trim();
+  const guarantorAddress = String(g0?.address || g0?.current_address || '').trim();
+
+  if (!guarantorName && !guarantorEmail && !guarantorPhone && !guarantorAddress) {
+    throw new BadRequestException('No guarantor configured on this lease');
+  }
+
+  const landlord_identifiers_html = `
+    <div><b>${this.escapeHtml(landlord.name)}</b></div>
+    <div>${this.escapeHtml(landlord.address)}</div>
+    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+  `.trim();
+
+  const vars: Record<string, any> = {
+    template_version: templateVersion,
+    lease_id_short: this.leaseIdShort(leaseId),
+
+    unit_code: this.escapeHtml(row.unit_code),
+    unit_label: this.escapeHtml(row.unit_label),
+    unit_address_line1: this.escapeHtml(row.unit_address_line1),
+    unit_postal_code: this.escapeHtml(row.unit_postal_code),
+    unit_city: this.escapeHtml(row.unit_city),
+
+    start_date_fr: this.formatDateFr(row.start_date),
+    end_date_theoretical: this.formatDateFr(row.end_date_theoretical),
+
+    tenants_block: this.buildTenantsBlock(row),
+
+    landlord_identifiers_html,
+    landlord_name: this.escapeHtml(landlord.name),
+    landlord_address: this.escapeHtml(landlord.address),
+    landlord_email: this.escapeHtml(landlord.email),
+    landlord_phone: this.escapeHtml(landlord.phone),
+
+    rent_eur: this.toEuros(row.rent_cents),
+    charges_eur: this.toEuros(row.charges_cents),
+    deposit_eur: this.toEuros(row.deposit_cents),
+
+    guarantor_full_name: this.escapeHtml(guarantorName || '—'),
+    guarantor_email: this.escapeHtml(guarantorEmail || '—'),
+    guarantor_phone: this.escapeHtml(guarantorPhone || '—'),
+    guarantor_address: this.escapeHtml(guarantorAddress || '—'),
+
+    signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
+    signature_date: this.formatDateFr(new Date()),
+  };
+
+  const html = this.applyVars(tpl.html_template, vars);
+
+  const pdfBuf = await this.htmlToPdfBuffer(html);
+  const sha = this.sha256Buffer(pdfBuf);
+
+  const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+  const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
+  this.ensureDir(outDir);
+  const outPdfPath = path.join(outDir, pdfName);
+  fsSync.writeFileSync(outPdfPath, pdfBuf);
+
+  const ins = await this.pool.query(
+    `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
+     VALUES ($1,$2,'GUARANTOR_ACT',$3,$4,$5) RETURNING *`,
+    [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
+  );
+
+  return ins.rows[0];
+}
+
   // ---------------------------------------------
   // NOTICE (RP only)
   // ---------------------------------------------
@@ -1494,8 +1598,9 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   if (!signerName || !signerRole || !signatureDataUrl) {
     throw new BadRequestException('Missing signerName/signerRole/signatureDataUrl');
   }
-  if (signerRole !== 'BAILLEUR' && signerRole !== 'LOCATAIRE') {
-    throw new BadRequestException('signerRole must be BAILLEUR or LOCATAIRE');
+  const allowedRoles = new Set(['BAILLEUR', 'LOCATAIRE', 'GARANT']);
+  if (!allowedRoles.has(String(signerRole))) {
+    throw new BadRequestException('signerRole must be BAILLEUR, LOCATAIRE or GARANT');
   }
 
   const docR = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [documentId]);
@@ -1505,6 +1610,26 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   // ✅ Guard: lease + tenants
   const leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
   const tenants = this.getTenantsFromLeaseRow(leaseRow);
+
+    // --- GARANT guard (MVP: legacy columns OR guarantors_json) ---
+  const hasLegacyGuarantor =
+    Boolean(String(leaseRow?.guarantor_full_name || '').trim()) ||
+    Boolean(String(leaseRow?.guarantor_email || '').trim()) ||
+    Boolean(String(leaseRow?.guarantor_phone || '').trim()) ||
+    Boolean(String(leaseRow?.guarantor_address || '').trim());
+
+  const gArr = this.parseJsonSafe((leaseRow as any)?.guarantors_json);
+  const hasGuarantorsJson = Array.isArray(gArr) && gArr.length > 0;
+
+  if (signerRole === 'GARANT') {
+    // Only allowed for GUARANTOR_ACT document
+    if (String(doc.type) !== 'GUARANTOR_ACT') {
+      throw new BadRequestException('GARANT signature only allowed on GUARANTOR_ACT documents');
+    }
+    if (!hasLegacyGuarantor && !hasGuarantorsJson) {
+      throw new BadRequestException('No guarantor configured on this lease');
+    }
+  }
 
   // helper: normalize
   const norm = (s: any) => String(s || '').trim().toLowerCase();
@@ -1565,6 +1690,33 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
   const originalPdfBuf = fsSync.readFileSync(absPdf);
   const originalSha = this.sha256Buffer(originalPdfBuf);
+
+    // ✅ anti double signature (guarantor)
+  if (signerRole === 'GARANT') {
+    const already = await this.pool.query(
+      `SELECT id, signed_at
+       FROM signatures
+       WHERE document_id=$1
+         AND signer_role='GARANT'
+       ORDER BY signed_at DESC
+       LIMIT 1`,
+      [doc.id],
+    );
+
+    if (already.rowCount) {
+      const sigsNow = await this.pool.query(
+        `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+        [doc.id],
+      );
+
+      return {
+        ok: true,
+        pending: false,
+        alreadySigned: true,
+        signatures: sigsNow.rows,
+      };
+    }
+  }
 
   // ✅ anti double signature (tenant)
   if (signerRole === 'LOCATAIRE') {
@@ -1641,7 +1793,9 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   });
 
   const sequence =
-    signerRole === 'BAILLEUR'
+  signerRole === 'BAILLEUR'
+    ? tenants.length + 2 // after tenants + guarantor
+    : signerRole === 'GARANT'
       ? tenants.length + 1
       : (tenantIndexById.get(effectiveTenantId) ?? 0) + 1;
 
@@ -1699,7 +1853,17 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
   const hasLandlord = Boolean(latestLandlordSig);
 
-  if (hasAllTenants && hasLandlord) {
+  const isGuarantorAct = String(doc.type) === 'GUARANTOR_ACT';
+
+const hasGuarantor = sigs.rows.some((s: any) => s.signer_role === 'GARANT');
+
+const readyToFinalize =
+  isGuarantorAct
+    ? (hasGuarantor && hasLandlord)
+    : (hasAllTenants && hasLandlord);
+
+
+  if (readyToFinalize) {
     if (doc.signed_final_document_id) {
       const finalDoc = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [doc.signed_final_document_id]);
       const finalSignedDocument = finalDoc.rowCount ? finalDoc.rows[0] : null;
