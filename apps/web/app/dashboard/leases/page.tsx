@@ -4,6 +4,7 @@ import Link from "next/link";
 import ImportHousingButton from "./ImportHousingButton";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 
+
 const API =
   typeof window !== "undefined"
     ? window.location.origin + "/api"
@@ -111,7 +112,7 @@ export default function LeasesPage() {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
-  const [showCreate, setShowCreate] = useState(false);
+  const [showCreateLease, setShowCreateLease] = useState(false);
   const [showArchives, setShowArchives] = useState(false);
 
   // -------------------------
@@ -347,7 +348,7 @@ export default function LeasesPage() {
       // (keys/IRL already sent in POST payload)
 
       setStatus("Bail créé ✅");
-      setShowCreate(false);
+      setShowCreateLease(false);
 
       // reset guarantor
       setUseGuarantor(false);
@@ -719,16 +720,21 @@ export default function LeasesPage() {
     <main>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <h1 style={{ marginTop: 0, marginBottom: 6 }}>Baux</h1>
-          <div style={{ color: muted }}>
-            Création avec type + garant optionnel + désignation contractuelle. Modifier bail actif : désignation + co-locataires + montants.
-          </div>
+          <h2 style={{ marginTop: 0, marginBottom: 6, fontSize: 18, fontWeight: 800 }}>Baux</h2>
+          <p style={{ margin: 0, fontSize: 13, color: muted }}>
+            Création avec type + garant optionnel + désignation contractuelle.
+          </p>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          <button onClick={() => setShowCreate((v) => !v)} style={btnPrimarySmall(blue)}>
-            {showCreate ? "Fermer" : "Créer un bail"}
+          <button
+            type="button"
+            onClick={() => setShowCreateLease((v) => !v)}
+            style={btnSecondary(border)}
+          >
+            {showCreateLease ? "Masquer" : "➕ Nouveau bail"}
           </button>
+
           <button onClick={loadAll} style={btnSecondary(border)}>
             Rafraîchir
           </button>
@@ -738,7 +744,7 @@ export default function LeasesPage() {
       {status && <p style={{ marginTop: 10, color: "#0a6" }}>{status}</p>}
       {error && <p style={{ marginTop: 10, color: "crimson" }}>{error}</p>}
 
-      {showCreate && (
+      {showCreateLease && (
         <section style={{ marginTop: 14, border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
           <h2 style={{ marginTop: 0, fontSize: 16 }}>Nouveau bail</h2>
 
