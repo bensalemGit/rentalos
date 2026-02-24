@@ -491,3 +491,18 @@ Moteur bail juridiquement irréprochable.
 ✔ Suite à traiter dans nouveau chat
 
 ---
+
+
+## Baux – Charges mode
+
+UI création : chargesMode envoyé au POST /leases
+UI modale édition : affichage du charges_mode courant
+
+## Garanties – exclusivité Visale vs Caution
+
+PATCH /leases/:id/visale : si enabled=true ⇒ purge caution (garant)
+PATCH /leases/:id/guarantor : si Visale activée ⇒ 400
+Contrat : section “Garanties” rendue via {{guarantor_block}}{{visale_block}}
+
+## Visale
+Source de vérité : lease_terms.visale = { enabled, visaNumber, ...optionnel }
