@@ -39,6 +39,19 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [noticeDoc, setNoticeDoc] = useState<Doc | null>(null);
   const [packDoc, setPackDoc] = useState<Doc | null>(null);
 
+  // ✅ NEW: guarantor act doc + signature
+  const [guarantorActDoc, setGuarantorActDoc] = useState<Doc | null>(null);
+  const [guarantorActFinalSignedDoc, setGuarantorActFinalSignedDoc] = useState<Doc | null>(null);
+
+  const [guarantorName, setGuarantorName] = useState("Garant");
+  const [guarantorSigned, setGuarantorSigned] = useState(false);
+  const [landlordSignedGuarantorAct, setLandlordSignedGuarantorAct] = useState(false);
+
+  const guarantorCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const landlordGuarantorActCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawingGuarantor = useRef(false);
+  const drawingLandlordGuarantorAct = useRef(false);
+
   // lease kind
   const [leaseKind, setLeaseKind] = useState("");
 
@@ -82,7 +95,15 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   useEffect(() => {
     if (tenantCanvasRef.current) setupCanvas(tenantCanvasRef.current);
     if (landlordCanvasRef.current) setupCanvas(landlordCanvasRef.current);
-  }, [tenantCanvasRef.current, landlordCanvasRef.current]);
+    // ✅ NEW
+    if (guarantorCanvasRef.current) setupCanvas(guarantorCanvasRef.current);
+    if (landlordGuarantorActCanvasRef.current) setupCanvas(landlordGuarantorActCanvasRef.current);
+  }, [
+    tenantCanvasRef.current,
+    landlordCanvasRef.current,
+    guarantorCanvasRef.current,
+    landlordGuarantorActCanvasRef.current,
+  ]);
 
   function normalizeTenantId(t: LeaseTenant): string {
     return String(t.tenant_id || t.id || "").trim();
@@ -105,6 +126,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       if (!r.ok) return;
 
       const { lease, tenants } = extractLeaseBundle(j);
+      
+      // ✅ NEW: guarantor name (optional)
+      const gName =
+        String((lease as any)?.guarantor_full_name || (lease as any)?.guarantorFullName || "").trim();
+      if (gName) setGuarantorName(gName);
 
       setLeaseKind(String(lease?.kind || ""));
 
@@ -132,6 +158,12 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   async function loadDocs() {
     setError("");
     setStatus("Chargement…");
+    setTenantSigned(false);
+    setLandlordSigned(false);
+    setGuarantorSigned(false);
+    setLandlordSignedGuarantorAct(false);
+    setFinalSignedDoc(null);
+    setGuarantorActFinalSignedDoc(null);
     try {
       // load lease bundle (kind + tenants)
       await loadLeaseBundle();
@@ -153,7 +185,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
       const signed =
         arr
-          .filter((d: any) => (d.filename || "").includes("SIGNED_FINAL"))
+          .filter(
+            (d: any) =>
+              (d.filename || "").includes("SIGNED_FINAL") &&
+              (contract?.id ? d.parent_document_id === contract.id : true)
+          )
           .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
         null;
       setFinalSignedDoc(signed);
@@ -171,6 +207,29 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
         null;
       setPackDoc(pack);
+      // ✅ NEW: guarantor act
+      const guarantorAct =
+        arr
+          .filter((d: any) => d.type === "GUARANTOR_ACT" && !d.parent_document_id)
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
+      setGuarantorActDoc(guarantorAct);
+
+      const guarantorActSigned =
+        arr
+          .filter(
+            (d: any) =>
+              (d.filename || "").includes("SIGNED_FINAL") &&
+              (d.parent_document_id === guarantorAct?.id)
+          )
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
+      setGuarantorActFinalSignedDoc(guarantorActSigned);
+
+      if (guarantorActSigned?.id) {
+        setGuarantorSigned(true);
+        setLandlordSignedGuarantorAct(true);
+      }
 
       if (signed?.id) {
         setTenantSigned(true);
@@ -260,6 +319,30 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
+  async function generateGuarantorAct() {
+    setError("");
+    setStatus("Génération de l'acte de cautionnement…");
+    try {
+      const r = await fetch(`${API}/documents/guarantor-act`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+      setStatus("Acte généré ✅");
+      await loadDocs();
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+
   async function downloadDoc(documentId: string, filename?: string) {
     setError("");
     setStatus("Téléchargement…");
@@ -342,6 +425,103 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
   function endLandlord() {
     drawingLandlord.current = false;
+  }
+
+    // ✅ NEW: guarantor act canvas handlers
+  function startGuarantor(e: any) {
+    const c = guarantorCanvasRef.current!;
+    drawingGuarantor.current = true;
+    const ctx = c.getContext("2d")!;
+    const p = pos(e, c);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  }
+  function moveGuarantor(e: any) {
+    if (!drawingGuarantor.current) return;
+    const c = guarantorCanvasRef.current!;
+    const ctx = c.getContext("2d")!;
+    const p = pos(e, c);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+  function endGuarantor() {
+    drawingGuarantor.current = false;
+  }
+
+  function startLandlordGuarantorAct(e: any) {
+    const c = landlordGuarantorActCanvasRef.current!;
+    drawingLandlordGuarantorAct.current = true;
+    const ctx = c.getContext("2d")!;
+    const p = pos(e, c);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  }
+  function moveLandlordGuarantorAct(e: any) {
+    if (!drawingLandlordGuarantorAct.current) return;
+    const c = landlordGuarantorActCanvasRef.current!;
+    const ctx = c.getContext("2d")!;
+    const p = pos(e, c);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+  }
+  function endLandlordGuarantorAct() {
+    drawingLandlordGuarantorAct.current = false;
+  }
+
+  // ✅ NEW: sign guarantor act
+  async function signGuarantorAct(role: "GARANT" | "BAILLEUR") {
+    if (!guarantorActDoc?.id) {
+      setError("Aucun acte. Génère d’abord l’acte de cautionnement.");
+      return;
+    }
+
+    setError("");
+    setStatus(role === "GARANT" ? "Signature garant…" : "Signature bailleur (acte)…");
+
+    const signerName = role === "GARANT" ? guarantorName : landlordName;
+    const signatureDataUrl =
+      role === "GARANT"
+        ? dataUrl(guarantorCanvasRef.current)
+        : dataUrl(landlordGuarantorActCanvasRef.current);
+
+    if (!signatureDataUrl) {
+      setStatus("");
+      setError("Signature vide.");
+      return;
+    }
+
+    try {
+      const payload: any = { signerName, signerRole: role, signatureDataUrl };
+
+      const r = await fetch(`${API}/documents/${guarantorActDoc.id}/sign`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      if (role === "GARANT") {
+        clearCanvas(guarantorCanvasRef.current);
+        setGuarantorSigned(true);
+        setStatus("✅ Signature garant enregistrée");
+      } else {
+        clearCanvas(landlordGuarantorActCanvasRef.current);
+        setLandlordSignedGuarantorAct(true);
+        setStatus("✅ Signature bailleur (acte) enregistrée");
+      }
+
+      await loadDocs();
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
   }
 
   const hasFinal = useMemo(() => !!finalSignedDoc?.id, [finalSignedDoc]);
@@ -493,6 +673,17 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         >
           Télécharger contrat
         </button>
+                <button onClick={generateGuarantorAct} style={btnAction(border)}>
+          Générer acte caution
+        </button>
+
+        <button
+          onClick={() => guarantorActDoc?.id && downloadDoc(guarantorActDoc.id, guarantorActDoc.filename)}
+          style={btnAction(border)}
+          disabled={!guarantorActDoc?.id}
+        >
+          Télécharger acte caution
+        </button>
 
         {isRP && (
           <>
@@ -532,6 +723,12 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         <div style={chip(border, landlordSigned ? green : muted)}>
           {landlordSigned ? "✅ Bailleur signé" : "⏳ Bailleur à signer"}
         </div>
+        {/* ✅ NEW: statut acte caution */}
+        {guarantorActDoc?.id && (
+          <div style={chip(border, guarantorSigned && landlordSignedGuarantorAct ? green : muted)}>
+            {guarantorSigned && landlordSignedGuarantorAct ? "✅ Acte caution signé" : "⏳ Acte caution à signer"}
+          </div>
+        )}
         {hasFinal && <div style={chip(border, green)}>✅ PDF final disponible</div>}
       </div>
 
@@ -553,6 +750,89 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           <button onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)} style={btnPrimarySmall(blue)}>
             Télécharger PDF signé
           </button>
+        </div>
+      )}
+
+      {guarantorActFinalSignedDoc?.id && (
+        <div style={card(border)}>
+          <h3 style={{ marginTop: 0 }}>PDF signé final (acte caution)</h3>
+          <div style={{ color: muted, marginBottom: 10 }}>{guarantorActFinalSignedDoc.filename}</div>
+          <button
+            onClick={() =>
+              downloadDoc(guarantorActFinalSignedDoc.id, guarantorActFinalSignedDoc.filename)
+            }
+            style={btnPrimarySmall(blue)}
+          >
+            Télécharger PDF signé (acte)
+          </button>
+        </div>
+      )}
+
+      {guarantorActDoc?.id && (
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, alignItems: "start" }}>
+          <div style={card(border)}>
+            <h2 style={{ marginTop: 0 }}>Signature garant (acte)</h2>
+
+            <div style={labelStyle(muted)}>
+              <div>Nom signataire</div>
+              <input value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} style={inputStyle(border)} />
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <canvas
+                ref={guarantorCanvasRef}
+                style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
+                onMouseDown={startGuarantor}
+                onMouseMove={moveGuarantor}
+                onMouseUp={endGuarantor}
+                onMouseLeave={endGuarantor}
+                onTouchStart={startGuarantor}
+                onTouchMove={moveGuarantor}
+                onTouchEnd={endGuarantor}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+              <button onClick={() => clearCanvas(guarantorCanvasRef.current)} style={btnAction(border)}>
+                Effacer
+              </button>
+              <button onClick={() => signGuarantorAct("GARANT")} style={btnPrimarySmall(blue)}>
+                Signer (garant)
+              </button>
+            </div>
+          </div>
+
+          <div style={card(border)}>
+            <h2 style={{ marginTop: 0 }}>Signature bailleur (acte)</h2>
+
+            <div style={labelStyle(muted)}>
+              <div>Nom signataire</div>
+              <input value={landlordName} onChange={(e) => setLandlordName(e.target.value)} style={inputStyle(border)} />
+            </div>
+
+            <div style={{ marginTop: 10 }}>
+              <canvas
+                ref={landlordGuarantorActCanvasRef}
+                style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
+                onMouseDown={startLandlordGuarantorAct}
+                onMouseMove={moveLandlordGuarantorAct}
+                onMouseUp={endLandlordGuarantorAct}
+                onMouseLeave={endLandlordGuarantorAct}
+                onTouchStart={startLandlordGuarantorAct}
+                onTouchMove={moveLandlordGuarantorAct}
+                onTouchEnd={endLandlordGuarantorAct}
+              />
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+              <button onClick={() => clearCanvas(landlordGuarantorActCanvasRef.current)} style={btnAction(border)}>
+                Effacer
+              </button>
+              <button onClick={() => signGuarantorAct("BAILLEUR")} style={btnPrimarySmall(blue)}>
+                Signer (bailleur)
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
