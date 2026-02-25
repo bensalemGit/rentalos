@@ -51,6 +51,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const landlordGuarantorActCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawingGuarantor = useRef(false);
   const drawingLandlordGuarantorAct = useRef(false);
+  // ✅ NEW: prevent empty signatures
+  const tenantDirty = useRef(false);
+  const landlordDirty = useRef(false);
+  const guarantorDirty = useRef(false);
+  const landlordGuarantorActDirty = useRef(false);
 
   // lease kind
   const [leaseKind, setLeaseKind] = useState("");
@@ -158,12 +163,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   async function loadDocs() {
     setError("");
     setStatus("Chargement…");
-    setTenantSigned(false);
-    setLandlordSigned(false);
-    setGuarantorSigned(false);
-    setLandlordSignedGuarantorAct(false);
-    setFinalSignedDoc(null);
-    setGuarantorActFinalSignedDoc(null);
+
     try {
       // load lease bundle (kind + tenants)
       await loadLeaseBundle();
@@ -183,15 +183,25 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         null;
       setContractDoc(contract);
 
-      const signed =
-        arr
-          .filter(
-            (d: any) =>
-              (d.filename || "").includes("SIGNED_FINAL") &&
-              (contract?.id ? d.parent_document_id === contract.id : true)
-          )
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
-        null;
+      // ✅ SIGNED_FINAL (contrat) : d'abord par parent_document_id, sinon fallback
+      const signedByParent =
+        contract?.id
+          ? arr
+              .filter(
+                (d: any) =>
+                  (d.filename || "").includes("SIGNED_FINAL") && d.parent_document_id === contract.id
+              )
+              .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null
+          : null;
+
+      const signedFallback =
+        signedByParent
+          ? null
+          : arr
+              .filter((d: any) => (d.filename || "").includes("SIGNED_FINAL"))
+              .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+
+      const signed = signedByParent || signedFallback;
       setFinalSignedDoc(signed);
 
       const notice =
@@ -215,15 +225,30 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         null;
       setGuarantorActDoc(guarantorAct);
 
-      const guarantorActSigned =
-        arr
-          .filter(
-            (d: any) =>
-              (d.filename || "").includes("SIGNED_FINAL") &&
-              (d.parent_document_id === guarantorAct?.id)
-          )
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
-        null;
+      // ✅ SIGNED_FINAL (acte caution) : d'abord par parent_document_id, sinon fallback ciblé
+      const guarantorActSignedByParent =
+        guarantorAct?.id
+          ? arr
+              .filter(
+                (d: any) =>
+                  (d.filename || "").includes("SIGNED_FINAL") && d.parent_document_id === guarantorAct.id
+              )
+              .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null
+          : null;
+
+      // fallback ciblé: on ne prend pas n'importe quel signed_final (sinon ça peut être celui du contrat)
+      const guarantorActSignedFallback =
+        guarantorActSignedByParent
+          ? null
+          : arr
+              .filter(
+                (d: any) =>
+                  (d.filename || "").includes("SIGNED_FINAL") &&
+                  ((d.filename || "").toUpperCase().includes("GUARANT") || d.type === "GUARANTOR_ACT")
+              )
+              .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
+
+      const guarantorActSigned = guarantorActSignedByParent || guarantorActSignedFallback;
       setGuarantorActFinalSignedDoc(guarantorActSigned);
 
       if (guarantorActSigned?.id) {
@@ -373,6 +398,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     if (!c) return;
     const ctx = c.getContext("2d")!;
     ctx.clearRect(0, 0, c.width, c.height);
+    // ✅ NEW: reset dirty flags
+    if (c === tenantCanvasRef.current) tenantDirty.current = false;
+    if (c === landlordCanvasRef.current) landlordDirty.current = false;
+    if (c === guarantorCanvasRef.current) guarantorDirty.current = false;
+    if (c === landlordGuarantorActCanvasRef.current) landlordGuarantorActDirty.current = false;
   }
 
   function dataUrl(c: HTMLCanvasElement | null) {
@@ -397,6 +427,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
   function moveTenant(e: any) {
     if (!drawingTenant.current) return;
+    tenantDirty.current = true; // ✅ NEW
     const c = tenantCanvasRef.current!;
     const ctx = c.getContext("2d")!;
     const p = pos(e, c);
@@ -417,6 +448,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
   function moveLandlord(e: any) {
     if (!drawingLandlord.current) return;
+    landlordDirty.current = true; // ✅ NEW
     const c = landlordCanvasRef.current!;
     const ctx = c.getContext("2d")!;
     const p = pos(e, c);
@@ -438,6 +470,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
   function moveGuarantor(e: any) {
     if (!drawingGuarantor.current) return;
+    guarantorDirty.current = true; // ✅ NEW
     const c = guarantorCanvasRef.current!;
     const ctx = c.getContext("2d")!;
     const p = pos(e, c);
@@ -458,6 +491,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
   function moveLandlordGuarantorAct(e: any) {
     if (!drawingLandlordGuarantorAct.current) return;
+    landlordGuarantorActDirty.current = true; // ✅ NEW
     const c = landlordGuarantorActCanvasRef.current!;
     const ctx = c.getContext("2d")!;
     const p = pos(e, c);
@@ -484,7 +518,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         ? dataUrl(guarantorCanvasRef.current)
         : dataUrl(landlordGuarantorActCanvasRef.current);
 
-    if (!signatureDataUrl) {
+    const isDirty = role === "GARANT" ? guarantorDirty.current : landlordGuarantorActDirty.current;
+    if (!isDirty) {
       setStatus("");
       setError("Signature vide.");
       return;
@@ -556,7 +591,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     const signatureDataUrl =
       role === "LOCATAIRE" ? dataUrl(tenantCanvasRef.current) : dataUrl(landlordCanvasRef.current);
 
-    if (!signatureDataUrl) {
+    const isDirty = role === "LOCATAIRE" ? tenantDirty.current : landlordDirty.current;
+    if (!isDirty) {
       setStatus("");
       setError("Signature vide.");
       return;
