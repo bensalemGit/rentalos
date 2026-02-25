@@ -5,7 +5,6 @@ import * as fsSync from 'fs';
 import { PDFDocument } from 'pdf-lib';
 import * as fs from 'fs/promises';
 import * as path from 'path';
-import { writeFileSync } from 'fs';
 
 type SignRole = 'BAILLEUR' | 'LOCATAIRE' | 'GARANT';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
@@ -32,6 +31,49 @@ export class DocumentsService {
   // -------------------------------------
   private ensureDir(p: string) {
     fsSync.mkdirSync(p, { recursive: true });
+  }
+
+  private absFromStoragePath(storagePath: any): string {
+    const rel = String(storagePath || '').replace(/^\/+/, '');
+    return path.join(this.storageBase, rel);
+  }
+
+    /**
+   * Idempotence helper:
+   * - returns an existing document row (same lease/type/filename) if present and file exists.
+   * - Conservative: only used for "stable" docs (contract/notice/act/pack).
+   */
+  private async findExistingDocByFilename(args: {
+    leaseId: string;
+    type: string;
+    filename: string;
+    parentNullOnly?: boolean;
+  }): Promise<any | null> {
+    const { leaseId, type, filename, parentNullOnly } = args;
+
+    const r = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type=$2
+        AND filename=$3
+        ${parentNullOnly ? 'AND parent_document_id IS NULL' : ''}
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId, type, filename],
+    );
+
+    if (!r.rowCount) return null;
+    const doc = r.rows[0];
+
+    // ⚠️ storage_path est souvent stocké avec un "/" initial (ex: "/units/...").
+    // path.join('/storage', '/units/...') ignorerait '/storage', donc on normalise.
+    const absPath = this.absFromStoragePath(doc.storage_path);
+
+    if (!fsSync.existsSync(absPath)) return null;
+    return doc;
   }
 
 
@@ -182,7 +224,7 @@ export class DocumentsService {
       'index.html'
     );
     if (process.env.DEBUG_CONTRACT_HTML === '1') {
-      writeFileSync('/tmp/contract_debug.html', html, { encoding: 'utf8' });
+      fsSync.writeFileSync('/tmp/contract_debug.html', html, { encoding: 'utf8' });
     }
 
     const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, {
@@ -698,11 +740,69 @@ export class DocumentsService {
     return r.rows;
   }
 
+    /**
+   * Group documents by "root" (= parent_document_id OR self id).
+   * Useful for UI: show one line per "document flow" (original + signed + pack_final, etc).
+   */
+  async listByLeaseGrouped(leaseId: string) {
+    const docs = await this.listByLease(leaseId);
+
+    const byId = new Map<string, any>();
+    docs.forEach((d: any) => byId.set(String(d.id), d));
+
+    const rootIdOf = (d: any): string => {
+      if (d.parent_document_id) return String(d.parent_document_id);
+      return String(d.id);
+    };
+
+    const groups = new Map<string, any[]>();
+    for (const d of docs) {
+      const rid = rootIdOf(d);
+      const arr = groups.get(rid) || [];
+      arr.push(d);
+      groups.set(rid, arr);
+    }
+
+    const out = Array.from(groups.entries()).map(([rootId, items]) => {
+      const original =
+        byId.get(String(rootId)) ||
+        items.find((x) => !x.parent_document_id) ||
+        items[0];
+
+      const signedFinal =
+        (original?.signed_final_document_id ? byId.get(String(original.signed_final_document_id)) : null) ||
+        items.find((x) => String(x.filename || '').includes('_SIGNED_FINAL')) ||
+        null;
+
+      const packFinal =
+        items.find((x) => x.type === 'PACK_FINAL') ||
+        items.find((x) => String(x.filename || '').includes('_PACK_FINAL')) ||
+        null;
+
+      return {
+        rootId,
+        type: original?.type,
+        lease_id: original?.lease_id,
+        unit_id: original?.unit_id,
+        original,
+        signedFinal,
+        packFinal,
+        items: items.sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at))),
+      };
+    });
+
+    out.sort((a: any, b: any) =>
+      String(b.original?.created_at || '').localeCompare(String(a.original?.created_at || '')),
+    );
+
+    return out;
+  }
+
   async getDocumentFile(documentId: string) {
     const r = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [documentId]);
     if (!r.rowCount) throw new BadRequestException('Unknown document');
     const doc = r.rows[0];
-    const absPath = path.join(this.storageBase, doc.storage_path);
+    const absPath = this.absFromStoragePath(doc.storage_path);
     return { absPath, filename: doc.filename };
   }
 
@@ -815,6 +915,18 @@ export class DocumentsService {
     const irl = this.defaultIrl(row);
     const terms = this.normalizeLeaseTermsForContract(row);
 
+    // ✅ IMPORTANT: déclarer pdfName ici
+    const pdfName = `CONTRAT_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+
+    // ✅ IDEMPOTENCE: if same generated contract already exists (same filename), return it.
+    const existing = await this.findExistingDocByFilename({
+      leaseId,
+      type: 'CONTRAT',
+      filename: pdfName,
+      parentNullOnly: true, // avoid returning signed-final child
+    });
+    if (existing) return existing;
+
     const vars: Record<string, any> = {
       template_version: templateVersion,
       lease_id_short: this.leaseIdShort(leaseId),
@@ -892,7 +1004,15 @@ export class DocumentsService {
 
       terms_special_clauses: this.escapeHtml(String(terms.specialClauses ?? '')),
 
-      signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
+      signature_city: this.escapeHtml(
+        process.env.SIGNATURE_CITY ||
+        (
+          row.unit_city && /^\d{5}$/.test(row.unit_city)
+            ? '' // si jamais city = 5 chiffres → on ignore
+            : row.unit_city
+        ) ||
+        '—'
+      ),
       signature_date: this.formatDateFr(new Date()),
     };
 
@@ -927,7 +1047,6 @@ export class DocumentsService {
     }
 
     const pdfBuf = await this.htmlToPdfBuffer(html);
-    const pdfName = `CONTRAT_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
@@ -964,6 +1083,16 @@ async generateGuarantorActPdf(leaseId: string) {
   if (leaseKind !== 'MEUBLE_RP' && leaseKind !== 'NU_RP' && leaseKind !== 'SAISONNIER') {
     throw new BadRequestException(`Unsupported lease kind for guarantor act: ${leaseKind}`);
   }
+
+    // ✅ IDEMPOTENCE: if same guarantor act already exists (same filename), return it.
+  const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+  const existing = await this.findExistingDocByFilename({
+    leaseId,
+    type: 'GUARANTOR_ACT',
+    filename: pdfName,
+    parentNullOnly: true,
+  });
+  if (existing) return existing;
 
   // ✅ On réutilise la version/template que tu utilises déjà
   const templateVersion = '2026-04';
@@ -1050,7 +1179,15 @@ async generateGuarantorActPdf(leaseId: string) {
     guarantor_phone: this.escapeHtml(guarantorPhone || '—'),
     guarantor_address: this.escapeHtml(guarantorAddress || '—'),
 
-    signature_city: this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—'),
+    signature_city: this.escapeHtml(
+        process.env.SIGNATURE_CITY ||
+        (
+          row.unit_city && /^\d{5}$/.test(row.unit_city)
+            ? '' // si jamais city = 5 chiffres → on ignore
+            : row.unit_city
+        ) ||
+        '—'
+      ),
     signature_date: this.formatDateFr(new Date()),
   };
 
@@ -1059,7 +1196,6 @@ async generateGuarantorActPdf(leaseId: string) {
   const pdfBuf = await this.htmlToPdfBuffer(html);
   const sha = this.sha256Buffer(pdfBuf);
 
-  const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
   const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
   this.ensureDir(outDir);
   const outPdfPath = path.join(outDir, pdfName);
@@ -1081,8 +1217,6 @@ async generateGuarantorActPdf(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
-    const projectId = row.project_id;
-
     const landlord = await this.getLandlordForLease(leaseId);
 
     if (!landlord) {
@@ -1110,8 +1244,6 @@ async generateGuarantorActPdf(leaseId: string) {
         missing,
       });
     }
-
-    if (!landlord) throw new BadRequestException('Missing landlord profile');
 
     const landlord_identifiers_html = `
     <div><b>${this.escapeHtml(landlord.name)}</b></div>
@@ -1159,9 +1291,19 @@ h1{font-size:16pt;margin:0 0 10px 0}
 <p class="small">Document généré par RentalOS (version MVP).</p>
 </body></html>`;
 
+    // ✅ IDEMPOTENCE: if same notice already exists (same filename), return it.
+    const pdfName = `NOTICE_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+    const existing = await this.findExistingDocByFilename({
+      leaseId,
+      type: 'NOTICE',
+      filename: pdfName,
+      parentNullOnly: true,
+    });
+    if (existing) return existing;
+
     const pdfBuf = await this.htmlToPdfBuffer(html);
 
-    const pdfName = `NOTICE_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
@@ -1258,13 +1400,13 @@ h1{font-size:16pt;margin:0 0 10px 0}
           annexHtml += `<div class="annex-item"><h3>${this.escapeHtml(p.section)} — ${this.escapeHtml(p.label)}</h3></div>`;
         }
 
-        const abs = path.join(this.storageBase, p.storage_path);
+        const abs = this.absFromStoragePath(p.storage_path);
         let dataUrl = '';
         try {
           const buf = fsSync.readFileSync(abs);
           dataUrl = `data:${p.mime_type};base64,${buf.toString('base64')}`;
         } catch {
-          dataUrl = '<div class=missing">Photo introuvable</div>';
+          dataUrl = '<div class="missing">Photo introuvable</div>';
         }
 
         annexHtml += `
@@ -1479,6 +1621,18 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     const row = await this.fetchLeaseBundle(leaseId);
     const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
+    // ✅ IDEMPOTENCE: if same pack already exists (same filename), return it.
+    const packName = `PACK_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+    const existing = await this.findExistingDocByFilename({
+      leaseId,
+      type: 'PACK',
+      filename: packName,
+      parentNullOnly: true,
+    });
+    if (existing) return existing;
+
+    const pdfName = packName; // ✅ AJOUTE ÇA
+
     const contract = await this.generateContractPdf(leaseId);
 
     let notice: any = null;
@@ -1491,7 +1645,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     // ----- Variables du template 2026-03 -----
     const signature_date_fr = this.formatDateFr(new Date());
-    const signature_place = row.city; // pas le CP
+    const signature_place = row.unit_city; // pas le CP
     const lease_start_date_fr = this.formatDateFr(row.start_date);
     const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
 
@@ -1506,17 +1660,24 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     if (inv) annexes_list_html += `<li>Inventaire</li>`;
     annexes_list_html += '</ul>';
 
-
-    const contractBuf = fsSync.readFileSync(path.join(this.storageBase, contract.storage_path));
-    const edlBuf = fsSync.readFileSync(path.join(this.storageBase, edl.storage_path));
-    const invBuf = fsSync.readFileSync(path.join(this.storageBase, inv.storage_path));
-    const noticeBuf = notice ? fsSync.readFileSync(path.join(this.storageBase, notice.storage_path)) : null;
-
     const parts: Array<{ filename: string; buffer: Buffer }> = [];
-    parts.push({ filename: contract.filename, buffer: contractBuf });
-    if (noticeBuf) parts.push({ filename: notice.filename, buffer: noticeBuf });
-    parts.push({ filename: edl.filename, buffer: edlBuf });
-    parts.push({ filename: inv.filename, buffer: invBuf });
+
+    // ordre: contrat -> notice (si RP) -> edl -> inventaire
+    const pContract = this.safeReadPdfPart(contract);
+    if (pContract) parts.push(pContract);
+
+    const pNotice = notice ? this.safeReadPdfPart(notice) : null;
+    if (pNotice) parts.push(pNotice);
+
+    const pEdl = this.safeReadPdfPart(edl);
+    if (pEdl) parts.push(pEdl);
+
+    const pInv = this.safeReadPdfPart(inv);
+    if (pInv) parts.push(pInv);
+
+    if (!parts.length) {
+      throw new BadRequestException('PACK: no PDFs found to merge');
+    }
 
     // Création du HTML d'info avec tes variables (que tu as déjà calculées plus haut)
     const infoHtml = `
@@ -1526,7 +1687,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       <p>Lieu de signature : ${this.escapeHtml(signature_place)}</p>
       <p>Période du bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
       <p>Durée du bail : ${lease_duration_label}</p>
-      <p>Annexes incluses : ${annexes_list_html}</p>
+      <p>Annexes incluses :</p>
       ${annexes_list_html}
     </body></html>`;
 
@@ -1539,8 +1700,6 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     const mergedBuf = await this.mergePdfsGotenberg(parts);
     const mergedSha = this.sha256Buffer(mergedBuf);
 
-    
-    const pdfName = `PACK_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
@@ -1552,9 +1711,22 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
        VALUES ($1,$2,'PACK',$3,$4,$5) RETURNING *`,
       [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), mergedSha],
     );
+    
 
     return ins.rows[0];
   }
+
+    private safeReadPdfPart(doc: any): { filename: string; buffer: Buffer } | null {
+      if (!doc?.storage_path || !doc?.filename) return null;
+      const abs = this.absFromStoragePath(doc.storage_path);
+      if (!fsSync.existsSync(abs)) return null;
+      return { filename: doc.filename, buffer: fsSync.readFileSync(abs) };
+    }
+
+    private safeReadPdfPartByFilename(filename: string, buffer: Buffer): { filename: string; buffer: Buffer } | null {
+      if (!filename || !buffer) return null;
+      return { filename, buffer };
+    }
 
   // ---------------------------------------------
   // Merge PDFs via Gotenberg
@@ -1711,7 +1883,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     }
   }
 
-  const absPdf = path.join(this.storageBase, doc.storage_path);
+  const absPdf = this.absFromStoragePath(doc.storage_path);
   if (!fsSync.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
 
   const originalPdfBuf = fsSync.readFileSync(absPdf);
@@ -1825,12 +1997,16 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     if (id) tenantIndexById.set(id, idx);
   });
 
+  const isGuarantorAct = String(doc.type) === 'GUARANTOR_ACT';
+
   const sequence =
-  signerRole === 'BAILLEUR'
-    ? tenants.length + 2 // after tenants + guarantor
-    : signerRole === 'GARANT'
-      ? tenants.length + 1
-      : (tenantIndexById.get(effectiveTenantId) ?? 0) + 1;
+    isGuarantorAct
+      ? (signerRole === 'GARANT' ? 1 : signerRole === 'BAILLEUR' ? 2 : 99)
+      : signerRole === 'BAILLEUR'
+        ? tenants.length + 1
+        : signerRole === 'GARANT'
+          ? tenants.length + 2
+          : (tenantIndexById.get(effectiveTenantId) ?? 0) + 1;
 
   const audit = {
     consent: true,
@@ -1891,9 +2067,6 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     : Boolean(Object.keys(latestTenantSigByTenantId).length);
 
   const hasLandlord = Boolean(latestLandlordSig);
-
-  const isGuarantorAct = String(doc.type) === 'GUARANTOR_ACT';
-
   const hasGuarantor = Boolean(latestGuarantSig);
 
   const readyToFinalize =
@@ -1936,7 +2109,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
     const sigPages: Buffer[] = [];
     for (const s of sigOrder) {
-      const sigImgAbs = path.join(this.storageBase, s.signature_image_path);
+      const sigImgAbs = this.absFromStoragePath(s.signature_image_path);
       const sigDataUrl = this.fileToDataUrlPng(sigImgAbs);
 
       const pageBuf = await this.generateSignaturePagePdf({
@@ -2019,27 +2192,61 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     const leaseId = finalSignedDocument.lease_id;
 
     // 1) Contract final signed PDF
-    const contractAbs = path.join(this.storageBase, finalSignedDocument.storage_path);
+    //const contractAbs = this.absFromStoragePath(finalSignedDocument.storage_path);
 
     // 2) Annexes (optional but in correct order)
     const docs = await this.listDocsForLease(leaseId);
 
-    const notice = this.pickDoc(docs, 'NOTICE');
-    const edl = this.pickDoc(docs, 'EDL');
-    const inventaire = this.pickDoc(docs, 'INVENTAIRE');
+    // 2bis) ACTE DE CAUTION signé final (si existe)
+    const byId = new Map<string, any>();
+    docs.forEach((d: any) => byId.set(String(d.id), d));
 
-    // You can add DDT later if you implement it as a document type
-    const annexes = [notice, edl, inventaire].filter(Boolean);
+    // On prend l'original (parent_document_id NULL)
+    const guarantorActOriginal =
+      docs
+        .filter((d: any) => d.type === 'GUARANTOR_ACT' && !d.parent_document_id)
+        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
 
-    // 3) Merge paths: contract first, then annexes
-    const absPaths = [contractAbs, ...annexes.map((d: any) => path.join(this.storageBase, d.storage_path))];
+    const guarantorActSignedFinal =
+      guarantorActOriginal?.signed_final_document_id
+        ? byId.get(String(guarantorActOriginal.signed_final_document_id))
+        : null;
+
+    // ✅ safer: originals only
+    const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
+    const edl = docs.find((d: any) => d.type === 'EDL' && !d.parent_document_id) || null;
+    const inventaire = docs.find((d: any) => d.type === 'INVENTAIRE' && !d.parent_document_id) || null;
+
+    const annexesOrdered = [
+      finalSignedDocument,        // 1) CONTRAT_SIGNED_FINAL
+      guarantorActSignedFinal,    // 2) ACTE_CAUTION_SIGNED_FINAL (si existe)
+      notice,                     // 3) NOTICE
+      edl,                        // 4) EDL
+      inventaire,                 // 5) INVENTAIRE
+    ].filter(Boolean);
+
+    // 3) Merge paths dans le bon ordre
+    const absPaths = annexesOrdered
+      .map((d: any) => this.absFromStoragePath(d.storage_path))
+      .filter((p: string) => fsSync.existsSync(p));
+
+    if (!absPaths.length) {
+      throw new BadRequestException('PACK_FINAL: no PDFs found to merge');
+    }
 
     const packBytes = await this.mergePdfs(absPaths);
 
     // 4) Storage path
     const packFilename = finalSignedDocument.filename.replace(/\.pdf$/i, '') + '_PACK_FINAL.pdf';
-    const packStoragePath = finalSignedDocument.storage_path.replace(/\.pdf$/i, '') + '_PACK_FINAL.pdf';
-    const packAbs = path.join(this.storageBase, packStoragePath);
+    const packStoragePath = path.join(
+      'units',
+      String(finalSignedDocument.unit_id),
+      'leases',
+      String(finalSignedDocument.lease_id),
+      'documents',
+      packFilename,
+    );
+    const packAbs = this.absFromStoragePath(packStoragePath);
 
     await fs.mkdir(path.dirname(packAbs), { recursive: true });
     await fs.writeFile(packAbs, packBytes);
@@ -2074,6 +2281,18 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       signedPdfSha256: mergedSha,
     };
   }
+if (isGuarantorAct) {
+  return {
+    ok: true,
+    pending: true,
+    need: {
+      guarantor: !hasGuarantor,
+      landlord: !hasLandlord,
+    },
+    signatures: [latestGuarantSig, latestLandlordSig].filter(Boolean),
+  };
+}
+
   return {
     ok: true,
     pending: true,
