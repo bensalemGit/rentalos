@@ -1735,12 +1735,19 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       const sigsNow = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
       // rebuild latest maps
       const latestTenantSigByTenantId: Record<string, any> = {};
+      let latestGuarantSig: any = null;
       let latestLandlordSig: any = null;
       for (const s of sigsNow.rows) {
         if (s.signer_role === 'BAILLEUR') {
           if (!latestLandlordSig) latestLandlordSig = s;
           continue;
         }
+
+        if (s.signer_role === 'GARANT') {
+          if (!latestGuarantSig) latestGuarantSig = s;
+          continue;
+        }
+
         if (s.signer_role === 'LOCATAIRE') {
           const tid = this.pickTenantIdFromSignature(s);
           if (!tid) continue;
@@ -1831,6 +1838,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
   const latestTenantSigByTenantId: Record<string, any> = {};
   let latestLandlordSig: any = null;
+  let latestGuarantSig: any = null;
 
   for (const s of sigs.rows) {
     if (s.signer_role === 'BAILLEUR') {
@@ -1891,7 +1899,9 @@ const readyToFinalize =
       .filter(Boolean)
       .sort((a: any, b: any) => (a.sequence ?? 0) - (b.sequence ?? 0));
 
-    const sigOrder: any[] = [...tenantSigsOrdered, latestLandlordSig].filter(Boolean);
+    const sigOrder: any[] = isGuarantorAct
+      ? [latestGuarantSig, latestLandlordSig].filter(Boolean)
+      : [...tenantSigsOrdered, latestLandlordSig].filter(Boolean);
 
     const sigPages: Buffer[] = [];
     for (const s of sigOrder) {
@@ -1917,9 +1927,20 @@ const readyToFinalize =
     sigOrder.forEach((s: any, idx: number) => {
       if (s.signer_role === 'LOCATAIRE') {
         const tid = this.pickTenantIdFromSignature(s) || `tenant_${idx + 1}`;
-        mergeParts.push({ filename: `signature_locataire_${idx + 1}_${tid}.pdf`, buffer: sigPages[idx] });
+        mergeParts.push({
+          filename: `signature_locataire_${idx + 1}_${tid}.pdf`,
+          buffer: sigPages[idx],
+        });
+      } else if (s.signer_role === 'GARANT') {
+        mergeParts.push({
+          filename: `signature_garant.pdf`,
+          buffer: sigPages[idx],
+        });
       } else {
-        mergeParts.push({ filename: `signature_bailleur.pdf`, buffer: sigPages[idx] });
+        mergeParts.push({
+          filename: `signature_bailleur.pdf`,
+          buffer: sigPages[idx],
+        });
       }
     });
 
@@ -1933,15 +1954,35 @@ const readyToFinalize =
     const signedAbs2 = path.join(signedDir, signedName);
     fsSync.writeFileSync(signedAbs2, mergedBuf);
 
+    const finalType = isGuarantorAct ? 'GUARANTOR_ACT' : 'CONTRAT';
+
     const insDoc = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
-       VALUES ($1,$2,'CONTRAT',$3,$4,$5,$6) RETURNING *`,
-      [doc.unit_id, doc.lease_id, signedName, signedAbs2.replace(this.storageBase, ''), mergedSha, doc.id],
+      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+      [
+        doc.unit_id,
+        doc.lease_id,
+        finalType,
+        signedName,
+        signedAbs2.replace(this.storageBase, ''),
+        mergedSha,
+        doc.id,
+      ],
     );
 
     await this.pool.query(`UPDATE documents SET signed_final_document_id=$1, finalized_at = NOW(), signed_final_sha256 = $3 WHERE id=$2`, [insDoc.rows[0].id, doc.id, mergedSha]);
 
-        const finalSignedDocument = insDoc.rows[0];
+    const finalSignedDocument = insDoc.rows[0];
+
+    if (isGuarantorAct) {
+      return {
+        ok: true,
+        pending: false,
+        finalSignedDocument,
+        signatures: sigOrder,
+        signedPdfSha256: mergedSha,
+      };
+    }
 
     // --- Build PACK_FINAL (contract + annexes) ---
     const leaseId = finalSignedDocument.lease_id;
