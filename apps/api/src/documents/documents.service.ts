@@ -961,6 +961,9 @@ async generateGuarantorActPdf(leaseId: string) {
   }
 
   const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
+  if (leaseKind !== 'MEUBLE_RP' && leaseKind !== 'NU_RP' && leaseKind !== 'SAISONNIER') {
+    throw new BadRequestException(`Unsupported lease kind for guarantor act: ${leaseKind}`);
+  }
 
   // ✅ On réutilise la version/template que tu utilises déjà
   const templateVersion = '2026-04';
@@ -994,6 +997,25 @@ async generateGuarantorActPdf(leaseId: string) {
     <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
   `.trim();
 
+  // --- vars plain attendues par le template ---
+  const designationSummary = `${row.unit_label || ''} (${row.unit_code || ''})`.trim();
+
+  const tenantsArr = this.parseJsonSafe(row.tenants_json);
+  const tenantsList: any[] = Array.isArray(tenantsArr) ? tenantsArr : [];
+
+  const tenantsNamesPlain =
+    tenantsList.length
+      ? tenantsList.map((t) => String(t?.full_name || '').trim()).filter(Boolean).join(', ')
+      : String(row.tenant_name || '').trim();
+
+  const landlordIdentifiersPlain = [
+    String(landlord.name || '').trim(),
+    String(landlord.address || '').trim(),
+    `Email : ${String(landlord.email || '').trim()} — Tél : ${String(landlord.phone || '').trim()}`
+  ]
+    .filter(Boolean)
+    .join('\n');
+
   const vars: Record<string, any> = {
     template_version: templateVersion,
     lease_id_short: this.leaseIdShort(leaseId),
@@ -1014,6 +1036,10 @@ async generateGuarantorActPdf(leaseId: string) {
     landlord_address: this.escapeHtml(landlord.address),
     landlord_email: this.escapeHtml(landlord.email),
     landlord_phone: this.escapeHtml(landlord.phone),
+    designation_summary: this.escapeHtml(designationSummary || '—'),
+    tenants_names_plain: this.escapeHtml(tenantsNamesPlain || '—'),
+    landlord_identifiers_plain: this.escapeHtml(landlordIdentifiersPlain || '—'),
+    start_date: this.formatDateFr(row.start_date),
 
     rent_eur: this.toEuros(row.rent_cents),
     charges_eur: this.toEuros(row.charges_cents),
@@ -1845,6 +1871,11 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       if (!latestLandlordSig) latestLandlordSig = s;
       continue;
     }
+    // ✅ AJOUTER CE BLOC
+    if (s.signer_role === 'GARANT') {
+      if (!latestGuarantSig) latestGuarantSig = s;
+      continue;
+    }
     if (s.signer_role === 'LOCATAIRE') {
       const tid = this.pickTenantIdFromSignature(s);
       if (!tid) continue;
@@ -1863,12 +1894,12 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
 
   const isGuarantorAct = String(doc.type) === 'GUARANTOR_ACT';
 
-const hasGuarantor = sigs.rows.some((s: any) => s.signer_role === 'GARANT');
+  const hasGuarantor = Boolean(latestGuarantSig);
 
-const readyToFinalize =
-  isGuarantorAct
-    ? (hasGuarantor && hasLandlord)
-    : (hasAllTenants && hasLandlord);
+  const readyToFinalize =
+    isGuarantorAct
+      ? (hasGuarantor && hasLandlord)
+      : (hasAllTenants && hasLandlord);
 
 
   if (readyToFinalize) {
