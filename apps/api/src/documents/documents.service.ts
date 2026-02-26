@@ -956,8 +956,22 @@ export class DocumentsService {
       tenant_name: this.escapeHtml(row.tenant_name || ''),
 
       designation_block: this.buildDesignationBlock(row),
-      colocation_clause: this.buildColocationClause(row),
 
+      // ✅ NEW: nombre de clés
+      keys_count: row.keys_count != null ? String(row.keys_count) : '—',
+
+      // ✅ NEW: annexes affichées dans le contrat (HTML)
+      annexes_contract_html: (() => {
+        const items: string[] = [];
+        items.push('État des lieux');
+        if (leaseKind !== 'SAISONNIER') items.push('Notice d’information');
+        items.push('Dossier de diagnostic technique');
+        if (leaseKind === 'MEUBLE_RP') items.push('Inventaire du mobilier');
+
+        return `<ul>${items.map((x) => `<li>${this.escapeHtml(x)}</li>`).join('')}</ul>`;
+      })(),
+
+      colocation_clause: this.buildColocationClause(row),
       guarantor_block: this.buildGuarantorBlock(row),
       visale_block: this.buildVisaleBlock(row),
 
@@ -970,8 +984,8 @@ export class DocumentsService {
       payment_day: String(row.payment_day ?? 5),
 
       // IRL
-      irl_reference_quarter: this.escapeHtml(irl.quarter),
-      irl_reference_value: this.escapeHtml(irl.value),
+      irl_reference_quarter: this.escapeHtml(String(terms.irlIndexation?.referenceQuarter ?? irl.quarter)),
+      irl_reference_value: this.escapeHtml(String(terms.irlIndexation?.referenceValue ?? irl.value)),
       // ✅ no irl_revision_date column -> use start_date
       irl_revision_date: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
