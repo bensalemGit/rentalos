@@ -1791,6 +1791,93 @@ code{word-break:break-all}
 
     return await this.htmlToPdfBuffer(html);
   }
+
+  private async buildAuditPdf(args: {
+  originalSha: string;
+  signedSha: string;
+  documentId: string;
+  signatures: any[];
+}) {
+  const { originalSha, signedSha, documentId, signatures } = args;
+
+  const sorted = [...(signatures || [])].sort((a: any, b: any) => {
+    const sa = Number(a?.sequence ?? 0);
+    const sb = Number(b?.sequence ?? 0);
+    return sa - sb;
+  });
+
+  const rows = sorted
+    .map((s: any) => {
+      const signedAt = s?.signed_at ? new Date(s.signed_at).toISOString() : '';
+      const consent =
+        s?.audit_log?.consent === true ||
+        (typeof s?.audit_log === 'string' && s.audit_log.includes('"consent":true'));
+
+      return `
+        <tr>
+          <td>${this.escapeHtml(String(s?.sequence ?? ''))}</td>
+          <td>${this.escapeHtml(String(s?.signer_role ?? ''))}</td>
+          <td>${this.escapeHtml(String(s?.signer_name ?? ''))}</td>
+          <td>${this.escapeHtml(signedAt)}</td>
+          <td>${this.escapeHtml(String(s?.ip ?? ''))}</td>
+          <td style="font-size:10px;word-break:break-all">${this.escapeHtml(String(s?.user_agent ?? ''))}</td>
+          <td>${consent ? 'true' : 'false'}</td>
+        </tr>
+      `;
+    })
+    .join('');
+
+  const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; padding: 36px; }
+    h1 { font-size: 18px; margin: 0 0 10px 0; }
+    .hash { font-size: 10px; word-break: break-all; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; }
+    td, th { border: 1px solid #000; padding: 6px; vertical-align: top; }
+    th { background: #eee; }
+    .small { font-size: 10px; color: #333; }
+  </style>
+</head>
+<body>
+  <h1>Annexe technique — Journal de signature</h1>
+
+  <p><strong>Document ID :</strong> ${this.escapeHtml(documentId)}</p>
+
+  <p><strong>SHA256 original :</strong><br/>
+    <span class="hash">${this.escapeHtml(originalSha)}</span>
+  </p>
+
+  <p><strong>SHA256 signé :</strong><br/>
+    <span class="hash">${this.escapeHtml(signedSha)}</span>
+  </p>
+
+  <h2 style="font-size:14px;margin-top:18px">Signatures</h2>
+
+  <table>
+    <tr>
+      <th>#</th>
+      <th>Rôle</th>
+      <th>Nom</th>
+      <th>Date (ISO)</th>
+      <th>IP</th>
+      <th>User-Agent</th>
+      <th>Consent</th>
+    </tr>
+    ${rows}
+  </table>
+
+  <p class="small" style="margin-top:24px">
+    Ce journal technique atteste de l'ordre et des conditions de signature du document.
+  </p>
+</body>
+</html>`;
+
+  return this.htmlToPdfBuffer(html);
+}
+
 async signDocumentMulti(documentId: string, body: any, req: any) {
   const { signerName, signerRole, signatureDataUrl, signerTenantId } = body || {};
   if (!signerName || !signerRole || !signatureDataUrl) {
@@ -2224,6 +2311,35 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       edl,                        // 4) EDL
       inventaire,                 // 5) INVENTAIRE
     ].filter(Boolean);
+
+    // --------------------------------------------------
+    // AUDIT PAGE (append as last PDF in PACK_FINAL)
+    // --------------------------------------------------
+    const auditPdfBuffer = await this.buildAuditPdf({
+      originalSha: String(doc.sha256 || originalSha || ''),
+      signedSha: mergedSha, // SHA du PDF signé final (contrat+pages signatures)
+      documentId: String(doc.id),
+      signatures: sigOrder, // ordre réel
+    });
+
+    const auditFilename = `AUDIT_SIGNATURE_${String(finalSignedDocument.lease_id).slice(0, 8)}_${Date.now()}.pdf`;
+    const auditStoragePath = path.join(
+      'units',
+      String(finalSignedDocument.unit_id),
+      'leases',
+      String(finalSignedDocument.lease_id),
+      'documents',
+      auditFilename,
+    );
+    const auditAbs = this.absFromStoragePath(auditStoragePath);
+
+    await fs.mkdir(path.dirname(auditAbs), { recursive: true });
+    await fs.writeFile(auditAbs, auditPdfBuffer);
+
+    // On pousse un "document-like" object pour rentrer dans ton pipeline existant
+    annexesOrdered.push({
+      storage_path: auditStoragePath,
+    });
 
     // 3) Merge paths dans le bon ordre
     const absPaths = annexesOrdered
