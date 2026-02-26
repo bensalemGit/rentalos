@@ -6,6 +6,8 @@ import { PDFDocument } from 'pdf-lib';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
+
+
 type SignRole = 'BAILLEUR' | 'LOCATAIRE' | 'GARANT';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
 
@@ -202,7 +204,7 @@ export class DocumentsService {
   }
 
   private async htmlToPdfBuffer(html: string): Promise<Buffer> {
-    // Double sécurité côté HTML
+    // 1) sécurité meta
     if (!/<meta\s+charset=/i.test(html)) {
       html = html.replace(/<head>/i, '<head><meta charset="utf-8">');
     }
@@ -213,32 +215,68 @@ export class DocumentsService {
       );
     }
 
-    // BOM + UTF-8
-    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
-    const htmlBuf = Buffer.concat([bom, Buffer.from(html, 'utf8')]);
+    // 2) IMPORTANT: Buffer UTF-8 strict (sans ambiguïté)
+    // (BOM optionnel: je préfère sans BOM en prod pour éviter toute bizarrerie)
+    const htmlBuf = Buffer.from(html, 'utf8');
 
+    // 3) form-data (node) + contentType explicite
     const form = new FormData();
-    form.append(
-      'files',
-      new Blob([new Uint8Array(htmlBuf)], { type: 'text/html; charset=utf-8' }),
-      'index.html'
-    );
-    if (process.env.DEBUG_CONTRACT_HTML === '1') {
-      fsSync.writeFileSync('/tmp/contract_debug.html', html, { encoding: 'utf8' });
-    }
-
-    const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, {
-      method: 'POST',
-      body: form as any,
+    const htmlFile = new File([new Uint8Array(htmlBuf)], 'index.html', {
+      type: 'text/html; charset=utf-8',
     });
 
-    if (!resp.ok) throw new BadRequestException(`PDF generation failed: ${await resp.text()}`);
+    form.append('files', htmlFile);
+
+    // debug optionnel
+    if (process.env.DEBUG_CONTRACT_HTML === '1') {
+      fsSync.writeFileSync('/tmp/contract_debug.html', html, { encoding: 'utf8' });
+      fsSync.writeFileSync('/tmp/contract_debug.bytes', htmlBuf); // pour vérifier les bytes
+    }
+
+    console.log("First 50 chars:", html.slice(0, 50));
+    const resp = await fetch(`${this.gotenberg}/forms/chromium/convert/html`, {
+      method: 'POST',
+      body: form
+    });
+
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      throw new BadRequestException(`PDF generation failed: ${resp.status} ${txt}`);
+    }
+
     return Buffer.from(await resp.arrayBuffer());
   }
 
   // -------------------------------------
   // PDF merge helpers (PACK_FINAL)
   // -------------------------------------
+  private async mergePdfsGotenberg(
+    pdfs: Array<{ filename: string; buffer: Buffer }>
+  ): Promise<Buffer> {
+    const form = new FormData();
+
+    for (const p of pdfs) {
+      const pdfFile = new File([new Uint8Array(p.buffer)], p.filename, {
+        type: 'application/pdf',
+      });
+      form.append('files', pdfFile);
+    }
+
+    const resp = await fetch(`${this.gotenberg}/forms/pdfengines/merge`, {
+      method: 'POST',
+      body: form,
+      // ⚠️ NE PAS mettre headers !!!
+    });
+
+    if (!resp.ok) {
+      throw new BadRequestException(
+        `PDF merge failed: ${resp.status} ${await resp.text()}`
+      );
+    }
+
+    return Buffer.from(await resp.arrayBuffer());
+  }
+
   private async mergePdfs(absPaths: string[]): Promise<Uint8Array> {
     const merged = await PDFDocument.create();
 
@@ -775,8 +813,8 @@ export class DocumentsService {
         null;
 
       const packFinal =
+        items.find((x) => x.type === 'PACK_FINAL' && String(x.filename || '').includes('PACK_FINAL_V2_')) ||
         items.find((x) => x.type === 'PACK_FINAL') ||
-        items.find((x) => String(x.filename || '').includes('_PACK_FINAL')) ||
         null;
 
       return {
@@ -1626,6 +1664,157 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     return { created: true, document: ins.rows[0] };
   }
 
+  private async generatePackFinalV2(leaseId: string, parentDocumentId?: string) {
+  const row = await this.fetchLeaseBundle(leaseId);
+  const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
+
+  const docs = await this.listDocsForLease(leaseId);
+
+  // 1) CONTRAT signé final (obligatoire)
+  const contractSignedFinal =
+    docs
+      .filter((d: any) => d.type === 'CONTRAT')
+      .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+      .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
+
+  if (!contractSignedFinal) {
+    return { created: false, skipped: true, reason: 'No signed final contract yet' };
+  }
+
+  const contractRootId = contractSignedFinal.parent_document_id || contractSignedFinal.id;
+
+  const sigQ = await this.pool.query(
+    `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+    [contractRootId],
+  );
+
+  const contractSignatures = sigQ.rows || [];
+
+  // 2) ACTE DE CAUTION signé final (optionnel)
+  const guarantorActSignedFinal =
+    docs
+      .filter((d: any) => d.type === 'GUARANTOR_ACT')
+      .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+      .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
+
+  // 3) Annexes originales
+  const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
+  const edl = docs.find((d: any) => d.type === 'EDL' && !d.parent_document_id) || null;
+  const inventaire = docs.find((d: any) => d.type === 'INVENTAIRE' && !d.parent_document_id) || null;
+
+  const annexesOrdered = [
+    contractSignedFinal,
+    guarantorActSignedFinal,
+    notice,
+    edl,
+    inventaire,
+  ].filter(Boolean);
+
+  // 4) AUDIT — SHA du root (original) et du signed_final (signé)
+  const contractRoot =
+    docs.find((d: any) => String(d.id) === String(contractRootId)) || null;
+
+  let originalSha = String(contractRoot?.sha256 || '');
+  if (!originalSha) {
+    const q = await this.pool.query(`SELECT sha256 FROM documents WHERE id=$1`, [contractRootId]);
+    if (q.rowCount) originalSha = String(q.rows[0].sha256 || '');
+  }
+  
+  let signedSha = String(contractSignedFinal?.sha256 || '');
+  if (!signedSha) {
+    try {
+      const abs = this.absFromStoragePath(contractSignedFinal.storage_path);
+      if (fsSync.existsSync(abs)) signedSha = this.sha256File(abs);
+    } catch {}
+  }
+  const auditPdfBuffer = await this.buildAuditPdf({
+    originalSha,
+    signedSha,
+    documentId: String(contractRootId), // ✅ stable et non ambigu
+    signatures: contractSignatures,
+  });
+
+  const auditFilename = `AUDIT_PACK_FINAL_${String(leaseId).slice(0, 8)}.pdf`;
+  const auditStoragePath = path.join(
+    'units',
+    String(row.unit_id),
+    'leases',
+    String(leaseId),
+    'documents',
+    auditFilename,
+  );
+  const auditAbs = this.absFromStoragePath(auditStoragePath);
+  await fs.mkdir(path.dirname(auditAbs), { recursive: true });
+  await fs.writeFile(auditAbs, auditPdfBuffer);
+
+  annexesOrdered.push({
+    storage_path: auditStoragePath,
+    filename: auditFilename,
+  });
+
+  // 5) Filename stable v2
+  const packV2Name = `PACK_FINAL_V2_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+
+  // 6) Delete + recreate (anti-idempotence “qui bloque”)
+  const existing = await this.findExistingDocByFilename({
+    leaseId,
+    type: 'PACK_FINAL',
+    filename: packV2Name,
+    parentNullOnly: false,
+  });
+
+  if (existing) {
+    try {
+      const abs = this.absFromStoragePath(existing.storage_path);
+      if (fsSync.existsSync(abs)) fsSync.unlinkSync(abs);
+    } catch {}
+    await this.pool.query(`DELETE FROM documents WHERE id=$1`, [existing.id]);
+  }
+
+  // 7) Merge (via Gotenberg, plus robuste)
+  const parts = annexesOrdered
+    .map((d: any) => this.safeReadPdfPart(d))   // lit filename + buffer depuis storage_path
+    .filter(Boolean) as Array<{ filename: string; buffer: Buffer }>;
+
+  if (!parts.length) {
+    throw new BadRequestException('PACK_FINAL_V2: no PDFs found to merge');
+  }
+
+  const mergedBuf = await this.mergePdfsGotenberg(parts);
+  const packSha256 = this.sha256Buffer(mergedBuf);
+
+  const packStoragePath = path.join(
+    'units',
+    String(row.unit_id),
+    'leases',
+    String(leaseId),
+    'documents',
+    packV2Name,
+  );
+  const packAbs = this.absFromStoragePath(packStoragePath);
+
+  await fs.mkdir(path.dirname(packAbs), { recursive: true });
+  await fs.writeFile(packAbs, mergedBuf);
+
+  const packParentId = String(contractRootId || '') || null;
+  const ins = await this.pool.query(
+    `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
+     VALUES ($1,$2,'PACK_FINAL',$3,$4,$5,$6)
+     RETURNING *`,
+    [
+      row.unit_id,
+      leaseId,
+      packV2Name,
+      packStoragePath,
+      packSha256,
+      packParentId,
+    ],
+  );
+
+  return { created: true, document: ins.rows[0] };
+}
+
+
   // ---------------------------------------------
   // PACK PDF = merge (Contract + Notice if RP + EDL + Inventory)
   // ---------------------------------------------
@@ -1659,7 +1848,8 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     // ----- Variables du template 2026-03 -----
     const signature_date_fr = this.formatDateFr(new Date());
-    const signature_place = row.unit_city; // pas le CP
+    const signature_place =
+      row.unit_city && /^\d{5}$/.test(String(row.unit_city).trim()) ? '' : row.unit_city;
     const lease_start_date_fr = this.formatDateFr(row.start_date);
     const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
 
@@ -1742,19 +1932,6 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       if (!filename || !buffer) return null;
       return { filename, buffer };
     }
-
-  // ---------------------------------------------
-  // Merge PDFs via Gotenberg
-  // ---------------------------------------------
-  private async mergePdfsGotenberg(pdfs: Array<{ filename: string; buffer: Buffer }>): Promise<Buffer> {
-    const form = new FormData();
-    for (const p of pdfs) {
-      form.append('files', new Blob([new Uint8Array(p.buffer)], { type: 'application/pdf' }), p.filename);
-    }
-    const resp = await fetch(`${this.gotenberg}/forms/pdfengines/merge`, { method: 'POST', body: form as any });
-    if (!resp.ok) throw new BadRequestException(`PDF merge failed: ${await resp.text()}`);
-    return Buffer.from(await resp.arrayBuffer());
-  }
 
   // ---------------------------------------------
   // Signatures (kept) + ✅ SIGNATURE GUARD
@@ -2281,131 +2458,31 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     const finalSignedDocument = insDoc.rows[0];
 
     if (isGuarantorAct) {
+      // ✅ si le contrat signé final existe déjà, ça va rebuild le pack avec la caution
+      const packV2 = await this.generatePackFinalV2(finalSignedDocument.lease_id);
       return {
         ok: true,
         pending: false,
-        finalSignedDocument,
+        finalSignedDocument,                 // ✅ le doc signé final (acte)
+        packFinalDocument: packV2?.document || null, // ✅ le pack v2
         signatures: sigOrder,
         signedPdfSha256: mergedSha,
       };
     }
 
-    // --- Build PACK_FINAL (contract + annexes) ---
-    const leaseId = finalSignedDocument.lease_id;
-
-    // 1) Contract final signed PDF
-    //const contractAbs = this.absFromStoragePath(finalSignedDocument.storage_path);
-
-    // 2) Annexes (optional but in correct order)
-    const docs = await this.listDocsForLease(leaseId);
-
-    // 2bis) ACTE DE CAUTION signé final (si existe) — PACK_FINAL v2
-    const guarantorActSignedFinal =
-      docs
-        .filter((d: any) => d.type === 'GUARANTOR_ACT')
-        .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
-        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
-
-    // ✅ safer: originals only
-    const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
-    const edl = docs.find((d: any) => d.type === 'EDL' && !d.parent_document_id) || null;
-    const inventaire = docs.find((d: any) => d.type === 'INVENTAIRE' && !d.parent_document_id) || null;
-
-    const annexesOrdered = [
-      finalSignedDocument,        // 1) CONTRAT_SIGNED_FINAL
-      guarantorActSignedFinal,    // 2) ACTE_CAUTION_SIGNED_FINAL (si existe)
-      notice,                     // 3) NOTICE
-      edl,                        // 4) EDL
-      inventaire,                 // 5) INVENTAIRE
-    ].filter(Boolean);
-
-    // --------------------------------------------------
-    // AUDIT PAGE (append as last PDF in PACK_FINAL)
-    // --------------------------------------------------
-    const auditPdfBuffer = await this.buildAuditPdf({
-      originalSha: String(doc.sha256 || originalSha || ''),
-      signedSha: mergedSha, // SHA du PDF signé final (contrat+pages signatures)
-      documentId: String(doc.id),
-      signatures: sigOrder, // ordre réel
-    });
-
-    const auditFilename = `AUDIT_SIGNATURE_${String(finalSignedDocument.lease_id).slice(0, 8)}_${Date.now()}.pdf`;
-    const auditStoragePath = path.join(
-      'units',
-      String(finalSignedDocument.unit_id),
-      'leases',
-      String(finalSignedDocument.lease_id),
-      'documents',
-      auditFilename,
-    );
-    const auditAbs = this.absFromStoragePath(auditStoragePath);
-
-    await fs.mkdir(path.dirname(auditAbs), { recursive: true });
-    await fs.writeFile(auditAbs, auditPdfBuffer);
-
-    // On pousse un "document-like" object pour rentrer dans ton pipeline existant
-    annexesOrdered.push({
-      storage_path: auditStoragePath,
-      filename: auditFilename,
-    });
-
-    // 3) Merge paths dans le bon ordre
-    const absPaths = annexesOrdered
-      .map((d: any) => this.absFromStoragePath(d.storage_path))
-      .filter((p: string) => fsSync.existsSync(p));
-
-    if (!absPaths.length) {
-      throw new BadRequestException('PACK_FINAL: no PDFs found to merge');
-    }
-
-    const packBytes = await this.mergePdfs(absPaths);
-
-    // 4) Storage path
-    const packFilename = finalSignedDocument.filename.replace(/\.pdf$/i, '') + '_PACK_FINAL.pdf';
-    const packStoragePath = path.join(
-      'units',
-      String(finalSignedDocument.unit_id),
-      'leases',
-      String(finalSignedDocument.lease_id),
-      'documents',
-      packFilename,
-    );
-    const packAbs = this.absFromStoragePath(packStoragePath);
-
-    await fs.mkdir(path.dirname(packAbs), { recursive: true });
-    await fs.writeFile(packAbs, packBytes);
-
-    // 5) SHA
-    const packSha256 = this.sha256(packBytes);
-
-    // 6) Insert PACK_FINAL document row
-    const packIns = await this.pool.query(
-      `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id, created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
-       RETURNING *`,
-      [
-        finalSignedDocument.unit_id,
-        finalSignedDocument.lease_id,
-        'PACK_FINAL',
-        packFilename,
-        packStoragePath,
-        packSha256,
-        doc.id,
-      ],
-    );
-
-    const packFinalDocument = packIns.rows[0];
+    // ✅ rebuild PACK_FINAL v2 dès que le contrat est finalisé
+    const packV2 = await this.generatePackFinalV2(finalSignedDocument.lease_id);
 
     return {
       ok: true,
       pending: false,
       finalSignedDocument,
-      packFinalDocument,
+      packFinalDocument: packV2?.document || null,
       signatures: sigOrder,
       signedPdfSha256: mergedSha,
     };
   }
-if (isGuarantorAct) {
+  if (isGuarantorAct) {
   return {
     ok: true,
     pending: true,

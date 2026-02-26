@@ -28,7 +28,6 @@ type LeaseTenant = {
 
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
-
   const [token, setToken] = useState("");
 
   const [docs, setDocs] = useState<Doc[]>([]);
@@ -46,6 +45,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [guarantorName, setGuarantorName] = useState("Garant");
   const [guarantorSigned, setGuarantorSigned] = useState(false);
   const [landlordSignedGuarantorAct, setLandlordSignedGuarantorAct] = useState(false);
+  // ✅ NEW: pack final v2
+  const [packFinalV2Doc, setPackFinalV2Doc] = useState<Doc | null>(null);
 
   const guarantorCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const landlordGuarantorActCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -164,6 +165,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     setError("");
     setStatus("Chargement…");
 
+    setTenantSigned(false);
+    setLandlordSigned(false);
+    setGuarantorSigned(false);
+    setLandlordSignedGuarantorAct(false);
+
     try {
       // load lease bundle (kind + tenants)
       await loadLeaseBundle();
@@ -198,7 +204,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         signedByParent
           ? null
           : arr
-              .filter((d: any) => (d.filename || "").includes("SIGNED_FINAL"))
+              .filter(
+                (d: any) =>
+                  (d.filename || "").includes("SIGNED_FINAL") &&
+                  (d.type === "CONTRAT" || String(d.filename || "").toUpperCase().includes("CONTRAT"))
+              )
               .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] || null;
 
       const signed = signedByParent || signedFallback;
@@ -224,6 +234,15 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
         null;
       setGuarantorActDoc(guarantorAct);
+
+      // ✅ PACK_FINAL V2 (signé) : doc type PACK_FINAL dont filename contient PACK_FINAL_V2
+      const packFinalV2 =
+        arr
+          .filter((d: any) => d.type === "PACK_FINAL" && String(d.filename || "").includes("PACK_FINAL_V2"))
+          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
+        null;
+
+      setPackFinalV2Doc(packFinalV2);
 
       // ✅ SIGNED_FINAL (acte caution) : d'abord par parent_document_id, sinon fallback ciblé
       const guarantorActSignedByParent =
@@ -343,6 +362,30 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       setError(String(e?.message || e));
     }
   }
+
+  async function generatePackFinalV2() {
+    setError("");
+    setStatus("Génération du PACK_FINAL_V2…");
+    try {
+      const r = await fetch(`${API}/documents/pack-final`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+      setStatus("PACK_FINAL_V2 généré ✅");
+      await loadDocs();
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+}
 
   async function generateGuarantorAct() {
     setError("");
@@ -688,6 +731,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           <div style={{ color: muted, marginTop: 6, fontSize: 13 }}>
             Bail {leaseId.slice(0, 8)}… • Contrat: {contractDoc?.id ? "OK" : "—"} • Notice:{" "}
             {noticeDoc?.id ? "OK" : isRP ? "—" : "n/a"} • Pack: {packDoc?.id ? "OK" : "—"} • PDF final:{" "}
+            {packFinalV2Doc?.id ? "OK" : "—"} • PDF final: {hasFinal ? "OK" : "—"}
             {hasFinal ? "OK" : "—"}
           </div>
         </div>
@@ -747,6 +791,10 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           Télécharger pack
         </button>
 
+        <button onClick={generatePackFinalV2} style={btnAction(border)}>
+          Générer PACK_FINAL signé (V2)
+        </button>
+
         <button onClick={sendPublicLink} style={btnAction(border)}>
           Envoyer lien locataire
         </button>
@@ -800,6 +848,19 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
             style={btnPrimarySmall(blue)}
           >
             Télécharger PDF signé (acte)
+          </button>
+        </div>
+      )}
+
+      {packFinalV2Doc?.id && (
+        <div style={card(border)}>
+          <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
+          <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
+          <button
+            onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
+            style={btnPrimarySmall(blue)}
+          >
+            Télécharger PACK_FINAL signé
           </button>
         </div>
       )}
