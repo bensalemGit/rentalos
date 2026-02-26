@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req} from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
 import { DocumentsService } from './documents.service';
 import type { Response } from 'express';
@@ -7,6 +7,19 @@ import type { Response } from 'express';
 @UseGuards(JwtGuard)
 export class DocumentsController {
   constructor(private readonly docs: DocumentsService) {}
+
+  private replyCreated(res: Response, result: any) {
+    // ancien format: retourne direct un document
+    if (result && result.id) {
+      res.status(201);
+      return result;
+    }
+
+    // nouveau format: { created: boolean, document: ... }
+    const created = !!result?.created;
+    res.status(created ? 201 : 200);
+    return result?.document ?? result;
+  }
 
   @Get()
   list(@Query('leaseId') leaseId: string) {
@@ -21,34 +34,43 @@ export class DocumentsController {
   }
 
   @Post('contract')
-  generateContract(@Body() body: any) {
-    return this.docs.generateContractPdf(body.leaseId);
+  async generateContract(
+    @Body() body: any,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.docs.generateContractPdf(body.leaseId);
+    return this.replyCreated(res, result);
   }
 
   @Post('notice')
-  generateNotice(@Body() body: any) {
-    return this.docs.generateNoticePdf(body.leaseId);
+  async generateNotice(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.docs.generateNoticePdf(body.leaseId);
+    return this.replyCreated(res, result);
   }
 
   @Post('edl')
-  generateEdl(@Body() body: any) {
-    return this.docs.generateEdlPdf(body.leaseId);
+  async generateEdl(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.docs.generateEdlPdf(body.leaseId);
+    return this.replyCreated(res, result);
   }
 
   @Post('inventory')
-  generateInventory(@Body() body: any) {
-    return this.docs.generateInventoryPdf(body.leaseId);
+  async generateInventory(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.docs.generateInventoryPdf(body.leaseId);
+    return this.replyCreated(res, result);
   }
 
   // ✅ Pack: Contrat + Notice (RP) + EDL + Inventaire
   @Post('pack')
-  generatePack(@Body() body: any) {
-    return this.docs.generatePackPdf(body.leaseId);
+  async generatePack(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.docs.generatePackPdf(body.leaseId);
+    return this.replyCreated(res, result);
   }
 
   @Post('guarantor-act')
-  generateGuarantorAct(@Body() body: any) {
-    return this.docs.generateGuarantorActPdf(body.leaseId);
+  async generateGuarantorAct(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.docs.generateGuarantorActPdf(body.leaseId);
+    return this.replyCreated(res, result);
   }
 
   @Post(':id/sign')
