@@ -925,7 +925,7 @@ export class DocumentsService {
       filename: pdfName,
       parentNullOnly: true, // avoid returning signed-final child
     });
-    if (existing) return existing;
+    if (existing) return { created: false, document: existing };
 
     const vars: Record<string, any> = {
       template_version: templateVersion,
@@ -1060,7 +1060,7 @@ export class DocumentsService {
       [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
-    return ins.rows[0];
+    return { created: true, document: ins.rows[0] };
   }
 
   // -------------------------------------
@@ -1092,7 +1092,7 @@ async generateGuarantorActPdf(leaseId: string) {
     filename: pdfName,
     parentNullOnly: true,
   });
-  if (existing) return existing;
+  if (existing) return { created: false, document: existing };
 
   // ✅ On réutilise la version/template que tu utilises déjà
   const templateVersion = '2026-04';
@@ -1207,7 +1207,7 @@ async generateGuarantorActPdf(leaseId: string) {
     [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
   );
 
-  return ins.rows[0];
+  return { created: true, document: ins.rows[0] };
 }
 
   // ---------------------------------------------
@@ -1299,7 +1299,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
       filename: pdfName,
       parentNullOnly: true,
     });
-    if (existing) return existing;
+    if (existing) return { created: false, document: existing };
 
     const pdfBuf = await this.htmlToPdfBuffer(html);
 
@@ -1317,7 +1317,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
       [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
-    return ins.rows[0];
+    return { created: true, document: ins.rows[0] };
   }
 
   // ---------------------------------------------
@@ -1484,7 +1484,7 @@ ${annexHtml}
       [lease.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
-    return ins.rows[0];
+    return { created: true, document: ins.rows[0] };
   }
 
   // ---------------------------------------------
@@ -1609,7 +1609,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       [lease.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
-    return ins.rows[0];
+    return { created: true, document: ins.rows[0] };
   }
 
   // ---------------------------------------------
@@ -1629,7 +1629,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       filename: packName,
       parentNullOnly: true,
     });
-    if (existing) return existing;
+    if (existing) return { created: false, document: existing };
 
     const pdfName = packName; // ✅ AJOUTE ÇA
 
@@ -1713,7 +1713,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     );
     
 
-    return ins.rows[0];
+    return { created: true, document: ins.rows[0] };
   }
 
     private safeReadPdfPart(doc: any): { filename: string; buffer: Buffer } | null {
