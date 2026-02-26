@@ -2284,20 +2284,12 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     // 2) Annexes (optional but in correct order)
     const docs = await this.listDocsForLease(leaseId);
 
-    // 2bis) ACTE DE CAUTION signé final (si existe)
-    const byId = new Map<string, any>();
-    docs.forEach((d: any) => byId.set(String(d.id), d));
-
-    // On prend l'original (parent_document_id NULL)
-    const guarantorActOriginal =
-      docs
-        .filter((d: any) => d.type === 'GUARANTOR_ACT' && !d.parent_document_id)
-        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
-
+    // 2bis) ACTE DE CAUTION signé final (si existe) — PACK_FINAL v2
     const guarantorActSignedFinal =
-      guarantorActOriginal?.signed_final_document_id
-        ? byId.get(String(guarantorActOriginal.signed_final_document_id))
-        : null;
+      docs
+        .filter((d: any) => d.type === 'GUARANTOR_ACT')
+        .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
 
     // ✅ safer: originals only
     const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
