@@ -1633,15 +1633,15 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     const pdfName = packName; // ✅ AJOUTE ÇA
 
-    const contract = await this.generateContractPdf(leaseId);
+    const contractRes = await this.generateContractPdf(leaseId);
 
     let notice: any = null;
     if (leaseKind !== 'SAISONNIER') {
       notice = await this.generateNoticePdf(leaseId);
     }
 
-    const edl = await this.generateEdlPdf(leaseId);
-    const inv = await this.generateInventoryPdf(leaseId);    
+    const edlRes = await this.generateEdlPdf(leaseId);
+    const invRes = await this.generateInventoryPdf(leaseId);
 
     // ----- Variables du template 2026-03 -----
     const signature_date_fr = this.formatDateFr(new Date());
@@ -1654,25 +1654,25 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     // Annexes HTML
     let annexes_list_html = '<ul>';
-    if (contract) annexes_list_html += `<li>Contrat</li>`;
+    if (contractRes) annexes_list_html += `<li>Contrat</li>`;
     if (notice) annexes_list_html += `<li>Avis</li>`;
-    if (edl) annexes_list_html += `<li>État des lieux</li>`;
-    if (inv) annexes_list_html += `<li>Inventaire</li>`;
+    if (edlRes) annexes_list_html += `<li>État des lieux</li>`;
+    if (invRes) annexes_list_html += `<li>Inventaire</li>`;
     annexes_list_html += '</ul>';
 
     const parts: Array<{ filename: string; buffer: Buffer }> = [];
 
     // ordre: contrat -> notice (si RP) -> edl -> inventaire
-    const pContract = this.safeReadPdfPart(contract);
+    const pContract = this.safeReadPdfPart(contractRes?.document);
     if (pContract) parts.push(pContract);
 
-    const pNotice = notice ? this.safeReadPdfPart(notice) : null;
+    const pNotice = notice ? this.safeReadPdfPart(notice?.document) : null;
     if (pNotice) parts.push(pNotice);
 
-    const pEdl = this.safeReadPdfPart(edl);
+    const pEdl = this.safeReadPdfPart(edlRes?.document);
     if (pEdl) parts.push(pEdl);
 
-    const pInv = this.safeReadPdfPart(inv);
+    const pInv = this.safeReadPdfPart(invRes?.document);
     if (pInv) parts.push(pInv);
 
     if (!parts.length) {
@@ -1717,10 +1717,11 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   }
 
     private safeReadPdfPart(doc: any): { filename: string; buffer: Buffer } | null {
-      if (!doc?.storage_path || !doc?.filename) return null;
-      const abs = this.absFromStoragePath(doc.storage_path);
+      const d = doc?.document ? doc.document : doc; // accepte {created, document} OU document direct
+      if (!d?.storage_path || !d?.filename) return null;
+      const abs = this.absFromStoragePath(d.storage_path);
       if (!fsSync.existsSync(abs)) return null;
-      return { filename: doc.filename, buffer: fsSync.readFileSync(abs) };
+      return { filename: d.filename, buffer: fsSync.readFileSync(abs) };
     }
 
     private safeReadPdfPartByFilename(filename: string, buffer: Buffer): { filename: string; buffer: Buffer } | null {
@@ -2284,20 +2285,12 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     // 2) Annexes (optional but in correct order)
     const docs = await this.listDocsForLease(leaseId);
 
-    // 2bis) ACTE DE CAUTION signé final (si existe)
-    const byId = new Map<string, any>();
-    docs.forEach((d: any) => byId.set(String(d.id), d));
-
-    // On prend l'original (parent_document_id NULL)
-    const guarantorActOriginal =
-      docs
-        .filter((d: any) => d.type === 'GUARANTOR_ACT' && !d.parent_document_id)
-        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
-
+    // 2bis) ACTE DE CAUTION signé final (si existe) — PACK_FINAL v2
     const guarantorActSignedFinal =
-      guarantorActOriginal?.signed_final_document_id
-        ? byId.get(String(guarantorActOriginal.signed_final_document_id))
-        : null;
+      docs
+        .filter((d: any) => d.type === 'GUARANTOR_ACT')
+        .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
 
     // ✅ safer: originals only
     const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
@@ -2339,6 +2332,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     // On pousse un "document-like" object pour rentrer dans ton pipeline existant
     annexesOrdered.push({
       storage_path: auditStoragePath,
+      filename: auditFilename,
     });
 
     // 3) Merge paths dans le bon ordre
