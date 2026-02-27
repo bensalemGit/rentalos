@@ -857,8 +857,9 @@ export class DocumentsService {
 
   // ✅ Date anniversaire: start_date + 1 an
   const nextIso =
-  this.isoDate(row.next_revision_date) ||
-  this.addYearsAnniversaryIso(row.start_date, 1);
+    row.next_revision_date
+      ? this.isoDate(row.next_revision_date)
+      : this.addYearsAnniversaryIso(row.start_date, 1);
   const nextRevisionFr = nextIso ? this.formatDateFr(nextIso) : this.missingSpan('Date de révision à compléter');
 
   // Référence IRL (déjà portée par terms + fallback colonnes leases.*)
@@ -1083,13 +1084,11 @@ export class DocumentsService {
         return { created: false, document: existing };
       }
 
-      if (force) {
-      // 1) si already finalized -> on refuse
+      // force === true
       if (existing.signed_final_document_id) {
         throw new BadRequestException('Cannot force rebuild: contract already finalized (SIGNED_FINAL exists)');
       }
 
-      // 2) si signatures existent -> on refuse
       const sigQ = await this.pool.query(
         `SELECT 1 FROM signatures WHERE document_id=$1 LIMIT 1`,
         [existing.id],
@@ -1097,14 +1096,14 @@ export class DocumentsService {
       if (sigQ.rowCount) {
         throw new BadRequestException('Cannot force rebuild: signatures already exist on this contract');
       }
-    }
 
-
-      // ✅ force: purge DB + fichier
+      // purge DB + file
       const abs = this.absFromStoragePath(existing.storage_path);
       await this.deleteDocumentRow(existing.id);
       await this.safeUnlinkAbs(abs);
     }
+
+
 
     const vars: Record<string, any> = {
       template_version: templateVersion,
