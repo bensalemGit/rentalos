@@ -353,6 +353,8 @@ export default function LeasesPage() {
     irlReferenceQuarter: irlQuarter || null,
     irlReferenceValue: irlValue ? Number(irlValue) : null,
 
+    irlEnabled: editIrlEnabled, // ✅ AJOUT ICI
+
     // ✅ garant classique (si tu as ces states)
     //guarantorFullName: guarantorFullName || null,
     //guarantorEmail: guarantorEmail || null,
@@ -1199,13 +1201,13 @@ export default function LeasesPage() {
               <label style={labelStyle(muted)}>
                 IRL — Trimestre de référence
                 <br />
-                <input value={irlQuarter} onChange={(e) => setIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} />
+                <input value={irlQuarter} onChange={(e) => setIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!editIrlEnabled} />
               </label>
 
               <label style={labelStyle(muted)}>
                 IRL — Valeur de référence
                 <br />
-                <input value={irlValue} onChange={(e) => setIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} />
+                <input value={irlValue} onChange={(e) => setIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!editIrlEnabled} />
               </label>
             </div>
 
@@ -1648,6 +1650,24 @@ export default function LeasesPage() {
                         style={inputStyle(border)}
                       />
                     </label>
+
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        type="checkbox"
+                        checked={editIrlEnabled}
+                        onChange={(e) => {
+                          const v = e.target.checked;
+                          setEditIrlEnabled(v);
+                          if (!v) {
+                            setEditIrlQuarter("");
+                            setEditIrlValue("");
+                          }
+                        }}
+                      />
+                      <span style={{ fontWeight: 900, color: muted, fontSize: 12 }}>
+                        Activer la révision IRL
+                      </span>
+                    </div>
 
                     <label style={labelStyle(muted)}>
                       IRL — Trimestre de référence

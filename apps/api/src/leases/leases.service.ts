@@ -50,8 +50,10 @@ export class LeasesService {
       keysCount,
       irlReferenceQuarter,
       irlReferenceValue,
+      irlEnabled, //✅ AJOUT
     } = payload;
 
+    
     const leaseKind = this.normalizeKind(kind);
 
     // ✅ normalize coTenantIds
@@ -107,14 +109,45 @@ export class LeasesService {
         specialClauses: '',
       };
     }
-    
+
+    // ✅ IRL: sync legacy fields -> lease_terms
+    const enabled =
+      irlEnabled === true ||
+      leaseTermsJson?.irlIndexation?.enabled === true;
+
+    // normaliser irlIndexation si absent
+    if (!leaseTermsJson.irlIndexation || typeof leaseTermsJson.irlIndexation !== 'object') {
+      leaseTermsJson.irlIndexation = { enabled: false, referenceQuarter: null, referenceValue: null };
+    }
+
+    if (enabled) {
+      leaseTermsJson.irlIndexation.enabled = true;
+
+      // Priorité : leaseTermsJson (si déjà rempli) sinon payload irlReference*
+      if (!leaseTermsJson.irlIndexation.referenceQuarter && irlReferenceQuarter) {
+        leaseTermsJson.irlIndexation.referenceQuarter = String(irlReferenceQuarter);
+      }
+      if (
+        (leaseTermsJson.irlIndexation.referenceValue == null || leaseTermsJson.irlIndexation.referenceValue === '') &&
+        irlReferenceValue != null &&
+        irlReferenceValue !== ''
+      ) {
+        leaseTermsJson.irlIndexation.referenceValue = Number(irlReferenceValue);
+      }
+    } else {
+      // si IRL désactivé explicitement
+      leaseTermsJson.irlIndexation.enabled = false;
+      leaseTermsJson.irlIndexation.referenceQuarter = null;
+      leaseTermsJson.irlIndexation.referenceValue = null;
+    }
+        
     const keysCountInt = keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
 
     const irlValueNum =
       irlReferenceValue === null || irlReferenceValue === undefined || irlReferenceValue === ''
         ? null
         : Number(irlReferenceValue);
-
+  
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -183,6 +216,25 @@ export class LeasesService {
 
       const lease = leaseRes.rows[0];
 
+      // ✅ calcul SQL fiable +1 an si IRL activé (et NULL sinon)
+      await client.query(
+        `
+        UPDATE leases
+        SET next_revision_date = CASE
+          WHEN coalesce(lease_terms #>> '{irlIndexation,enabled}', 'false') = 'true'
+              AND start_date IS NOT NULL
+            THEN (start_date::date + interval '1 year')::date
+          ELSE NULL
+        END
+        WHERE id = $1
+        `,
+        [lease.id],
+      );
+
+      // ✅ relire le bail pour récupérer next_revision_date à jour
+      const lease2 = await client.query(`SELECT * FROM leases WHERE id=$1`, [lease.id]);
+      const leaseFinal = lease2.rows[0] || lease;
+
       // principal always
       await client.query(
         `INSERT INTO lease_tenants (lease_id, tenant_id, role)
@@ -212,7 +264,7 @@ export class LeasesService {
 
       // ✅ OPTION 2 (propre): NE PAS créer automatiquement EDL/Inventaire ici.
       await client.query('COMMIT');
-      return { lease, edlSession: null, invSession: null };
+      return { lease: leaseFinal, edlSession: null, invSession: null };
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;
@@ -221,17 +273,19 @@ export class LeasesService {
     }
   }
 
-// ✅ allow changing designation/keys/IRL after creation
-async updateDesignationAndIrl(leaseId: string, body: any) {
-  if (!leaseId) throw new BadRequestException('Missing leaseId');
+  // ✅ allow changing designation/keys/IRL after creation
+  async updateDesignationAndIrl(leaseId: string, body: any) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-  const {
-    leaseDesignation,
-    keysCount,
-    irlReferenceQuarter,
-    irlReferenceValue,
-    irlEnabled, // optionnel
-  } = body || {};
+    const {
+      leaseDesignation,
+      keysCount,
+      irlReferenceQuarter,
+      irlReferenceValue,
+      irlEnabled, // optionnel
+    } = body || {};
+
+  const irlEnabledBool = irlEnabled === true; // toujours boolean (true/false)
 
   let leaseDesignationJson: any = null;
   if (leaseDesignation && typeof leaseDesignation === 'object') leaseDesignationJson = leaseDesignation;
@@ -283,24 +337,14 @@ async updateDesignationAndIrl(leaseId: string, body: any) {
             true
           ),
           '{irlIndexation,enabled}',
-          CASE
-            WHEN $6 IS NULL THEN COALESCE(lease_terms #> '{irlIndexation,enabled}', 'false'::jsonb)
-            WHEN $6 = true THEN 'true'::jsonb
-            ELSE 'false'::jsonb
-          END,
+          to_jsonb($6::boolean),
           true
         ),
 
       -- ✅ next_revision_date recalculé si enabled=true
       next_revision_date = CASE
-        WHEN (
-          CASE
-            WHEN $6 IS NULL THEN COALESCE((lease_terms #>> '{irlIndexation,enabled}')::boolean, false)
-            ELSE $6
-          END
-        ) = true
-        AND start_date IS NOT NULL
-        THEN (start_date::date + interval '1 year')::date
+        WHEN $6::boolean = true AND start_date IS NOT NULL
+          THEN (start_date::date + interval '1 year')::date
         ELSE NULL
       END
     WHERE id = $1
@@ -312,7 +356,7 @@ async updateDesignationAndIrl(leaseId: string, body: any) {
       Number.isFinite(keysCountInt as any) ? keysCountInt : null,
       irlReferenceQuarter ? String(irlReferenceQuarter) : null,
       Number.isFinite(irlValueNum as any) ? irlValueNum : null,
-      typeof irlEnabled === 'boolean' ? irlEnabled : null,
+      irlEnabledBool,
     ],
   );
 
@@ -328,6 +372,7 @@ async updateDesignationAndIrl(leaseId: string, body: any) {
   if (!terms || typeof terms !== 'object') {
     throw new BadRequestException('leaseTerms must be an object');
   }
+
 
   // Defaults “Option A”
   const normalized: any = {
@@ -361,6 +406,159 @@ async updateDesignationAndIrl(leaseId: string, body: any) {
   if (!r.rowCount) throw new BadRequestException('Unknown lease');
   return r.rows[0];
 }
+
+  async applyIrlRevision(leaseId: string, body: any) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const irlNewQuarter = String(body?.irlNewQuarter || '').trim();
+    const irlNewValue = Number(body?.irlNewValue);
+    const revisionDate = String(body?.revisionDate || '').slice(0, 10); // YYYY-MM-DD
+
+    if (!irlNewQuarter || !Number.isFinite(irlNewValue) || irlNewValue <= 0) {
+      throw new BadRequestException('Missing/invalid irlNewQuarter or irlNewValue');
+    }
+    if (!revisionDate || !/^\d{4}-\d{2}-\d{2}$/.test(revisionDate)) {
+      throw new BadRequestException('Missing/invalid revisionDate (YYYY-MM-DD)');
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // 1) lock lease + read needed fields from SQL (jsonb safe)
+      const leaseQ = await client.query(
+        `
+        SELECT
+          l.*,
+          (l.lease_terms #>> '{irlIndexation,enabled}')::boolean AS irl_enabled_terms,
+          (l.lease_terms #>> '{irlIndexation,referenceQuarter}') AS irl_ref_quarter_terms,
+          (l.lease_terms #>> '{irlIndexation,referenceValue}') AS irl_ref_value_terms
+        FROM leases l
+        WHERE l.id = $1
+        FOR UPDATE
+        `,
+        [leaseId],
+      );
+
+      if (!leaseQ.rowCount) throw new BadRequestException('Unknown lease');
+      const lease = leaseQ.rows[0];
+
+      const enabled = lease.irl_enabled_terms === true;
+      if (!enabled) throw new BadRequestException('IRL not enabled on this lease');
+
+      // 2) reference IRL (priority legacy columns then terms)
+      const refQuarter = lease.irl_reference_quarter || lease.irl_ref_quarter_terms || null;
+
+      // attention: irl_reference_value peut être numeric => string
+      const refValueRaw = lease.irl_reference_value ?? lease.irl_ref_value_terms ?? null;
+      const refValue = Number(refValueRaw);
+
+      if (!refQuarter || !Number.isFinite(refValue) || refValue <= 0) {
+        throw new BadRequestException('Missing IRL reference (quarter/value)');
+      }
+
+      // 3) rent current = last lease_amounts row (as of revisionDate ideally)
+      // 👉 Version simple: dernier montant, et on refuse si revisionDate < start_date
+      // Validation robuste en SQL
+      const dateCheck = await client.query(
+        `SELECT ($2::date < start_date::date) as is_before
+        FROM leases
+        WHERE id=$1`,
+        [leaseId, revisionDate],
+      );
+
+      if (dateCheck.rows[0]?.is_before === true) {
+        throw new BadRequestException('revisionDate cannot be before start_date');
+      }
+
+      const amtQ = await client.query(
+        `
+        SELECT *
+        FROM lease_amounts
+        WHERE lease_id = $1 AND effective_date <= $2::date
+        ORDER BY effective_date DESC
+        LIMIT 1
+        `,
+        [leaseId, revisionDate],
+      );
+
+      if (!amtQ.rowCount) throw new BadRequestException('No lease_amounts row for this lease');
+      const current = amtQ.rows[0];
+
+      const previousRentCents = Number(current.rent_cents);
+      if (!Number.isFinite(previousRentCents) || previousRentCents <= 0) {
+        throw new BadRequestException('Invalid current rent');
+      }
+
+      // 4) compute new rent
+      const newRentCents = Math.round(previousRentCents * (irlNewValue / refValue));
+      const formula = `${previousRentCents} * (${irlNewValue} / ${refValue}) = ${newRentCents}`;
+
+      // 5) write history (unique by date)
+      await client.query(
+        `
+        INSERT INTO lease_revisions
+          (lease_id, revision_date, previous_rent_cents, new_rent_cents,
+          irl_reference_quarter, irl_reference_value, irl_new_quarter, irl_new_value, formula)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+        `,
+        [
+          leaseId,
+          revisionDate,
+          previousRentCents,
+          newRentCents,
+          refQuarter,
+          refValue,
+          irlNewQuarter,
+          irlNewValue,
+          formula,
+        ],
+      );
+
+      // 6) create new amount line (UPSERT to be safe if same date exists)
+      await client.query(
+        `
+        INSERT INTO lease_amounts (lease_id, effective_date, rent_cents, charges_cents, deposit_cents, payment_day)
+        VALUES ($1,$2,$3,$4,$5,$6)
+        ON CONFLICT (lease_id, effective_date)
+        DO UPDATE SET rent_cents=$3, charges_cents=$4, deposit_cents=$5, payment_day=$6
+        `,
+        [
+          leaseId,
+          revisionDate,
+          newRentCents,
+          current.charges_cents,
+          current.deposit_cents,
+          current.payment_day,
+        ],
+      );
+
+      // 7) update lease dates
+      await client.query(
+        `
+        UPDATE leases
+        SET irl_revision_date = $2::date,
+            next_revision_date = ($2::date + interval '1 year')::date
+        WHERE id=$1
+        `,
+        [leaseId, revisionDate],
+      );
+
+      await client.query('COMMIT');
+
+      const out = await this.pool.query(`SELECT * FROM leases WHERE id=$1`, [leaseId]);
+      return {
+        ok: true,
+        lease: out.rows[0],
+        revision: { revisionDate, previousRentCents, newRentCents, irlNewQuarter, irlNewValue, refQuarter, refValue },
+      };
+    } catch (e: any) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
 
   async activateLease(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
