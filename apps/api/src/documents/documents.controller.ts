@@ -67,6 +67,13 @@ export class DocumentsController {
     return this.replyCreated(res, result);
   }
 
+  // ✅ Pack final V2 (contrat signé final + annexes + audit)
+  @Post('pack-final')
+  async generatePackFinal(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const result = await this.docs.generatePackFinalV2(body.leaseId);
+    return this.replyCreated(res, result);
+  }
+  
   @Post('guarantor-act')
   async generateGuarantorAct(@Body() body: any, @Res({ passthrough: true }) res: Response) {
     const result = await this.docs.generateGuarantorActPdf(body.leaseId);
