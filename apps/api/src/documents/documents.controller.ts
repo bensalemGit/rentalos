@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req} from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req, DefaultValuePipe, ParseBoolPipe } from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
 import { DocumentsService } from './documents.service';
 import type { Response } from 'express';
@@ -36,9 +36,10 @@ export class DocumentsController {
   @Post('contract')
   async generateContract(
     @Body() body: any,
+    @Query('force', new DefaultValuePipe(false), ParseBoolPipe) force: boolean,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.docs.generateContractPdf(body.leaseId);
+    const result = await this.docs.generateContractPdf(body.leaseId, { force });
     return this.replyCreated(res, result);
   }
 
