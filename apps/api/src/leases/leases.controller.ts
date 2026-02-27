@@ -73,4 +73,12 @@ export class LeasesController {
     return this.leases.updateTerms(id, body);
   }
 
+  @Post(':id/irl/apply')
+  applyIrl(
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.leases.applyIrlRevision(id, body);
+  }
+
 }

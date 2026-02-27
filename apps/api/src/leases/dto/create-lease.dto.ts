@@ -7,6 +7,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  IsBoolean,
 } from 'class-validator';
 
 export type LeaseChargesMode = 'FORFAIT' | 'PROVISION';
@@ -91,4 +92,8 @@ export class CreateLeaseDto {
 
   @IsOptional()
   irlReferenceValue?: number | null;
+
+  @IsOptional()
+  @IsBoolean()
+  irlEnabled?: boolean;
 }
