@@ -195,6 +195,7 @@ export default function LeasesPage() {
   const [editKeysCount, setEditKeysCount] = useState<number | "">(2);
   const [editIrlQuarter, setEditIrlQuarter] = useState<string>("");
   const [editIrlValue, setEditIrlValue] = useState<string>("");
+  const [editIrlEnabled, setEditIrlEnabled] = useState(false);
 
   const [newCoTenantId, setNewCoTenantId] = useState<string>("");
   const [editVisaleEnabled, setEditVisaleEnabled] = useState(false);
@@ -586,11 +587,31 @@ export default function LeasesPage() {
       const leaseObj = lease || {};
       setEditDesignation(coerceLeaseDesignation(leaseObj));
       setEditKeysCount(leaseObj?.keys_count ?? leaseObj?.keysCount ?? 2);
-      setEditIrlQuarter(String(leaseObj?.irl_reference_quarter ?? leaseObj?.irlReferenceQuarter ?? ""));
-      const irlVal1 = leaseObj?.irl_reference_value ?? leaseObj?.irlReferenceValue ?? "";
-      setEditIrlValue(irlVal1 === null || irlVal1 === undefined ? "" : String(irlVal1));
-      // ✅ hydrate Visale from terms (defensive naming)
+      
+      // ✅ hydrate IRL (priority: lease_terms.irlIndexation.* then legacy columns)
       const terms = leaseObj?.lease_terms ?? leaseObj?.leaseTerms ?? leaseObj?.terms ?? {};
+      const irl = terms?.irlIndexation ?? terms?.irl_indexation ?? {};
+
+      setEditIrlEnabled(irl?.enabled === true);
+
+      const q =
+        irl?.referenceQuarter ??
+        leaseObj?.irl_reference_quarter ??
+        leaseObj?.irlReferenceQuarter ??
+        "";
+
+      const vRaw =
+        irl?.referenceValue ??
+        leaseObj?.irl_reference_value ??
+        leaseObj?.irlReferenceValue ??
+        "";
+
+      setEditIrlQuarter(q ? String(q) : "");
+      setEditIrlValue(vRaw === null || vRaw === undefined ? "" : String(vRaw));
+      
+      
+      
+      // ✅ hydrate Visale from terms (defensive naming)
       const v = terms?.visale ?? leaseObj?.visale ?? {};
       setEditVisaleEnabled(v?.enabled === true);
       setEditVisaNumber(v?.visaNumber ? String(v.visaNumber) : "");
@@ -643,6 +664,7 @@ export default function LeasesPage() {
           keysCount: editKeysCount === "" ? null : Number(editKeysCount),
           irlReferenceQuarter: editIrlQuarter || null,
           irlReferenceValue: editIrlValue ? Number(editIrlValue) : null,
+          irlEnabled: editIrlEnabled,
         }),
       });
 
@@ -1163,6 +1185,17 @@ export default function LeasesPage() {
                 />
               </label>
 
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="checkbox"
+                  checked={editIrlEnabled}
+                  onChange={(e) => setEditIrlEnabled(e.target.checked)}
+                />
+                <span style={{ fontWeight: 900, color: muted, fontSize: 12 }}>
+                  Activer la révision IRL
+                </span>
+              </div>
+
               <label style={labelStyle(muted)}>
                 IRL — Trimestre de référence
                 <br />
@@ -1619,13 +1652,13 @@ export default function LeasesPage() {
                     <label style={labelStyle(muted)}>
                       IRL — Trimestre de référence
                       <br />
-                      <input value={editIrlQuarter} onChange={(e) => setEditIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} />
+                      <input value={editIrlQuarter} onChange={(e) => setEditIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!editIrlEnabled} />
                     </label>
 
                     <label style={labelStyle(muted)}>
                       IRL — Valeur de référence
                       <br />
-                      <input value={editIrlValue} onChange={(e) => setEditIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} />
+                      <input value={editIrlValue} onChange={(e) => setEditIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!editIrlEnabled} />
                     </label>
                   </div>
 

@@ -221,52 +221,104 @@ export class LeasesService {
     }
   }
 
-  // ✅ allow changing designation/keys/IRL after creation
-  async updateDesignationAndIrl(leaseId: string, body: any) {
-    if (!leaseId) throw new BadRequestException('Missing leaseId');
+// ✅ allow changing designation/keys/IRL after creation
+async updateDesignationAndIrl(leaseId: string, body: any) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const leaseDesignation = body?.leaseDesignation;
-    const keysCount = body?.keysCount;
-    const irlReferenceQuarter = body?.irlReferenceQuarter;
-    const irlReferenceValue = body?.irlReferenceValue;
+  const {
+    leaseDesignation,
+    keysCount,
+    irlReferenceQuarter,
+    irlReferenceValue,
+    irlEnabled, // optionnel
+  } = body || {};
 
-    let leaseDesignationJson: any = null;
-    if (leaseDesignation && typeof leaseDesignation === 'object') leaseDesignationJson = leaseDesignation;
-    else if (typeof leaseDesignation === 'string' && leaseDesignation.trim()) {
-      try {
-        leaseDesignationJson = JSON.parse(leaseDesignation);
-      } catch {
-        leaseDesignationJson = { description: leaseDesignation };
-      }
+  let leaseDesignationJson: any = null;
+  if (leaseDesignation && typeof leaseDesignation === 'object') leaseDesignationJson = leaseDesignation;
+  else if (typeof leaseDesignation === 'string' && leaseDesignation.trim()) {
+    try {
+      leaseDesignationJson = JSON.parse(leaseDesignation);
+    } catch {
+      leaseDesignationJson = { description: leaseDesignation };
     }
-
-    const keysCountInt = keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
-
-    const irlValueNum =
-      irlReferenceValue === null || irlReferenceValue === undefined || irlReferenceValue === ''
-        ? null
-        : Number(irlReferenceValue);
-
-    const r = await this.pool.query(
-      `UPDATE leases
-       SET lease_designation = COALESCE($2::jsonb, lease_designation),
-           keys_count = COALESCE($3::int, keys_count),
-           irl_reference_quarter = COALESCE($4::text, irl_reference_quarter),
-           irl_reference_value = COALESCE($5::numeric, irl_reference_value)
-       WHERE id=$1
-       RETURNING *`,
-      [
-        leaseId,
-        leaseDesignationJson ? JSON.stringify(leaseDesignationJson) : null,
-        Number.isFinite(keysCountInt as any) ? keysCountInt : null,
-        irlReferenceQuarter ? String(irlReferenceQuarter) : null,
-        Number.isFinite(irlValueNum as any) ? irlValueNum : null,
-      ],
-    );
-
-    if (!r.rowCount) throw new BadRequestException('Unknown leaseId');
-    return { ok: true, lease: r.rows[0] };
   }
+
+  const keysCountInt =
+    keysCount === null || keysCount === undefined || keysCount === '' ? null : Number(keysCount);
+
+  const irlValueNum =
+    irlReferenceValue === null || irlReferenceValue === undefined || irlReferenceValue === ''
+      ? null
+      : Number(irlReferenceValue);
+
+  const r = await this.pool.query(
+    `
+    UPDATE leases
+    SET
+      lease_designation = COALESCE($2::jsonb, lease_designation),
+      keys_count = COALESCE($3::int, keys_count),
+
+      -- legacy columns (UI actuelle)
+      irl_reference_quarter = COALESCE($4::text, irl_reference_quarter),
+      irl_reference_value   = COALESCE($5::numeric, irl_reference_value),
+
+      -- ✅ sync lease_terms.irlIndexation.*
+      lease_terms =
+        jsonb_set(
+          jsonb_set(
+            jsonb_set(
+              COALESCE(lease_terms, '{}'::jsonb),
+              '{irlIndexation,referenceQuarter}',
+              CASE
+                WHEN $4 IS NULL THEN COALESCE(lease_terms #> '{irlIndexation,referenceQuarter}', 'null'::jsonb)
+                ELSE to_jsonb($4::text)
+              END,
+              true
+            ),
+            '{irlIndexation,referenceValue}',
+            CASE
+              WHEN $5 IS NULL THEN COALESCE(lease_terms #> '{irlIndexation,referenceValue}', 'null'::jsonb)
+              ELSE to_jsonb($5::numeric)
+            END,
+            true
+          ),
+          '{irlIndexation,enabled}',
+          CASE
+            WHEN $6 IS NULL THEN COALESCE(lease_terms #> '{irlIndexation,enabled}', 'false'::jsonb)
+            WHEN $6 = true THEN 'true'::jsonb
+            ELSE 'false'::jsonb
+          END,
+          true
+        ),
+
+      -- ✅ next_revision_date recalculé si enabled=true
+      next_revision_date = CASE
+        WHEN (
+          CASE
+            WHEN $6 IS NULL THEN COALESCE((lease_terms #>> '{irlIndexation,enabled}')::boolean, false)
+            ELSE $6
+          END
+        ) = true
+        AND start_date IS NOT NULL
+        THEN (start_date::date + interval '1 year')::date
+        ELSE NULL
+      END
+    WHERE id = $1
+    RETURNING *;
+    `,
+    [
+      leaseId,
+      leaseDesignationJson ? JSON.stringify(leaseDesignationJson) : null,
+      Number.isFinite(keysCountInt as any) ? keysCountInt : null,
+      irlReferenceQuarter ? String(irlReferenceQuarter) : null,
+      Number.isFinite(irlValueNum as any) ? irlValueNum : null,
+      typeof irlEnabled === 'boolean' ? irlEnabled : null,
+    ],
+  );
+
+  if (!r.rowCount) throw new BadRequestException('Unknown leaseId');
+  return { ok: true, lease: r.rows[0] };
+}
 
 
   // ✅ NEW: store/update contract clauses (source of truth)
