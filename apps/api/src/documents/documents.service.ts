@@ -10,6 +10,16 @@ import * as path from 'path';
 
 type SignRole = 'BAILLEUR' | 'LOCATAIRE' | 'GARANT';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
+type DocType =
+  | 'CONTRAT'
+  | 'EDL'
+  | 'INVENTAIRE'
+  | 'ANNEXE'
+  | 'PHOTO'
+  | 'NOTICE'
+  | 'PACK'
+  | 'PACK_FINAL'
+  | 'GUARANTOR_ACT';
 
 type TemplateRow = {
   id: string;
@@ -47,12 +57,12 @@ export class DocumentsService {
    */
   private async findExistingDocByFilename(args: {
     leaseId: string;
-    type: string;
+    type: DocType;
     filename: string;
     parentNullOnly?: boolean;
   }): Promise<any | null> {
     const { leaseId, type, filename, parentNullOnly } = args;
-
+    const cleanFilename = String(filename || '').trim();
     const r = await this.pool.query(
       `
       SELECT *
@@ -64,7 +74,7 @@ export class DocumentsService {
       ORDER BY created_at DESC
       LIMIT 1
       `,
-      [leaseId, type, filename],
+      [leaseId, type, cleanFilename],
     );
 
     if (!r.rowCount) return null;
@@ -73,9 +83,22 @@ export class DocumentsService {
     // ⚠️ storage_path est souvent stocké avec un "/" initial (ex: "/units/...").
     // path.join('/storage', '/units/...') ignorerait '/storage', donc on normalise.
     const absPath = this.absFromStoragePath(doc.storage_path);
-
     if (!fsSync.existsSync(absPath)) return null;
     return doc;
+  }
+
+  private async safeUnlinkAbs(absPath: string) {
+    try {
+      await fs.unlink(absPath);
+    } catch (e: any) {
+      if (e?.code !== 'ENOENT') {
+        console.warn('[FORCE REBUILD] unlink failed', { absPath, error: String(e?.message || e) });
+      }
+    }
+  }
+
+  private async deleteDocumentRow(id: string) {
+    await this.pool.query(`DELETE FROM documents WHERE id=$1`, [id]);
   }
 
 
@@ -810,19 +833,55 @@ export class DocumentsService {
     `;
   }
 
-  private buildIrlClauseHtml(row: AnyRow): string {
-    // ✅ IMPORTANT: your DB does NOT have irl_revision_date column (you hit SQL error)
-    // So we use start_date as the annual revision reference date for now.
-    const revisionDate = row.start_date;
-    const revisionDateFr = this.formatDateFr(revisionDate);
-    return `
-      <div class="small">
-        Le loyer pourra être révisé <b>une fois par an</b>, à la date du <b>${this.escapeHtml(revisionDateFr)}</b>,
-        en fonction de la variation de l’<b>Indice de Référence des Loyers (IRL)</b> publié par l’INSEE,
-        selon les dispositions légales applicables.
-      </div>
-    `;
+  private addYearsAnniversaryIso(d: any, years = 1): string {
+    const iso = this.isoDate(d);
+    if (!iso) return '';
+    const [y, m, day] = iso.split('-').map((x) => parseInt(x, 10));
+    // Construire une date UTC pour éviter les surprises de TZ
+    const dt = new Date(Date.UTC(y, m - 1, day));
+    dt.setUTCFullYear(dt.getUTCFullYear() + years);
+    // YYYY-MM-DD
+    return dt.toISOString().slice(0, 10);
   }
+
+  private buildIrlClauseHtml(row: AnyRow): string {
+    // Source of truth: lease_terms.irlIndexation.enabled (normalisé)
+    const terms = this.normalizeLeaseTermsForContract(row);
+    const enabled = !!terms?.irlIndexation?.enabled;
+
+    if (!enabled) {
+      return `
+  <p>Le loyer n’est pas indexé (absence de clause de révision).</p>
+  `;
+    }
+
+  // ✅ Date anniversaire: start_date + 1 an
+  const nextIso =
+  this.isoDate(row.next_revision_date) ||
+  this.addYearsAnniversaryIso(row.start_date, 1);
+  const nextRevisionFr = nextIso ? this.formatDateFr(nextIso) : this.missingSpan('Date de révision à compléter');
+
+  // Référence IRL (déjà portée par terms + fallback colonnes leases.*)
+  const irl = this.defaultIrl(row);
+  const refQuarter = String(terms.irlIndexation?.referenceQuarter ?? irl.quarter ?? '').trim();
+  const refValue = String(terms.irlIndexation?.referenceValue ?? irl.value ?? '').trim();
+
+  const refQuarterSafe = refQuarter ? this.escapeHtml(refQuarter) : this.missingSpan('Trimestre IRL à compléter');
+  const refValueSafe = refValue ? this.escapeHtml(refValue) : this.missingSpan('Valeur IRL à compléter');
+
+  return `
+<p>
+  Le loyer hors charges pourra être révisé une fois par an, à la date du <strong>${this.escapeHtml(nextRevisionFr)}</strong>
+  (puis à chaque échéance annuelle), en fonction de la variation de l’Indice de Référence des Loyers (IRL) publié par l’Insee.
+</p>
+<p>
+  Indice de référence : <strong>${refQuarterSafe}</strong> — valeur <strong>${refValueSafe}</strong>.
+</p>
+<p>
+  Formule : <strong>Nouveau loyer = Loyer hors charges × (IRL applicable à la date de révision / IRL de référence)</strong>.
+</p>
+`;
+}
 
   // -------------------------------------
   // Documents list & downloads
@@ -970,7 +1029,8 @@ export class DocumentsService {
   // -------------------------------------
   // CONTRAT (templated)
   // -------------------------------------
-  async generateContractPdf(leaseId: string) {
+  async generateContractPdf(leaseId: string, opts?: {force?: boolean}) {
+    const force = !!opts?.force;
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const row = await this.fetchLeaseBundle(leaseId);
@@ -1015,9 +1075,36 @@ export class DocumentsService {
       leaseId,
       type: 'CONTRAT',
       filename: pdfName,
-      parentNullOnly: true, // avoid returning signed-final child
+      parentNullOnly: true,
     });
-    if (existing) return { created: false, document: existing };
+
+    if (existing) {
+      if (!force) {
+        return { created: false, document: existing };
+      }
+
+      if (force) {
+      // 1) si already finalized -> on refuse
+      if (existing.signed_final_document_id) {
+        throw new BadRequestException('Cannot force rebuild: contract already finalized (SIGNED_FINAL exists)');
+      }
+
+      // 2) si signatures existent -> on refuse
+      const sigQ = await this.pool.query(
+        `SELECT 1 FROM signatures WHERE document_id=$1 LIMIT 1`,
+        [existing.id],
+      );
+      if (sigQ.rowCount) {
+        throw new BadRequestException('Cannot force rebuild: signatures already exist on this contract');
+      }
+    }
+
+
+      // ✅ force: purge DB + fichier
+      const abs = this.absFromStoragePath(existing.storage_path);
+      await this.deleteDocumentRow(existing.id);
+      await this.safeUnlinkAbs(abs);
+    }
 
     const vars: Record<string, any> = {
       template_version: templateVersion,
@@ -1079,7 +1166,6 @@ export class DocumentsService {
       irl_reference_quarter: this.escapeHtml(String(terms.irlIndexation?.referenceQuarter ?? irl.quarter)),
       irl_reference_value: this.escapeHtml(String(terms.irlIndexation?.referenceValue ?? irl.value)),
       // ✅ no irl_revision_date column -> use start_date
-      irl_revision_date: this.formatDateFr(row.start_date),
       irl_clause_html: this.buildIrlClauseHtml(row),
 
             // ✅ Lease terms (clauses) — source of truth
@@ -1919,11 +2005,11 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     [
       row.unit_id,       // $1
       leaseId,           // $2
-      'PACK_FINAL',
-      packV2Name,        // $3
-      packStoragePath,   // $4
-      packSha256,        // $5
-      packParentId,      // $6
+      'PACK_FINAL',      // $3
+      packV2Name,        // $4
+      packStoragePath,   // $5
+      packSha256,        // $6
+      packParentId,      // $7
     ],
   );
 
