@@ -70,8 +70,12 @@ export class DocumentsController {
 
   // ✅ Pack final V2 (contrat signé final + annexes + audit)
   @Post('pack-final')
-  async generatePackFinal(@Body() body: any, @Res({ passthrough: true }) res: Response) {
-    const result = await this.docs.generatePackFinalV2(body.leaseId);
+  async generatePackFinal(
+    @Body() body: any,
+    @Query('force', new DefaultValuePipe(false), ParseBoolPipe) force: boolean,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.docs.generatePackFinalV2(body.leaseId, { force });
     return this.replyCreated(res, result);
   }
   

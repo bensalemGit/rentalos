@@ -1820,7 +1820,8 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     return { created: true, document: ins.rows[0] };
   }
 
-  async generatePackFinalV2(leaseId: string, parentDocumentId?: string) {
+  async generatePackFinalV2(leaseId: string, opts?: { force?: boolean }, parentDocumentId?: string) {
+    const force = !!opts?.force;
   const row = await this.fetchLeaseBundle(leaseId);
   const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
@@ -1932,7 +1933,11 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     parentNullOnly: false,
   });
 
-  if (existing) {
+  if (existing && !force) {
+    return { created: false, document: existing};
+  }
+  // si force=true, on supprime puis on régénère
+  if (existing && force) {
     try {
       const abs = this.absFromStoragePath(existing.storage_path);
       if (fsSync.existsSync(abs)) fsSync.unlinkSync(abs);
