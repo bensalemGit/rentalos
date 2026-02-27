@@ -247,12 +247,40 @@ export class DocumentsService {
     return Buffer.from(await resp.arrayBuffer());
   }
 
+  private isProbablyPdf(buf: Buffer): boolean {
+  if (!buf || buf.length < 5) return false;
+  // "%PDF-" signature
+  return buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46 && buf[4] === 0x2d;
+  }
+
+  private summarizeParts(parts: Array<{ filename: string; buffer: Buffer }>) {
+    return parts.map(p => ({
+      filename: p.filename,
+      bytes: p.buffer?.length ?? 0,
+      pdfHeaderOk: this.isProbablyPdf(p.buffer),
+    }));
+  }
+
   // -------------------------------------
   // PDF merge helpers (PACK_FINAL)
   // -------------------------------------
   private async mergePdfsGotenberg(
     pdfs: Array<{ filename: string; buffer: Buffer }>
   ): Promise<Buffer> {
+    if (!pdfs || pdfs.length === 0) {
+      throw new BadRequestException('PDF merge failed: empty parts list');
+    }
+
+    // ✅ mini validation (très utile quand un buffer est vide/cassé)
+    const bad = pdfs.filter(p => !p?.buffer || p.buffer.length === 0 || !this.isProbablyPdf(p.buffer));
+    if (bad.length) {
+      throw new BadRequestException({
+        message: 'PDF merge failed: invalid PDF buffer(s)',
+        bad: bad.map(b => ({ filename: b.filename, bytes: b.buffer?.length ?? 0 })),
+        all: this.summarizeParts(pdfs),
+      } as any);
+    }
+
     const form = new FormData();
 
     for (const p of pdfs) {
@@ -262,19 +290,45 @@ export class DocumentsService {
       form.append('files', pdfFile);
     }
 
-    const resp = await fetch(`${this.gotenberg}/forms/pdfengines/merge`, {
-      method: 'POST',
-      body: form,
-      // ⚠️ NE PAS mettre headers !!!
-    });
-
-    if (!resp.ok) {
-      throw new BadRequestException(
-        `PDF merge failed: ${resp.status} ${await resp.text()}`
-      );
+    let resp: Response;
+    try {
+      resp = await fetch(`${this.gotenberg}/forms/pdfengines/merge`, {
+        method: 'POST',
+        body: form,
+        // ⚠️ NE PAS mettre headers !!!
+      });
+    } catch (e: any) {
+      // ⚠️ Erreur réseau / gotenberg down
+      throw new BadRequestException({
+        message: 'PDF merge failed: gotenberg unreachable',
+        error: String(e?.message || e),
+        parts: this.summarizeParts(pdfs),
+      } as any);
     }
 
-    return Buffer.from(await resp.arrayBuffer());
+    if (!resp.ok) {
+      const txt = await resp.text().catch(() => '');
+      // ✅ message exploitable + liste des fichiers
+      throw new BadRequestException({
+        message: `PDF merge failed: gotenberg ${resp.status}`,
+        gotenbergBody: (txt || '').slice(0, 4000), // éviter log infini
+        parts: this.summarizeParts(pdfs),
+      } as any);
+    }
+
+    const out = Buffer.from(await resp.arrayBuffer());
+
+    // ✅ sanity check du résultat
+    if (!this.isProbablyPdf(out)) {
+      throw new BadRequestException({
+        message: 'PDF merge failed: gotenberg returned non-PDF output',
+        parts: this.summarizeParts(pdfs),
+        outBytes: out.length,
+        outHead: out.slice(0, 32).toString('hex'),
+      } as any);
+    }
+
+    return out;
   }
 
   private async mergePdfs(absPaths: string[]): Promise<Uint8Array> {
@@ -1521,6 +1575,15 @@ ${annexHtml}
 </body></html>`;
 
     const pdfName = `EDL_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
+    // ✅ IDEMPOTENCE: if same EDL already exists (same filename), return it.
+    const existing = await this.findExistingDocByFilename({
+      leaseId,
+      type: 'EDL',
+      filename: pdfName,
+      parentNullOnly: true,
+    });
+    if (existing) return { created: false, document: existing };
+
     const outDir = path.join(this.storageBase, 'units', lease.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
@@ -1646,6 +1709,14 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 </body></html>`;
 
     const pdfName = `INVENTAIRE_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
+    // ✅ IDEMPOTENCE: if same inventory already exists (same filename), return it.
+    const existing = await this.findExistingDocByFilename({
+      leaseId,
+      type: 'INVENTAIRE',
+      filename: pdfName,
+      parentNullOnly: true,
+    });
+    if (existing) return { created: false, document: existing };
     const outDir = path.join(this.storageBase, 'units', lease.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
@@ -1664,7 +1735,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     return { created: true, document: ins.rows[0] };
   }
 
-  private async generatePackFinalV2(leaseId: string, parentDocumentId?: string) {
+  async generatePackFinalV2(leaseId: string, parentDocumentId?: string) {
   const row = await this.fetchLeaseBundle(leaseId);
   const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
@@ -1702,13 +1773,25 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   const edl = docs.find((d: any) => d.type === 'EDL' && !d.parent_document_id) || null;
   const inventaire = docs.find((d: any) => d.type === 'INVENTAIRE' && !d.parent_document_id) || null;
 
-  const annexesOrdered = [
-    contractSignedFinal,
-    guarantorActSignedFinal,
-    notice,
-    edl,
-    inventaire,
-  ].filter(Boolean);
+  const annexesOrdered: any[] = [];
+  // 1️⃣ Contrat signé final (toujours premier)
+  annexesOrdered.push(contractSignedFinal);
+  // 2️⃣ Acte de caution signé (si présent)
+  if (guarantorActSignedFinal) {
+    annexesOrdered.push(guarantorActSignedFinal);
+  }
+  // 3️⃣ Notice (RP uniquement)
+  if (notice) {
+    annexesOrdered.push(notice);
+  }
+  // 4️⃣ État des lieux
+  if (edl) {
+    annexesOrdered.push(edl);
+  }
+  // 5️⃣ Inventaire (meublé)
+  if (inventaire) {
+    annexesOrdered.push(inventaire);
+  }
 
   // 4) AUDIT — SHA du root (original) et du signed_final (signé)
   const contractRoot =
@@ -1719,7 +1802,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     const q = await this.pool.query(`SELECT sha256 FROM documents WHERE id=$1`, [contractRootId]);
     if (q.rowCount) originalSha = String(q.rows[0].sha256 || '');
   }
-  
+
   let signedSha = String(contractSignedFinal?.sha256 || '');
   if (!signedSha) {
     try {
@@ -1727,6 +1810,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       if (fsSync.existsSync(abs)) signedSha = this.sha256File(abs);
     } catch {}
   }
+
   const auditPdfBuffer = await this.buildAuditPdf({
     originalSha,
     signedSha,
@@ -1772,15 +1856,44 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   }
 
   // 7) Merge (via Gotenberg, plus robuste)
-  const parts = annexesOrdered
-    .map((d: any) => this.safeReadPdfPart(d))   // lit filename + buffer depuis storage_path
+  const ordered = [
+    { n: '01_CONTRAT_SIGNED_FINAL.pdf', doc: contractSignedFinal },
+    { n: '02_ACTE_CAUTION_SIGNED_FINAL.pdf', doc: guarantorActSignedFinal },
+    { n: '03_NOTICE.pdf', doc: notice },
+    { n: '04_EDL.pdf', doc: edl },
+    { n: '05_INVENTAIRE.pdf', doc: inventaire },
+    // audit ajouté après (voir plus bas)
+  ].filter(x => x.doc);
+
+  const parts = ordered
+    .map(({ n, doc }) => {
+      const p = this.safeReadPdfPart(doc); // lit buffer depuis storage_path
+      return p ? { filename: n, buffer: p.buffer } : null; // ⚠️ override filename
+    })
     .filter(Boolean) as Array<{ filename: string; buffer: Buffer }>;
 
-  if (!parts.length) {
-    throw new BadRequestException('PACK_FINAL_V2: no PDFs found to merge');
+  // 🔐 AUDIT ajouté ici
+  const auditPart = this.safeReadPdfPartByFilename(
+    '99_AUDIT_JOURNAL_SIGNATURE.pdf',
+    auditPdfBuffer
+  );
+
+  if (auditPart) {
+    parts.push(auditPart);
   }
 
-  const mergedBuf = await this.mergePdfsGotenberg(parts);
+  let mergedBuf: Buffer;
+  try {
+    mergedBuf = await this.mergePdfsGotenberg(parts);
+  } catch (e) {
+    console.error('[PACK MERGE ERROR]', {
+      leaseId,
+      parts: this.summarizeParts(parts),
+      error: e,
+    });
+    throw e;
+  }
+
   const packSha256 = this.sha256Buffer(mergedBuf);
 
   const packStoragePath = path.join(
@@ -1797,17 +1910,20 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   await fs.writeFile(packAbs, mergedBuf);
 
   const packParentId = String(contractRootId || '') || null;
+
+  // ✅ FIX BLOQUANT: placeholders + ordre des valeurs (sha256 puis parent_document_id)
   const ins = await this.pool.query(
     `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
-     VALUES ($1,$2,'PACK_FINAL',$3,$4,$5,$6)
-     RETURNING *`,
+    VALUES ($1,$2,$3,$4,$5,$6,$7)
+    RETURNING *`,
     [
-      row.unit_id,
-      leaseId,
-      packV2Name,
-      packStoragePath,
-      packSha256,
-      packParentId,
+      row.unit_id,       // $1
+      leaseId,           // $2
+      'PACK_FINAL',
+      packV2Name,        // $3
+      packStoragePath,   // $4
+      packSha256,        // $5
+      packParentId,      // $6
     ],
   );
 
@@ -1901,7 +2017,17 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     // Injection dans la liste des fichiers à fusionner
     parts.unshift({ filename: 'info_pack.pdf', buffer: infoPdfBuf });
 
-    const mergedBuf = await this.mergePdfsGotenberg(parts);
+    let mergedBuf: Buffer;
+    try {
+      mergedBuf = await this.mergePdfsGotenberg(parts);
+    } catch (e) {
+      console.error('[PACK MERGE ERROR]', {
+        leaseId,
+        parts: this.summarizeParts(parts),
+        error: e,
+      });
+      throw e;
+    }
     const mergedSha = this.sha256Buffer(mergedBuf);
 
     const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
@@ -2255,6 +2381,9 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   const m = String(signatureDataUrl).match(/^data:image\/png;base64,(.+)$/);
   if (!m) throw new BadRequestException('Signature must be PNG data URL');
   const imgBuf = Buffer.from(m[1], 'base64');
+  if (imgBuf.length > 2_000_000) {
+  throw new BadRequestException('Signature too large');
+  }
 
   const sigDir = path.join(this.storageBase, 'units', doc.unit_id, 'leases', doc.lease_id, 'signatures');
   this.ensureDir(sigDir);
