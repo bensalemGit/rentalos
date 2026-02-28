@@ -695,33 +695,34 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
 
   async function sendPublicLink() {
-    setError("");
-    setStatus("Envoi du lien locataire…");
-    try {
-      const r = await fetch(`${API}/public-links/tenant-sign/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        credentials: "include",
-        body: JSON.stringify({ leaseId, ttlHours: 48 }),
-      });
+  setError("");
+  setStatus("Envoi des liens locataires…");
 
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        return;
-      }
+  try {
+    const r = await fetch(`${API}/public-links/tenant-sign/send`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      credentials: "include",
+      body: JSON.stringify({ leaseId, ttlHours: 48 }),
+    });
 
-      setStatus(`✅ Email envoyé à ${j.sentTo} (lien copié)`);
-      try {
-        await navigator.clipboard.writeText(j.publicUrl);
-      } catch {}
-      alert(`Email envoyé à ${j.sentTo}\nLien (copié):\n${j.publicUrl}`);
-    } catch (e: any) {
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
       setStatus("");
-      setError(String(e?.message || e));
+      setError(j?.message || JSON.stringify(j));
+      return;
     }
+
+    // ✅ Nouveau format: { ok, sentCount, sent: [{ email, ... }] }
+    const emails = Array.isArray(j?.sent) ? j.sent.map((x: any) => x.email).filter(Boolean) : [];
+
+    setStatus(`✅ ${j.sentCount || 0} email(s) envoyé(s)`);
+    alert(`✅ ${j.sentCount || 0} email(s) envoyé(s)\n\nDestinataires:\n${emails.join("\n") || "—"}`);
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
   }
+}
 
   return (
     <div style={{ padding: 18, maxWidth: 980, margin: "0 auto", display: "grid", gap: 14 }}>

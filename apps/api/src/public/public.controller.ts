@@ -18,11 +18,11 @@ export class PublicController {
   // ✅ Admin: create link + send email (requires auth)
   // Now supports emailOverride in body
   @Post('public-links/tenant-sign/send')
-  @UseGuards(JwtGuard)
-  sendTenantLink(@Body() body: any) {
+@UseGuards(JwtGuard)
+  sendTenantLinks(@Body() body: any) {
     const ttlHours = body?.ttlHours ?? 72;
     const emailOverride = body?.emailOverride ?? null;
-    return this.pub.createTenantSignLinkAndEmail(body.leaseId, ttlHours, emailOverride);
+    return this.pub.sendTenantSignLinks(body.leaseId, ttlHours, emailOverride);
   }
 
   // --- Public: get info about link (no auth) ---
@@ -64,6 +64,15 @@ sendLandlordLink(@Body() body: any) {
     emailOverride,
   );
 }
+
+@Post('public-links/guarantor-sign/send')
+@UseGuards(JwtGuard)
+sendGuarantorLink(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  const emailOverride = body?.emailOverride ?? null;
+  return this.pub.sendGuarantorSignLink(body.leaseId, ttlHours, emailOverride);
+}
+
 @Post('public-links/final-pdf')
 @UseGuards(JwtGuard)
 createFinalPdfLink(@Body() body: any) {
