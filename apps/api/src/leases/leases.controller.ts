@@ -3,12 +3,16 @@ import { LeasesService } from './leases.service';
 import { JwtGuard } from '../auth/jwt.guard';
 import { CreateLeaseDto } from './dto/create-lease.dto';
 import { UpdateLeaseTermsDto } from './dto/update-lease-terms.dto';
+import { DocumentsService } from '../documents/documents.service';
 
 
 @Controller('leases')
 @UseGuards(JwtGuard)
 export class LeasesController {
-  constructor(private readonly leases: LeasesService) {}
+  constructor(
+    private readonly leases: LeasesService,
+    private readonly docs: DocumentsService,
+  ) {}
 
   @Post()
   create(@Body() body: CreateLeaseDto) {
@@ -81,4 +85,8 @@ export class LeasesController {
     return this.leases.applyIrlRevision(id, body);
   }
 
+  @Post(':id/irl/avenant')
+  generateIrlAvenant(@Param('id') id: string, @Body() body: any) {
+    return this.docs.generateIrlAvenantPdf(id, body);
+  }
 }
