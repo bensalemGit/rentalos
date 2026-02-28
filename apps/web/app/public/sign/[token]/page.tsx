@@ -1,7 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 
 const API =
   typeof window !== "undefined"
@@ -11,7 +10,8 @@ const API =
 function friendlyMessage(msg: string) {
   const m = (msg || "").toLowerCase();
   if (m.includes("expired")) return "⏰ Ce lien a expiré.";
-  if (m.includes("already used")) return "✅ Ce lien a déjà été utilisé (signature déjà effectuée).";
+  if (m.includes("already used") || m.includes("token already used"))
+  return "✅ Ce lien a déjà été utilisé (signature déjà effectuée).";
   if (m.includes("already signed")) return "✅ Ce document a déjà été signé.";
   if (m.includes("invalid token")) return "❌ Lien invalide.";
   if (m.includes("unauthorized")) return "❌ Lien invalide ou expiré.";
@@ -21,16 +21,11 @@ function friendlyMessage(msg: string) {
 export default function PublicSignPage({ params }: { params: { token: string } }) {
   const token = params.token;
 
-  // 1️⃣ / 2️⃣ : lire le rôle via query param
-  const sp = useSearchParams();
-  const roleParam = (sp.get("role") || "").toLowerCase();
-  const isLandlord = roleParam === "landlord";
-  const signerRole = isLandlord ? "BAILLEUR" : "LOCATAIRE";
-
   const [info, setInfo] = useState<any>(null);
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [signerName, setSignerName] = useState("");
+  const [signerRole, setSignerRole] = useState<string>("");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
@@ -47,7 +42,7 @@ export default function PublicSignPage({ params }: { params: { token: string } }
   useEffect(() => {
     const c = canvasRef.current;
     if (c) setupCanvas(c);
-  }, [canvasRef.current]);
+  }, []);
 
   // 4️⃣ loadInfo avec nom par rôle
   async function loadInfo() {
@@ -62,7 +57,11 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
       if (j?.documentId) {
         setInfo(j);
-        setSignerName(isLandlord ? "Bailleur" : (j.tenantName || "Locataire"));
+
+        // signer info comes from backend (derived from token)
+        setSignerName(j?.signerName || "");
+        setSignerRole(j?.signerRole || "");
+
         setStatus("");
       } else {
         throw new Error("Lien indisponible");
@@ -131,10 +130,10 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
     try {
       const signatureDataUrl = getDataUrl();
-      const r = await fetch(`${API}/public/sign?token=${encodeURIComponent(token)}`, {
+      const r = await fetch(`${API}/public/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ signerName, signerRole, signatureDataUrl }),
+        body: JSON.stringify({ token, signatureDataUrl }),
       });
       const j = await r.json();
 
@@ -156,7 +155,7 @@ export default function PublicSignPage({ params }: { params: { token: string } }
     <main style={{ padding: 16, fontFamily: "Arial", maxWidth: 900, margin: "0 auto" }}>
       {/* 3️⃣ titre dynamique */}
       <h1 style={{ marginTop: 0 }}>
-        Signature du contrat ({isLandlord ? "Bailleur" : "Locataire"})
+        Signature du document {signerRole ? `(${signerRole})` : ""}
       </h1>
 
       {error && (
@@ -175,13 +174,14 @@ export default function PublicSignPage({ params }: { params: { token: string } }
           <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
             <div><b>Logement :</b> {info.unitCode}</div>
             <div><b>Locataire :</b> {info.tenantName}</div>
+            <div><b>Signataire :</b> {info.signerName || signerName || "—"} {info.signerRole ? `(${info.signerRole})` : ""}</div>
             <div style={{ color: "#666", fontSize: 12 }}>
               {info.startDate} → {info.endDateTheoretical} • expire le {String(info.expiresAt).slice(0, 19)}
             </div>
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={download}>Télécharger / Voir le contrat</button>
+            <button onClick={download}>Télécharger / Voir le document</button>
           </div>
 
           <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
@@ -189,7 +189,7 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
             <label>
               Nom signataire<br />
-              <input value={signerName} onChange={(e) => setSignerName(e.target.value)} style={{ width: "100%" }} />
+              <input value={signerName} readOnly style={{ width: "100%", background: "#f6f6f6" }} />
             </label>
 
             <div style={{ marginTop: 10 }}>

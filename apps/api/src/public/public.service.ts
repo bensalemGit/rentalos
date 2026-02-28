@@ -29,6 +29,42 @@ export class PublicService {
     return crypto.randomBytes(32).toString('base64url');
   }
 
+    private async createPublicLink(args: {
+    leaseId: string;
+    documentId: string;
+    purpose: string; // public_link_purpose
+    expiresInHours?: number;
+    signerRole?: 'LOCATAIRE' | 'GARANT' | 'BAILLEUR';
+    signerTenantId?: string | null;
+    signerName?: string | null;
+  }) {
+    const token = this.randomToken();
+    const tokenHash = this.sha256(token);
+    const hours = args.expiresInHours ?? 72;
+
+    const r = await this.pool.query(
+      `
+      INSERT INTO public_links
+        (token_hash, lease_id, document_id, purpose, expires_at, signer_role, signer_tenant_id, signer_name)
+      VALUES
+        ($1,$2,$3,$4, NOW() + ($5 || ' hours')::interval, $6, $7, $8)
+      RETURNING *
+      `,
+      [
+        tokenHash,
+        args.leaseId,
+        args.documentId,
+        args.purpose,
+        String(hours),
+        args.signerRole ?? null,
+        args.signerTenantId ?? null,
+        args.signerName ?? null,
+      ],
+    );
+
+    return { token, row: r.rows[0] };
+  }
+
   async createTenantSignLink(leaseId: string, ttlHours = 72, purpose = 'TENANT_SIGN_CONTRACT') {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
@@ -159,6 +195,173 @@ RentalOS
     return { ok: true, ...link, sentTo: toEmail, overrideUsed: !!override };
   }
 
+
+    async sendTenantSignLinks(leaseId: string, ttlHours = 72, emailOverride?: string | null) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    // 1) Find contract root doc (generate if missing)
+    const docQ = await this.pool.query(
+      `
+      SELECT * FROM documents
+      WHERE lease_id=$1 AND type='CONTRAT' AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    let contractDoc = docQ.rowCount ? docQ.rows[0] : null;
+    if (!contractDoc) {
+      contractDoc = await this.docs.generateContractPdf(leaseId);
+    }
+
+    if (contractDoc.signed_final_document_id) {
+      throw new ConflictException('Contract already finalized');
+    }
+
+    // 2) Tenants list from lease_tenants
+    const tenantsQ = await this.pool.query(
+      `
+      SELECT tt.id, tt.full_name, tt.email, lt.role, lt.created_at
+      FROM lease_tenants lt
+      JOIN tenants tt ON tt.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+      ORDER BY CASE WHEN lt.role='principal' THEN 0 ELSE 1 END, lt.created_at ASC
+      `,
+      [leaseId],
+    );
+
+    if (!tenantsQ.rowCount) throw new BadRequestException('No tenants found for lease');
+
+    const sent: any[] = [];
+
+    for (const t of tenantsQ.rows) {
+      // Optional override (for testing): if provided, send all to that email
+      const override =
+        emailOverride && String(emailOverride).includes('@')
+          ? String(emailOverride).trim()
+          : '';
+
+      const toEmail = override || String(t.email || '').trim();
+      if (!toEmail) continue;
+
+      const { token, row } = await this.createPublicLink({
+        leaseId,
+        documentId: contractDoc.id,
+        purpose: 'TENANT_SIGN_CONTRACT',
+        expiresInHours: ttlHours,
+        signerRole: 'LOCATAIRE',
+        signerTenantId: t.id,
+        signerName: t.full_name,
+      });
+
+      const url = `https://app.rentalos.fr/public/sign/${token}`;
+      const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
+
+      const subject = `Signature du contrat de location — ${contractDoc.filename || ''}`;
+      const html = `
+        <p>Bonjour ${t.full_name},</p>
+
+        <p>Merci de signer le contrat de location.</p>
+
+        <p>
+          Lien de signature :<br/>
+          <a href="${url}">${url}</a>
+        </p>
+
+        <p>Ce lien expire le : <b>${expiresPretty}</b></p>
+
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `;
+
+      await this.mailer.sendMail(toEmail, subject, html);
+
+      sent.push({
+        tenantId: t.id,
+        role: t.role,
+        email: toEmail,
+        expiresAt: row.expires_at,
+        overrideUsed: !!override,
+      });
+    }
+
+    return { ok: true, sentCount: sent.length, sent };
+  }
+
+    async sendGuarantorSignLink(leaseId: string, ttlHours = 72, emailOverride?: string | null) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    // 1) Find guarantor act root doc
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='GUARANTOR_ACT'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+    if (!docQ.rowCount) throw new BadRequestException('No guarantor act document found');
+
+    const actDoc = docQ.rows[0];
+
+    // 2) Get guarantor infos from lease
+    const leaseQ = await this.pool.query(
+      `SELECT guarantor_full_name, guarantor_email FROM leases WHERE id=$1 LIMIT 1`,
+      [leaseId],
+    );
+    if (!leaseQ.rowCount) throw new BadRequestException('Unknown lease');
+
+    const gName = String(leaseQ.rows[0]?.guarantor_full_name || '').trim();
+    const gEmailRaw = String(leaseQ.rows[0]?.guarantor_email || '').trim();
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+
+    const gEmail = override || gEmailRaw;
+
+    if (!gEmail) throw new BadRequestException('Guarantor email missing');
+    if (!gName) throw new BadRequestException('Guarantor name missing');
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: actDoc.id,
+      purpose: 'GUARANT_SIGN_ACT',
+      expiresInHours: ttlHours,
+      signerRole: 'GARANT',
+      signerTenantId: null,
+      signerName: gName,
+    });
+
+    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+    const subject = `Signature de l'acte de caution — ${actDoc.filename || ''}`;
+    const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
+    const html = `
+      <p>Bonjour ${gName},</p>
+
+      <p>Merci de signer l’acte de caution.</p>
+
+      <p>
+        Lien de signature :<br/>
+        <a href="${publicUrl}">${publicUrl}</a>
+      </p>
+
+      <p>Ce lien expire le : <b>${expiresPretty}</b></p>
+
+      <p>Bien cordialement,<br/>RentalOS</p>
+    `;
+
+    await this.mailer.sendMail(gEmail, subject, html);
+
+    return { ok: true, email: gEmail, expiresAt: row.expires_at, overrideUsed: !!override };
+  }
+
   async resolveToken(token: string, opts?: { consume?: boolean }): Promise<any> {
     if (!token) throw new UnauthorizedException('Missing token');
 
@@ -226,6 +429,8 @@ RentalOS
   async getPublicInfo(token: string) {
     const row = await this.resolveToken(token, { consume: false });
     return {
+      ok: true,
+      purpose: row.purpose,
       leaseId: row.lease_id,
       documentId: row.document_id,
       expiresAt: row.expires_at,
@@ -234,6 +439,10 @@ RentalOS
       startDate: row.start_date,
       endDateTheoretical: row.end_date_theoretical,
       filename: row.filename,
+
+      signerRole: row.signer_role ?? null,
+      signerTenantId: row.signer_tenant_id ?? null,
+      signerName: row.signer_name ?? null,
     };
   }
 
@@ -242,27 +451,30 @@ RentalOS
     const absPath = path.join(this.storageBase, row.storage_path);
     return { absPath, filename: row.filename };
   }
+  
   async publicSign(token: string, body: any, req: any) {
     const row = await this.resolveToken(token, { consume: true });
-    const allowed = new Set(['TENANT_SIGN_CONTRACT', 'LANDLORD_SIGN_CONTRACT']);
+
+    // Allow tenant/landlord/guarantor signing tokens
+    const allowed = new Set(['TENANT_SIGN_CONTRACT', 'LANDLORD_SIGN_CONTRACT', 'GUARANT_SIGN_ACT']);
     if (!allowed.has(String(row.purpose || ''))) {
       throw new UnauthorizedException('Invalid token purpose');
     }
 
-    const signerRole = String(body?.signerRole || 'LOCATAIRE').toUpperCase();
     const signatureDataUrl = body?.signatureDataUrl;
-
     if (!signatureDataUrl) {
       throw new BadRequestException('Missing signatureDataUrl');
     }
 
+    // Force signer identity from public_links ONLY (not from client)
+    const signerRole = String(row.signer_role || 'LOCATAIRE').toUpperCase();
+    const signerTenantId = row.signer_tenant_id ?? null;
+
     const signerName =
-      String(body?.signerName || '').trim() ||
+      String(row.signer_name || '').trim() ||
       (signerRole === 'BAILLEUR'
         ? process.env.LANDLORD_NAME || 'Bailleur'
-        : row.tenant_name || 'Locataire');
-
-    const signerTenantId = body?.signerTenantId || null;
+        : row.tenant_name || 'Signataire');
 
     const result = await this.docs.signDocumentMulti(
       row.document_id,
@@ -270,10 +482,14 @@ RentalOS
       req,
     );
 
+    // Keep your current invalidation behavior (delete link)
     await this.invalidateLink(row.id);
 
     return result;
   }
+
+
+
   async createFinalPdfDownloadLink(leaseId: string, ttlHours = 72) {
   if (!leaseId) throw new BadRequestException('Missing leaseId');
 
