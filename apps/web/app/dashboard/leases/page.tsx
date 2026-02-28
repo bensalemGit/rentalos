@@ -25,6 +25,18 @@ type Unit = {
 
 type Tenant = { id: string; full_name: string; email?: string | null; phone?: string | null };
 
+type IrlIndexation = {
+  enabled?: boolean;
+  referenceQuarter?: string | null;
+  referenceValue?: number | string | null;
+};
+
+type LeaseTerms = {
+  irlIndexation?: IrlIndexation | null;
+  irl_indexation?: IrlIndexation | null; // defensive
+  // (tu peux ajouter d'autres champs plus tard)
+};
+
 type Lease = {
   id: string;
   unit_id: string;
@@ -43,6 +55,15 @@ type Lease = {
   // IRL (si présent dans la liste /leases)
   irl_revision_date?: string | null;
   next_revision_date?: string | null;
+  // legacy / flat (selon endpoints)
+  irl_reference_value?: string | number | null;
+  irl_reference_quarter?: string | null;
+  // new
+  lease_terms?: LeaseTerms | null;
+  leaseTerms?: LeaseTerms | null; // defensive (si camelCase)
+  // defensive camelCase (certains endpoints / transforms)
+  irlReferenceValue?: string | number | null;
+  irlReferenceQuarter?: string | null;
 };
 
 type LeaseDetails = {
@@ -187,6 +208,7 @@ export default function LeasesPage() {
   const [keysCount, setKeysCount] = useState<number | "">(2);
   const [irlQuarter, setIrlQuarter] = useState<string>("");
   const [irlValue, setIrlValue] = useState<string>("");
+  const [irlEnabledCreate, setIrlEnabledCreate] = useState(false);
 
   // -------------------------
   // EDIT MODAL
@@ -210,6 +232,21 @@ export default function LeasesPage() {
   const [amountCharges, setAmountCharges] = useState<number>(0);
   const [amountDeposit, setAmountDeposit] = useState<number>(0);
   const [amountPayDay, setAmountPayDay] = useState<number>(5);
+
+  // -------------------------
+  // IRL APPLY MODAL (mini)
+  // -------------------------
+  const [irlModalOpen, setIrlModalOpen] = useState(false);
+  const [irlModalLease, setIrlModalLease] = useState<any>(null);
+
+  const [irlApplyDate, setIrlApplyDate] = useState<string>("");
+  const [irlApplyQuarter, setIrlApplyQuarter] = useState<string>("");
+  const [irlApplyValue, setIrlApplyValue] = useState<string>("");
+
+  const [irlApplyBusy, setIrlApplyBusy] = useState(false);
+  const [irlApplyErr, setIrlApplyErr] = useState<string>("");
+
+
 
   const blue = "#1f6feb";
   const border = "#e5e7eb";
@@ -313,49 +350,68 @@ async function downloadDocument(documentId: string, filename?: string) {
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
 }
 
-async function applyIrlRevision(lease: any) {
-  const token = localStorage.getItem("token");
+async function openApplyIrlModal(lease: any) {
+  setIrlApplyErr("");
+  setIrlModalLease(lease);
 
-  // date par défaut : next_revision_date si dispo, sinon aujourd'hui
   const defaultDate =
     (lease?.next_revision_date ? String(lease.next_revision_date).slice(0, 10) : "") ||
     new Date().toISOString().slice(0, 10);
 
-  const revisionDate = prompt("Date de révision (YYYY-MM-DD) :", defaultDate)?.trim() || "";
-  if (!revisionDate) return;
+  setIrlApplyDate(defaultDate);
 
-  const irlNewQuarter = prompt("IRL — Nouveau trimestre (ex: T4 2026) :", "")?.trim() || "";
-  if (!irlNewQuarter) return;
+  // Pré-remplissage utile : on propose le trimestre "cohérent" avec la date de révision
+  // (tu peux ajuster manuellement)
+  setIrlApplyQuarter("");
 
-  const irlNewValueRaw = prompt("IRL — Nouvelle valeur (ex: 150.00) :", "")?.trim() || "";
-  if (!irlNewValueRaw) return;
+  setIrlApplyValue(""); // vide volontairement
+  setIrlModalOpen(true);
+}
 
-  const irlNewValue = Number(irlNewValueRaw.replace(",", "."));
-  if (!Number.isFinite(irlNewValue) || irlNewValue <= 0) {
-    alert("Valeur IRL invalide.");
-    return;
+async function submitApplyIrl() {
+  if (!irlModalLease) return;
+
+  const token = localStorage.getItem("token");
+  const revisionDate = (irlApplyDate || "").trim();
+  const irlNewQuarter = (irlApplyQuarter || "").trim();
+  const irlNewValue = Number(String(irlApplyValue || "").replace(",", "."));
+
+  if (!revisionDate) return setIrlApplyErr("Date de révision obligatoire.");
+  if (!irlNewQuarter) return setIrlApplyErr("Trimestre obligatoire (ex: T4 2026).");
+  if (!Number.isFinite(irlNewValue) || irlNewValue <= 0) return setIrlApplyErr("Valeur IRL invalide.");
+
+  setIrlApplyErr("");
+  setIrlApplyBusy(true);
+
+  try {
+    const r = await fetch(`${API}/leases/${irlModalLease.id}/irl/apply`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+      body: JSON.stringify({ revisionDate, irlNewQuarter, irlNewValue }),
+    });
+
+    const txt = await r.text().catch(() => "");
+    if (!r.ok) {
+      console.error("IRL apply error:", r.status, txt);
+      setIrlApplyErr(`Erreur API (${r.status}) : ${txt || "voir console"}`);
+      return;
+    }
+
+    setIrlModalOpen(false);
+    setIrlModalLease(null);
+
+    await loadAll();
+    setStatus("Révision IRL appliquée ✅ (historique créé)");
+    setTimeout(() => setStatus(""), 2500);
+  } catch (e: any) {
+    setIrlApplyErr(String(e?.message || e));
+  } finally {
+    setIrlApplyBusy(false);
   }
-
-  const r = await fetch(`${API}/leases/${lease.id}/irl/apply`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${token}`,
-    },
-    credentials: "include",
-    body: JSON.stringify({ revisionDate, irlNewQuarter, irlNewValue }),
-  });
-
-  const txt = await r.text().catch(() => "");
-  if (!r.ok) {
-    console.error("IRL apply error:", r.status, txt);
-    alert(`Erreur application IRL (${r.status}). Voir console.`);
-    return;
-  }
-
-  // Option: on refresh la liste pour que irl_revision_date/next_revision_date se mettent à jour
-  await loadAll();
-  alert("Révision IRL appliquée ✅ (historique créé)");
 }
 
 async function generateIrlAvenant(lease: any) {
@@ -491,7 +547,7 @@ async function generateIrlAvenant(lease: any) {
     irlReferenceQuarter: irlQuarter || null,
     irlReferenceValue: irlValue ? Number(irlValue) : null,
 
-    irlEnabled: editIrlEnabled, // ✅ AJOUT ICI
+    irlEnabled: irlEnabledCreate, // ✅ AJOUT ICI
 
     // ✅ garant classique (si tu as ces states)
     //guarantorFullName: guarantorFullName || null,
@@ -1328,8 +1384,8 @@ async function generateIrlAvenant(lease: any) {
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 <input
                   type="checkbox"
-                  checked={editIrlEnabled}
-                  onChange={(e) => setEditIrlEnabled(e.target.checked)}
+                  checked={irlEnabledCreate}
+                  onChange={(e) => setIrlEnabledCreate(e.target.checked)}
                 />
                 <span style={{ fontWeight: 900, color: muted, fontSize: 12 }}>
                   Activer la révision IRL
@@ -1339,13 +1395,13 @@ async function generateIrlAvenant(lease: any) {
               <label style={labelStyle(muted)}>
                 IRL — Trimestre de référence
                 <br />
-                <input value={irlQuarter} onChange={(e) => setIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!editIrlEnabled} />
+                <input value={irlQuarter} onChange={(e) => setIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!irlEnabledCreate} />
               </label>
 
               <label style={labelStyle(muted)}>
                 IRL — Valeur de référence
                 <br />
-                <input value={irlValue} onChange={(e) => setIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!editIrlEnabled} />
+                <input value={irlValue} onChange={(e) => setIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!irlEnabledCreate} />
               </label>
             </div>
 
@@ -1484,7 +1540,27 @@ async function generateIrlAvenant(lease: any) {
 
         <div style={{ display: "grid", gap: 10 }}>
           {activeLeases.map((l) => {
-            const canIrlAvenant = !!l?.irl_revision_date || !!l?.next_revision_date;
+            const terms = l.lease_terms ?? (l as any).leaseTerms ?? null;
+
+            const irlEnabled =
+              terms?.irlIndexation?.enabled === true ||
+              terms?.irl_indexation?.enabled === true;
+
+            const irlRefValue =
+              terms?.irlIndexation?.referenceValue ??
+              terms?.irl_indexation?.referenceValue ??
+              l?.irl_reference_value ??
+              l?.irl_reference_value ??
+              null;
+
+            const canApplyIrl =
+              (l.status === "active" || l.status === "notice") &&
+              irlEnabled === true &&
+              Number(irlRefValue) > 0;
+
+            // Avenant: nécessite une date de révision (donc après apply ou next_revision_date existante)
+            const canGenerateAvenant =
+              !!l?.irl_revision_date || !!l?.next_revision_date;
             return (
             <div key={l.id} style={{ border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
@@ -1527,8 +1603,8 @@ async function generateIrlAvenant(lease: any) {
                   )}
 
                   <button
-                    onClick={() => applyIrlRevision(l)}
-                    disabled={!canIrlAvenant}
+                    onClick={() => openApplyIrlModal(l)}
+                    disabled={!canApplyIrl}
                     style={{
                       padding: "6px 10px",
                       borderRadius: 8,
@@ -1536,16 +1612,16 @@ async function generateIrlAvenant(lease: any) {
                       background: "white",
                       cursor: "pointer",
                       marginLeft: 8,
-                      opacity: canIrlAvenant ? 1 : 0.5,
+                      opacity: canApplyIrl ? 1 : 0.5,
                     }}
-                    title={canIrlAvenant ? "Appliquer une révision IRL (crée l'historique)" : "IRL non activé / aucune date IRL"}
+                    title={canApplyIrl ? "Appliquer une révision IRL (crée l'historique)" : "IRL non activé / aucune date IRL"}
                   >
                     Appliquer IRL
                   </button>
                   
                   <button
                     onClick={() => generateIrlAvenant(l)}
-                    disabled={!canIrlAvenant}
+                    disabled={!canGenerateAvenant}
                     style={{
                       padding: "6px 10px",
                       borderRadius: 8,
@@ -1553,9 +1629,9 @@ async function generateIrlAvenant(lease: any) {
                       background: "white",
                       cursor: "pointer",
                       marginLeft: 8,
-                      opacity: canIrlAvenant ? 1 : 0.5,
+                      opacity: canGenerateAvenant ? 1 : 0.5,
                     }}
-                    title={canIrlAvenant ? "Générer et ouvrir l’avenant IRL" : "Aucune date IRL disponible"}
+                    title={canGenerateAvenant ? "Générer et ouvrir l’avenant IRL" : "Aucune date IRL disponible"}
                   >
                     Avenant IRL
                   </button>
@@ -1847,13 +1923,13 @@ async function generateIrlAvenant(lease: any) {
                     <label style={labelStyle(muted)}>
                       IRL — Trimestre de référence
                       <br />
-                      <input value={editIrlQuarter} onChange={(e) => setEditIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!editIrlEnabled} />
+                      <input value={editIrlQuarter} onChange={(e) => setEditIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!irlEnabledCreate} />
                     </label>
 
                     <label style={labelStyle(muted)}>
                       IRL — Valeur de référence
                       <br />
-                      <input value={editIrlValue} onChange={(e) => setEditIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!editIrlEnabled} />
+                      <input value={editIrlValue} onChange={(e) => setEditIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!irlEnabledCreate} />
                     </label>
                   </div>
 
@@ -2056,6 +2132,144 @@ async function generateIrlAvenant(lease: any) {
           </div>
         </div>
       )}
+      {irlModalOpen && (
+  <div
+    style={{
+      position: "fixed",
+      inset: 0,
+      background: "rgba(0,0,0,0.45)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "flex-start",
+      overflowY: "auto",
+      WebkitOverflowScrolling: "touch",
+      padding: "24px 16px",
+      zIndex: 60,
+    }}
+    onClick={() => {
+      if (irlApplyBusy) return;
+      setIrlModalOpen(false);
+      setIrlModalLease(null);
+    }}
+  >
+    <div
+      style={{
+        background: "#fff",
+        width: "min(720px, 100%)",
+        margin: "0 auto",
+        borderRadius: 16,
+        padding: 14,
+        border: `1px solid ${border}`,
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+        <div>
+          <div style={{ fontWeight: 900, fontSize: 16 }}>Appliquer une révision IRL</div>
+          <div style={{ color: muted, fontSize: 12 }}>
+            Bail: {irlModalLease?.unit_code || irlModalLease?.unit_id} — {irlModalLease?.tenant_name || irlModalLease?.tenant_id}
+          </div>
+        </div>
+
+        <button
+          style={btnSecondary(border)}
+          onClick={() => {
+            if (irlApplyBusy) return;
+            setIrlModalOpen(false);
+            setIrlModalLease(null);
+          }}
+        >
+          Fermer
+        </button>
+      </div>
+
+      {irlApplyErr && (
+        <div
+          style={{
+            marginTop: 10,
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: `1px solid rgba(220,38,38,0.35)`,
+            background: "rgba(220,38,38,0.08)",
+            fontWeight: 800,
+            color: "#7f1d1d",
+          }}
+        >
+          {irlApplyErr}
+        </div>
+      )}
+
+      {/* Form */}
+      <div style={{ marginTop: 12, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+        <label style={labelStyle(muted)}>
+          Date de révision *
+          <br />
+          <input
+            type="date"
+            value={irlApplyDate}
+            onChange={(e) => setIrlApplyDate(e.target.value)}
+            style={inputStyle(border)}
+            disabled={irlApplyBusy}
+          />
+        </label>
+
+        <label style={labelStyle(muted)}>
+          Nouveau trimestre *
+          <br />
+          <input
+            value={irlApplyQuarter}
+            onChange={(e) => setIrlApplyQuarter(e.target.value)}
+            placeholder="ex: T4 2026"
+            style={inputStyle(border)}
+            disabled={irlApplyBusy}
+          />
+        </label>
+
+        <label style={labelStyle(muted)}>
+          Nouvelle valeur IRL *
+          <br />
+          <input
+            value={irlApplyValue}
+            onChange={(e) => setIrlApplyValue(e.target.value)}
+            placeholder="ex: 150.50"
+            style={inputStyle(border)}
+            disabled={irlApplyBusy}
+          />
+        </label>
+      </div>
+
+      {/* Preview calcul */}
+      <IrlPreview
+        muted={muted}
+        border={border}
+        lease={irlModalLease}
+        newValueRaw={irlApplyValue}
+      />
+
+      <div style={{ marginTop: 12, display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        <button
+          style={btnSecondary(border)}
+          onClick={() => {
+            if (irlApplyBusy) return;
+            setIrlModalOpen(false);
+            setIrlModalLease(null);
+          }}
+          disabled={irlApplyBusy}
+        >
+          Annuler
+        </button>
+
+        <button
+          style={btnPrimarySmall(blue)}
+          onClick={submitApplyIrl}
+          disabled={irlApplyBusy}
+        >
+          {irlApplyBusy ? "Application…" : "Appliquer"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
     </main>
   );
 }
@@ -2153,4 +2367,61 @@ function statusChip(status: string, border: string) {
     ended: "#16a34a",
   };
   return chip(border, map[status] || "#374151");
+}
+
+function IrlPreview({
+  lease,
+  newValueRaw,
+  muted,
+  border,
+}: {
+  lease: any;
+  newValueRaw: string;
+  muted: string;
+  border: string;
+}) {
+  const currentRent = Number(lease?.rent_cents || 0) / 100;
+
+  const terms = lease?.lease_terms ?? lease?.leaseTerms ?? null;
+
+  const refValue =
+    terms?.irlIndexation?.referenceValue ??
+    terms?.irl_indexation?.referenceValue ??
+    lease?.irl_reference_value ??
+    lease?.irlReferenceValue ??
+    null;
+
+  const refNum = Number(refValue);
+  const newNum = Number(String(newValueRaw || "").replace(",", "."));
+
+  const canCompute = Number.isFinite(refNum) && refNum > 0 && Number.isFinite(newNum) && newNum > 0 && currentRent > 0;
+
+  const coef = canCompute ? newNum / refNum : null;
+  const nextRent = canCompute ? Math.round(currentRent * coef! * 100) / 100 : null;
+
+  return (
+    <div style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fff" }}>
+      <div style={{ fontWeight: 900, marginBottom: 6 }}>Aperçu (calcul attendu)</div>
+
+      <div style={{ color: muted, fontSize: 12, display: "grid", gap: 4 }}>
+        <div>Loyer actuel (contrat) : <b>{currentRent.toFixed(2)} €</b></div>
+        <div>IRL référence : <b>{Number.isFinite(refNum) ? refNum : "—"}</b></div>
+        <div>IRL nouveau : <b>{Number.isFinite(newNum) ? newNum : "—"}</b></div>
+
+        {canCompute ? (
+          <>
+            <div>Coefficient : <b>{coef!.toFixed(6)}</b></div>
+            <div>Nouveau loyer attendu : <b>{nextRent!.toFixed(2)} €</b></div>
+            <div style={{ marginTop: 6 }}>
+              (Le backend peut arrondir au centime / gérer des règles spécifiques, mais tu dois retomber très proche.)
+            </div>
+          </>
+        ) : (
+          <div style={{ marginTop: 6 }}>
+            Renseigne la valeur IRL pour afficher le calcul.
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
