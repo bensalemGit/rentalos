@@ -40,6 +40,9 @@ type Lease = {
   unit_code?: string;
   tenant_name?: string;
   kind?: string;
+  // IRL (si présent dans la liste /leases)
+  irl_revision_date?: string | null;
+  next_revision_date?: string | null;
 };
 
 type LeaseDetails = {
@@ -276,6 +279,141 @@ export default function LeasesPage() {
       setError(String(e?.message || e));
     }
   }
+
+async function downloadDocument(documentId: string, filename?: string) {
+  const token = localStorage.getItem("token");
+
+  const r = await fetch(`${API}/documents/${documentId}/download`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`, // ✅ IMPORTANT
+    },
+    credentials: "include",
+  });
+
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw new Error(`Download failed ${r.status} ${txt}`);
+  }
+
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+
+  // ✅ force un nom de fichier explicite
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename || "document.pdf";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+
+  // Optionnel: preview
+  //window.open(url, "_blank");
+
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function applyIrlRevision(lease: any) {
+  const token = localStorage.getItem("token");
+
+  // date par défaut : next_revision_date si dispo, sinon aujourd'hui
+  const defaultDate =
+    (lease?.next_revision_date ? String(lease.next_revision_date).slice(0, 10) : "") ||
+    new Date().toISOString().slice(0, 10);
+
+  const revisionDate = prompt("Date de révision (YYYY-MM-DD) :", defaultDate)?.trim() || "";
+  if (!revisionDate) return;
+
+  const irlNewQuarter = prompt("IRL — Nouveau trimestre (ex: T4 2026) :", "")?.trim() || "";
+  if (!irlNewQuarter) return;
+
+  const irlNewValueRaw = prompt("IRL — Nouvelle valeur (ex: 150.00) :", "")?.trim() || "";
+  if (!irlNewValueRaw) return;
+
+  const irlNewValue = Number(irlNewValueRaw.replace(",", "."));
+  if (!Number.isFinite(irlNewValue) || irlNewValue <= 0) {
+    alert("Valeur IRL invalide.");
+    return;
+  }
+
+  const r = await fetch(`${API}/leases/${lease.id}/irl/apply`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    credentials: "include",
+    body: JSON.stringify({ revisionDate, irlNewQuarter, irlNewValue }),
+  });
+
+  const txt = await r.text().catch(() => "");
+  if (!r.ok) {
+    console.error("IRL apply error:", r.status, txt);
+    alert(`Erreur application IRL (${r.status}). Voir console.`);
+    return;
+  }
+
+  // Option: on refresh la liste pour que irl_revision_date/next_revision_date se mettent à jour
+  await loadAll();
+  alert("Révision IRL appliquée ✅ (historique créé)");
+}
+
+async function generateIrlAvenant(lease: any) {
+  const token = localStorage.getItem("token");
+
+  const defaultDate =
+    (lease?.irl_revision_date ? String(lease.irl_revision_date).slice(0, 10) : "") ||
+    (lease?.next_revision_date ? String(lease.next_revision_date).slice(0, 10) : "");
+
+  const revisionDate = window.prompt("Date de révision (YYYY-MM-DD) :", defaultDate || "") || "";
+
+  if (!revisionDate) {
+    alert("Aucune date de révision IRL trouvée.");
+    return;
+  }
+
+  const r = await fetch(`${API}/leases/${lease.id}/irl/avenant`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`, // ✅ IMPORTANT
+    },
+    credentials: "include",
+    body: JSON.stringify({ revisionDate }),
+  });
+
+  const txt = await r.text().catch(() => "");
+
+  if (!r.ok) {
+  console.error("IRL avenant error:", r.status, txt);
+
+  if (r.status === 400 && txt.includes("lease_revisions empty")) {
+    alert("Aucune révision appliquée. Cliquez d’abord sur “Appliquer IRL”.");
+  } else {
+    alert(`Erreur génération avenant IRL (${r.status}). Voir console.`);
+  }
+  return;
+}
+  const data = JSON.parse(txt);
+
+  const docId =
+    data?.document?.id ||
+    data?.id ||
+    data?.documentId ||
+    null;
+
+  if (!docId) {
+    console.error("Unexpected avenant response:", data);
+    alert("Avenant généré mais id document introuvable (voir console).");
+    return;
+  }
+
+  const code = lease?.unit_code || lease?.unitCode || "BAIL";
+  const date = String(revisionDate).slice(0, 10);
+  const niceName = `AVENANT_IRL_${code}_${date}.pdf`;
+
+  await downloadDocument(docId, niceName);
+}
 
   useEffect(() => {
     if (token) loadAll();
@@ -1345,7 +1483,9 @@ export default function LeasesPage() {
         <div style={{ color: muted, fontSize: 12, marginBottom: 8 }}>{activeLeases.length} bail(aux) actif(s)</div>
 
         <div style={{ display: "grid", gap: 10 }}>
-          {activeLeases.map((l) => (
+          {activeLeases.map((l) => {
+            const canIrlAvenant = !!l?.irl_revision_date || !!l?.next_revision_date;
+            return (
             <div key={l.id} style={{ border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
                 <div style={{ minWidth: 0 }}>
@@ -1386,13 +1526,48 @@ export default function LeasesPage() {
                     </>
                   )}
 
-                                    <Link href={`/edl/${l.id}`}><button style={btnAction(border)}>EDL</button></Link>
+                  <button
+                    onClick={() => applyIrlRevision(l)}
+                    disabled={!canIrlAvenant}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      border: "1px solid #ddd",
+                      background: "white",
+                      cursor: "pointer",
+                      marginLeft: 8,
+                      opacity: canIrlAvenant ? 1 : 0.5,
+                    }}
+                    title={canIrlAvenant ? "Appliquer une révision IRL (crée l'historique)" : "IRL non activé / aucune date IRL"}
+                  >
+                    Appliquer IRL
+                  </button>
+                  
+                  <button
+                    onClick={() => generateIrlAvenant(l)}
+                    disabled={!canIrlAvenant}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: 8,
+                      border: "1px solid #ddd",
+                      background: "white",
+                      cursor: "pointer",
+                      marginLeft: 8,
+                      opacity: canIrlAvenant ? 1 : 0.5,
+                    }}
+                    title={canIrlAvenant ? "Générer et ouvrir l’avenant IRL" : "Aucune date IRL disponible"}
+                  >
+                    Avenant IRL
+                  </button>
+
+                  <Link href={`/edl/${l.id}`}><button style={btnAction(border)}>EDL</button></Link>
                   <Link href={`/inventory/${l.id}`}><button style={btnAction(border)}>Inventaire</button></Link>
                   <Link href={`/sign/${l.id}`}><button style={btnAction(border)}>Contrat + signatures</button></Link>
                 </div>
               </div>
             </div>
-          ))}
+          );
+        })}
 
           {!activeLeases.length && (
             <div style={{ border: `1px dashed ${border}`, borderRadius: 16, padding: 14, color: muted, background: "#fff" }}>Aucun bail actif.</div>

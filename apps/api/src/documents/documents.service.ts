@@ -19,7 +19,8 @@ type DocType =
   | 'NOTICE'
   | 'PACK'
   | 'PACK_FINAL'
-  | 'GUARANTOR_ACT';
+  | 'GUARANTOR_ACT'
+  | 'AVENANT_IRL';
 
 type TemplateRow = {
   id: string;
@@ -168,6 +169,23 @@ export class DocumentsService {
     return (n / 100).toFixed(2);
   }
 
+  private async getAmountsAsOf(
+    client: any,
+    leaseId: string,
+    asOfDate: string,
+  ) {
+    const r = await client.query(
+      `SELECT rent_cents, charges_cents, deposit_cents, payment_day
+      FROM lease_amounts
+      WHERE lease_id=$1 AND effective_date <= $2::date
+      ORDER BY effective_date DESC
+      LIMIT 1`,
+      [leaseId, asOfDate],
+    );
+    if (!r.rowCount) return null;
+    return r.rows[0];
+  }
+
   private escapeHtml(s: any) {
     return String(s ?? '')
       .replaceAll('&', '&amp;')
@@ -202,6 +220,8 @@ export class DocumentsService {
     // Inline style so we don't depend on template CSS
     return `<span style="color:#b00020;font-weight:700">${this.escapeHtml(label)}</span>`;
   }
+
+
 
   // -------------------------------------
   // Templates
@@ -745,6 +765,29 @@ export class DocumentsService {
     return { quarter: String(q), value: String(v) };
   }
 
+  private async getLatestLeaseRevision(leaseId: string) {
+    const r = await this.pool.query(
+      `SELECT *
+      FROM lease_revisions
+      WHERE lease_id=$1
+      ORDER BY revision_date DESC
+      LIMIT 1`,
+      [leaseId],
+    );
+    return r.rowCount ? r.rows[0] : null;
+  }
+
+  private async getLeaseRevisionByDate(leaseId: string, revisionDateIso: string) {
+    const r = await this.pool.query(
+      `SELECT *
+      FROM lease_revisions
+      WHERE lease_id=$1 AND revision_date=$2::date
+      LIMIT 1`,
+      [leaseId, revisionDateIso],
+    );
+    return r.rowCount ? r.rows[0] : null;
+  }
+
   private normalizeLeaseTermsForContract(row: any) {
   // row.lease_terms peut déjà être un objet (pg) ou une string
   let t: any = {};
@@ -958,10 +1001,14 @@ export class DocumentsService {
     return { absPath, filename: doc.filename };
   }
 
-  private async fetchLeaseBundle(leaseId: string) {
+  private async fetchLeaseBundle(leaseId: string, asOfDate?: string) {
     const q = await this.pool.query(
       `SELECT
           l.*,
+          COALESCE(a.rent_cents, l.rent_cents) as rent_cents,
+          COALESCE(a.charges_cents, l.charges_cents) as charges_cents,
+          COALESCE(a.deposit_cents, l.deposit_cents) as deposit_cents,
+          COALESCE(a.payment_day, l.payment_day) as payment_day,
           u.id as unit_id,
           u.code as unit_code,
           u.label as unit_label,
@@ -1005,8 +1052,16 @@ export class DocumentsService {
         JOIN tenants t ON t.id = l.tenant_id
         LEFT JOIN projects p ON p.id = u.project_id
         LEFT JOIN buildings b ON b.id = u.building_id
+        LEFT JOIN LATERAL (
+          SELECT rent_cents, charges_cents, deposit_cents, payment_day
+          FROM lease_amounts
+          WHERE lease_id = l.id
+            AND effective_date <= COALESCE($2::date, CURRENT_DATE)
+          ORDER BY effective_date DESC
+          LIMIT 1
+        ) a ON TRUE
         WHERE l.id=$1`,
-      [leaseId],
+      [leaseId, asOfDate ?? null],
     );
     if (!q.rowCount) throw new BadRequestException('Unknown leaseId');
     return q.rows[0];
@@ -1034,7 +1089,11 @@ export class DocumentsService {
     const force = !!opts?.force;
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const row = await this.fetchLeaseBundle(leaseId);
+    const leaseBase = await this.pool.query(`SELECT start_date FROM leases WHERE id=$1`, [leaseId]);
+    if (!leaseBase.rowCount) throw new BadRequestException('Unknown leaseId');
+    const asOf = this.isoDate(leaseBase.rows[0].start_date);
+
+    const row = await this.fetchLeaseBundle(leaseId, asOf);
     const landlord = await this.getLandlordForLease(leaseId);
 
     if (!landlord) {
@@ -1253,6 +1312,158 @@ export class DocumentsService {
 
     return { created: true, document: ins.rows[0] };
   }
+
+
+  async generateIrlAvenantPdf(leaseId: string, body?: { revisionDate?: string }, opts?: { force?: boolean }) {
+  const force = !!opts?.force;
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+  // 1) récupérer révision (par date si fournie, sinon dernière)
+  const revisionDateIso = body?.revisionDate ? String(body.revisionDate).slice(0, 10) : '';
+  const rev =
+    revisionDateIso
+      ? await this.getLeaseRevisionByDate(leaseId, revisionDateIso)
+      : await this.getLatestLeaseRevision(leaseId);
+
+  if (!rev) {
+    throw new BadRequestException('No IRL revision exists for this lease (lease_revisions empty)');
+  }
+
+  const row = await this.fetchLeaseBundle(leaseId);
+  const landlord = await this.getLandlordForLease(leaseId);
+  if (!landlord) {
+    throw new BadRequestException({
+      message: 'Avenant not ready: missing landlord information',
+      missing: ['landlord_profile'],
+    });
+  }
+
+  const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
+
+  // 2) filename stable (1 avenant par date de révision)
+  const revIso = this.isoDate(rev.revision_date);
+  const pdfName = `AVENANT_IRL_${leaseKind}_${row.unit_code}_${revIso}.pdf`;
+
+  // ✅ idempotence
+  const existing = await this.findExistingDocByFilename({
+    leaseId,
+    type: 'AVENANT_IRL',
+    filename: pdfName,
+    parentNullOnly: true,
+  });
+  if (existing && !force) return { created: false, document: existing };
+
+  // si force et doc existe: purge (même logique que contrat)
+  if (existing && force) {
+    if (existing.signed_final_document_id) {
+      throw new BadRequestException('Cannot force rebuild: avenant already finalized (SIGNED_FINAL exists)');
+    }
+    const sigQ = await this.pool.query(`SELECT 1 FROM signatures WHERE document_id=$1 LIMIT 1`, [existing.id]);
+    if (sigQ.rowCount) {
+      throw new BadRequestException('Cannot force rebuild: signatures already exist on this avenant');
+    }
+    const abs = this.absFromStoragePath(existing.storage_path);
+    await this.deleteDocumentRow(existing.id);
+    await this.safeUnlinkAbs(abs);
+  }
+
+  // 3) contenu
+  const oldEur = (Number(rev.previous_rent_cents) / 100).toFixed(2);
+  const newEur = (Number(rev.new_rent_cents) / 100).toFixed(2);
+
+  const oldCents = Number(rev.previous_rent_cents ?? 0);
+  const newCents = Number(rev.new_rent_cents ?? 0);
+
+  const oldEurNum = oldCents / 100;
+  const newEurNum = newCents / 100;
+
+  const irlNew = Number(rev.irl_new_value ?? 0);
+  const irlRef = Number(rev.irl_reference_value ?? 0);
+
+  // formule affichée (lisible)
+  const formulaDisplay =
+    (oldEurNum && irlNew && irlRef)
+      ? `${oldEurNum.toFixed(2)} € × (${irlNew} / ${irlRef}) = ${newEurNum.toFixed(2)} €`
+      : String(rev.formula || '');  
+
+  const landlord_identifiers_html = `
+    <div><b>${this.escapeHtml(landlord.name)}</b></div>
+    <div>${this.escapeHtml(landlord.address)}</div>
+    <div>Email : ${this.escapeHtml(landlord.email)} — Tél : ${this.escapeHtml(landlord.phone)}</div>
+  `.trim();
+
+  const html = `<!doctype html>
+<html><head><meta charset="utf-8"/>
+<style>
+body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.35}
+h1{font-size:16pt;margin:0 0 10px 0}
+.small{color:#555;font-size:10pt}
+.box{border:1px solid #ddd;padding:10px;border-radius:8px;margin:10px 0}
+.kv{width:100%;border-collapse:collapse}
+.kv td{border:1px solid #eee;padding:8px;vertical-align:top}
+.k{width:32%;background:#fafafa;font-weight:700}
+</style></head>
+<body>
+
+<h1>Avenant — Révision du loyer (IRL)</h1>
+<div class="small">Bail : ${this.escapeHtml(leaseId)} • Logement : ${this.escapeHtml(row.unit_code)}</div>
+
+<div class="box">
+  <b>Bailleur</b><br/>
+  ${landlord_identifiers_html}
+</div>
+
+<div class="box">
+  <b>Locataire(s)</b><br/>
+  ${this.buildTenantsBlock(row)}
+</div>
+
+<div class="box">
+  <table class="kv">
+    <tr><td class="k">Date d'effet de la révision</td><td>${this.escapeHtml(this.formatDateFr(revIso))}</td></tr>
+    <tr><td class="k">Ancien loyer (hors charges)</td><td><b>${this.escapeHtml(oldEur)} €</b></td></tr>
+    <tr><td class="k">Nouveau loyer (hors charges)</td><td><b>${this.escapeHtml(newEur)} €</b></td></tr>
+    <tr><td class="k">IRL de référence</td><td>${this.escapeHtml(String(rev.irl_reference_quarter || '—'))} — ${this.escapeHtml(String(rev.irl_reference_value || '—'))}</td></tr>
+    <tr><td class="k">IRL appliqué</td><td>${this.escapeHtml(String(rev.irl_new_quarter || '—'))} — ${this.escapeHtml(String(rev.irl_new_value || '—'))}</td></tr>
+    <tr>
+      <td class="k">Formule</td>
+      <td>${this.escapeHtml(formulaDisplay)}</td>
+    </tr>
+  </table>
+</div>
+
+<p>
+Conformément à la clause d’indexation prévue au bail, le loyer est révisé selon l’indice de référence des loyers publié par l’INSEE.
+</p>
+
+<p class="small">
+Le présent avenant prend effet à la date indiquée ci-dessus. Les autres clauses du bail demeurent inchangées.
+</p>
+
+<p class="small">
+Fait à ${this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—')}, le ${this.escapeHtml(this.formatDateFr(revIso))}.
+</p>
+
+</body></html>`;
+
+  // 4) pdf -> storage -> DB
+  const pdfBuf = await this.htmlToPdfBuffer(html);
+
+  const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
+  this.ensureDir(outDir);
+  const outPdfPath = path.join(outDir, pdfName);
+  fsSync.writeFileSync(outPdfPath, pdfBuf);
+
+  const sha = this.sha256File(outPdfPath);
+
+  const ins = await this.pool.query(
+    `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
+     VALUES ($1,$2,'AVENANT_IRL',$3,$4,$5) RETURNING *`,
+    [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
+  );
+
+  return { created: true, document: ins.rows[0] };
+}
 
   // -------------------------------------
 // ACTE DE CAUTIONNEMENT (GUARANTOR_ACT)
