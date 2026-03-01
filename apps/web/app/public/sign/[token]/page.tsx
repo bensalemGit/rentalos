@@ -15,7 +15,16 @@ function friendlyMessage(msg: string) {
   if (m.includes("already signed")) return "✅ Ce document a déjà été signé.";
   if (m.includes("invalid token")) return "❌ Lien invalide.";
   if (m.includes("unauthorized")) return "❌ Lien invalide ou expiré.";
+  if (m.includes("download window expired")) return "⏳ Le délai de téléchargement après signature est dépassé. Demandez un nouveau lien.";
   return "❌ Lien indisponible.";
+}
+
+function labelRole(role: string) {
+  const r = String(role || "").toUpperCase();
+  if (r === "LOCATAIRE") return "Locataire";
+  if (r === "BAILLEUR") return "Bailleur";
+  if (r === "GARANT") return "Garant";
+  return r;
 }
 
 export default function PublicSignPage({ params }: { params: { token: string } }) {
@@ -140,7 +149,15 @@ export default function PublicSignPage({ params }: { params: { token: string } }
       if (!r.ok) throw new Error(j?.message || JSON.stringify(j));
 
       if (j?.ok) {
-        setStatus("✅ Signature enregistrée. Vous pouvez fermer cette page.");
+        const until = j?.downloadAvailableUntil || info?.downloadAvailableUntil || null;
+        if (until) {
+          setStatus(
+            `✅ Signature enregistrée. Pensez à télécharger le document maintenant. ` +
+              `Le lien restera disponible jusqu’au ${String(until).slice(0, 19)}.`
+          );
+        } else {
+          setStatus("✅ Signature enregistrée. Pensez à télécharger le document maintenant.");
+        }
         clear();
       } else {
         throw new Error(JSON.stringify(j));
@@ -173,8 +190,12 @@ export default function PublicSignPage({ params }: { params: { token: string } }
         <>
           <div style={{ border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>
             <div><b>Logement :</b> {info.unitCode}</div>
-            <div><b>Locataire :</b> {info.tenantName}</div>
-            <div><b>Signataire :</b> {info.signerName || signerName || "—"} {info.signerRole ? `(${info.signerRole})` : ""}</div>
+            <div><b>Bail au nom de :</b> {info.tenantName || "—"}</div>
+
+            <div>
+              <b>Signataire :</b> {info.signerName || "—"}{" "}
+              {info.signerRole ? `(${labelRole(info.signerRole)})` : ""}
+            </div>
             <div style={{ color: "#666", fontSize: 12 }}>
               {info.startDate} → {info.endDateTheoretical} • expire le {String(info.expiresAt).slice(0, 19)}
             </div>
@@ -182,6 +203,11 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button onClick={download}>Télécharger / Voir le document</button>
+          </div>
+
+          <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+            ⚠️ Après la signature, ce lien reste disponible{" "}
+            <b>{info?.downloadGraceMinutes ?? 30} min</b> pour télécharger/consulter le document.
           </div>
 
           <div style={{ marginTop: 12, border: "1px solid #ddd", borderRadius: 12, padding: 12 }}>

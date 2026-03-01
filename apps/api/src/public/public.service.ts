@@ -29,7 +29,29 @@ export class PublicService {
     return crypto.randomBytes(32).toString('base64url');
   }
 
-    private async createPublicLink(args: {
+  private getDownloadGraceMinutes(): number {
+    const n = Number(process.env.PUBLIC_LINK_DOWNLOAD_GRACE_MINUTES ?? 30);
+    if (!Number.isFinite(n) || n < 0) return 30;
+    return Math.floor(n);
+  }
+
+  private withinDownloadGrace(consumedAt: any): boolean {
+    if (!consumedAt) return true;
+    const graceMin = this.getDownloadGraceMinutes();
+    if (graceMin === 0) return false;
+    const consumedMs = new Date(consumedAt).getTime();
+    if (!Number.isFinite(consumedMs)) return false;
+    return Date.now() <= consumedMs + graceMin * 60_000;
+  }
+
+  private downloadAvailableUntil(consumedAt: any): Date | null {
+    if (!consumedAt) return null;
+    const graceMin = this.getDownloadGraceMinutes();
+    return new Date(new Date(consumedAt).getTime() + graceMin * 60_000);
+  }
+
+
+  private async createPublicLink(args: {
     leaseId: string;
     documentId: string;
     purpose: string; // public_link_purpose
@@ -38,6 +60,11 @@ export class PublicService {
     signerTenantId?: string | null;
     signerName?: string | null;
   }) {
+
+    if (!args.leaseId) throw new BadRequestException('Missing leaseId');
+    if (!args.documentId) throw new BadRequestException('Missing documentId'); // ✅ NEW
+    if (!args.purpose) throw new BadRequestException('Missing purpose'); // ✅ NEW
+
     const token = this.randomToken();
     const tokenHash = this.sha256(token);
     const hours = args.expiresInHours ?? 72;
@@ -63,6 +90,72 @@ export class PublicService {
     );
 
     return { token, row: r.rows[0] };
+  }
+
+  // ✅ Helper: trouver un lien actif (non consommé, non expiré) pour un locataire
+  private async findActiveTenantSignLink(leaseId: string, tenantId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT id, expires_at, created_at
+      FROM public_links
+      WHERE lease_id=$1
+        AND purpose='TENANT_SIGN_CONTRACT'
+        AND signer_role='LOCATAIRE'
+        AND signer_tenant_id=$2
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+  // ✅ Helper: supprimer les liens actifs existants (utile pour force=true)
+  private async deleteActiveTenantSignLinks(leaseId: string, tenantId: string) {
+    await this.pool.query(
+      `
+      DELETE FROM public_links
+      WHERE lease_id=$1
+        AND purpose='TENANT_SIGN_CONTRACT'
+        AND signer_role='LOCATAIRE'
+        AND signer_tenant_id=$2
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      `,
+      [leaseId, tenantId],
+    );
+  }
+
+  // ✅ Helper: vérifier si CE locataire a déjà signé CE document
+  private async hasTenantAlreadySigned(documentId: string, tenantId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT 1
+      FROM signatures s
+      WHERE s.document_id = $1
+        AND s.signer_role = 'LOCATAIRE'::sign_role
+        AND s.signer_tenant_id = $2
+      LIMIT 1
+      `,
+      [documentId, tenantId],
+    );
+    return q.rowCount > 0;
+  }
+
+  private async hasRoleAlreadySigned(documentId: string, role: 'BAILLEUR' | 'GARANT') {
+    const q = await this.pool.query(
+      `
+      SELECT 1
+      FROM signatures
+      WHERE document_id = $1
+        AND UPPER(signer_role) = $2
+      LIMIT 1
+      `,
+      [documentId, role],
+    );
+    return !!q.rowCount;
   }
 
   async createTenantSignLink(leaseId: string, ttlHours = 72, purpose = 'TENANT_SIGN_CONTRACT') {
@@ -196,7 +289,12 @@ RentalOS
   }
 
 
-    async sendTenantSignLinks(leaseId: string, ttlHours = 72, emailOverride?: string | null) {
+  async sendTenantSignLinks(
+    leaseId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     // 1) Find contract root doc (generate if missing)
@@ -211,6 +309,13 @@ RentalOS
     );
 
     let contractDoc = docQ.rowCount ? docQ.rows[0] : null;
+    const contractDocId = String(contractDoc?.id || '').trim();
+    if (!contractDocId) {
+      // log utile
+      // eslint-disable-next-line no-console
+      console.error('[sendTenantSignLinks] Missing contractDoc.id', { leaseId, contractDoc });
+      throw new BadRequestException('Contract document id missing');
+    }
     if (!contractDoc) {
       contractDoc = await this.docs.generateContractPdf(leaseId);
     }
@@ -234,24 +339,82 @@ RentalOS
     if (!tenantsQ.rowCount) throw new BadRequestException('No tenants found for lease');
 
     const sent: any[] = [];
+    const skipped: any[] = [];
+
+    // Optional override (for testing): if provided, send all to that email
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
 
     for (const t of tenantsQ.rows) {
-      // Optional override (for testing): if provided, send all to that email
-      const override =
-        emailOverride && String(emailOverride).includes('@')
-          ? String(emailOverride).trim()
-          : '';
+      const tenantId = String(t.id || '').trim();
+      if (!tenantId) {
+        skipped.push({ tenantId: null, role: t.role, reason: 'missing tenantId' });
+        continue;
+      }
 
       const toEmail = override || String(t.email || '').trim();
-      if (!toEmail) continue;
+      if (!toEmail) {
+        skipped.push({ tenantId, role: t.role, reason: 'missing email' });
+        continue;
+      }
+
+      console.log('[sendTenantSignLinks]', {
+        leaseId,
+        contractDocId: contractDoc.id,
+        tenantId,
+        email: toEmail,
+        role: t.role,
+      });
+
+      // ✅ GUARD: si ce locataire a déjà signé => skip (même si pas de lien actif)
+      const alreadySigned = await this.hasTenantAlreadySigned(contractDoc.id, tenantId);
+      if (alreadySigned && !force) {
+        skipped.push({
+          tenantId,
+          role: t.role,
+          email: toEmail,
+          reason: 'already_signed',
+        });
+        continue;
+      }
+
+      console.log('[sendTenantSignLinks] alreadySigned?', { tenantId, alreadySigned });
+
+      // ✅ GUARD: si lien actif existe et force=false => skip
+      const active = await this.findActiveTenantSignLink(leaseId, tenantId);
+      if (active && !force) {
+        skipped.push({
+          tenantId,
+          role: t.role,
+          email: toEmail,
+          reason: 'active_link_exists',
+          activeExpiresAt: active.expires_at,
+        });
+        continue;
+      }
+
+      // ✅ FORCE: si on veut renvoyer, on supprime les liens actifs existants
+      if (force) {
+        await this.deleteActiveTenantSignLinks(leaseId, tenantId);
+      }
+
+      // eslint-disable-next-line no-console
+      console.log('[sendTenantSignLinks] createPublicLink args', {
+        leaseId,
+        contractDocId,
+        tenantId,
+        purpose: 'TENANT_SIGN_CONTRACT',
+      });
 
       const { token, row } = await this.createPublicLink({
         leaseId,
-        documentId: contractDoc.id,
+        documentId: contractDocId,
         purpose: 'TENANT_SIGN_CONTRACT',
         expiresInHours: ttlHours,
         signerRole: 'LOCATAIRE',
-        signerTenantId: t.id,
+        signerTenantId: tenantId,
         signerName: t.full_name,
       });
 
@@ -277,7 +440,7 @@ RentalOS
       await this.mailer.sendMail(toEmail, subject, html);
 
       sent.push({
-        tenantId: t.id,
+        tenantId,
         role: t.role,
         email: toEmail,
         expiresAt: row.expires_at,
@@ -285,84 +448,190 @@ RentalOS
       });
     }
 
-    return { ok: true, sentCount: sent.length, sent };
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sentCount: sent.length,
+      skippedCount: skipped.length,
+      sent,
+      skipped,
+    };
   }
 
-    async sendGuarantorSignLink(leaseId: string, ttlHours = 72, emailOverride?: string | null) {
-    if (!leaseId) throw new BadRequestException('Missing leaseId');
+async sendGuarantorSignLink(
+  leaseId: string,
+  ttlHours = 72,
+  emailOverride?: string | null,
+  force = false,
+) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    // 1) Find guarantor act root doc
-    const docQ = await this.pool.query(
-      `
-      SELECT *
-      FROM documents
-      WHERE lease_id=$1
-        AND type='GUARANTOR_ACT'
-        AND parent_document_id IS NULL
-      ORDER BY created_at DESC
-      LIMIT 1
-      `,
-      [leaseId],
-    );
-    if (!docQ.rowCount) throw new BadRequestException('No guarantor act document found');
+  // 1) Find guarantor act root doc (generate? -> je garde ton comportement: error si absent)
+  const docQ = await this.pool.query(
+    `
+    SELECT *
+    FROM documents
+    WHERE lease_id=$1
+      AND type='GUARANTOR_ACT'
+      AND parent_document_id IS NULL
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [leaseId],
+  );
+  if (!docQ.rowCount) throw new BadRequestException('No guarantor act document found');
 
-    const actDoc = docQ.rows[0];
+  const actDoc = docQ.rows[0];
 
-    // 2) Get guarantor infos from lease
-    const leaseQ = await this.pool.query(
-      `SELECT guarantor_full_name, guarantor_email FROM leases WHERE id=$1 LIMIT 1`,
-      [leaseId],
-    );
-    if (!leaseQ.rowCount) throw new BadRequestException('Unknown lease');
+  // 2) Get guarantor infos from lease
+  const leaseQ = await this.pool.query(
+    `SELECT guarantor_full_name, guarantor_email FROM leases WHERE id=$1 LIMIT 1`,
+    [leaseId],
+  );
+  if (!leaseQ.rowCount) throw new BadRequestException('Unknown lease');
 
-    const gName = String(leaseQ.rows[0]?.guarantor_full_name || '').trim();
-    const gEmailRaw = String(leaseQ.rows[0]?.guarantor_email || '').trim();
+  const gName = String(leaseQ.rows[0]?.guarantor_full_name || '').trim();
+  const gEmailRaw = String(leaseQ.rows[0]?.guarantor_email || '').trim();
 
-    const override =
-      emailOverride && String(emailOverride).includes('@')
-        ? String(emailOverride).trim()
-        : '';
+  const override =
+    emailOverride && String(emailOverride).includes('@')
+      ? String(emailOverride).trim()
+      : '';
 
-    const gEmail = override || gEmailRaw;
+  const gEmail = override || gEmailRaw;
 
-    if (!gEmail) throw new BadRequestException('Guarantor email missing');
-    if (!gName) throw new BadRequestException('Guarantor name missing');
+  if (!gEmail) throw new BadRequestException('Guarantor email missing');
+  if (!gName) throw new BadRequestException('Guarantor name missing');
 
-    const { token, row } = await this.createPublicLink({
-      leaseId,
-      documentId: actDoc.id,
-      purpose: 'GUARANT_SIGN_ACT',
-      expiresInHours: ttlHours,
-      signerRole: 'GARANT',
-      signerTenantId: null,
-      signerName: gName,
-    });
-
-    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
-
-    const subject = `Signature de l'acte de caution — ${actDoc.filename || ''}`;
-    const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
-    const html = `
-      <p>Bonjour ${gName},</p>
-
-      <p>Merci de signer l’acte de caution.</p>
-
-      <p>
-        Lien de signature :<br/>
-        <a href="${publicUrl}">${publicUrl}</a>
-      </p>
-
-      <p>Ce lien expire le : <b>${expiresPretty}</b></p>
-
-      <p>Bien cordialement,<br/>RentalOS</p>
-    `;
-
-    await this.mailer.sendMail(gEmail, subject, html);
-
-    return { ok: true, email: gEmail, expiresAt: row.expires_at, overrideUsed: !!override };
+  // 3) ✅ GUARD: si déjà signé => on n'envoie pas
+  const alreadySigned = await this.hasGuarantorAlreadySigned(actDoc.id);
+  if (alreadySigned) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'already_signed',
+      email: gEmail,
+    };
   }
 
-  async resolveToken(token: string, opts?: { consume?: boolean }): Promise<any> {
+  // 4) ✅ GUARD: si lien actif existe et force=false => skip
+  const active = await this.findActiveGuarantorSignLink(leaseId);
+  if (active && !force) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'active_link_exists',
+      email: gEmail,
+      activeExpiresAt: active.expires_at,
+    };
+  }
+
+  // 5) ✅ FORCE => on purge les liens actifs puis on recrée
+  if (force) {
+    await this.deleteActiveGuarantorSignLinks(leaseId);
+  }
+
+  // 6) Create token
+  const { token, row } = await this.createPublicLink({
+    leaseId,
+    documentId: actDoc.id,
+    purpose: 'GUARANT_SIGN_ACT',
+    expiresInHours: ttlHours,
+    signerRole: 'GARANT',
+    signerTenantId: null,
+    signerName: gName,
+  });
+
+  const url = `https://app.rentalos.fr/public/sign/${token}`;
+  const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
+
+  // 7) Send email (HTML)
+  const subject = `Signature de l'acte de caution — ${actDoc.filename || ''}`;
+  const html = `
+    <p>Bonjour ${gName},</p>
+
+    <p>Merci de signer l’acte de caution.</p>
+
+    <p>
+      Lien de signature :<br/>
+      <a href="${url}">${url}</a>
+    </p>
+
+    <p>Ce lien expire le : <b>${expiresPretty}</b></p>
+
+    <p>Bien cordialement,<br/>RentalOS</p>
+  `;
+
+  await this.mailer.sendMail(gEmail, subject, html);
+
+  return {
+    ok: true,
+    forceUsed: !!force,
+    sent: true,
+    email: gEmail,
+    expiresAt: row.expires_at,
+    overrideUsed: !!override,
+  };
+}
+
+  // ✅ Helper: vérifier si le garant a déjà signé ce document
+private async hasGuarantorAlreadySigned(documentId: string) {
+  const q = await this.pool.query(
+    `
+    SELECT 1
+    FROM signatures s
+    WHERE s.document_id = $1
+      AND s.signer_role = 'GARANT'::sign_role
+      AND s.signer_tenant_id IS NULL
+    LIMIT 1
+    `,
+    [documentId],
+  );
+  return q.rowCount > 0;
+}
+
+// ✅ Helper: trouver un lien actif (non consommé, non expiré) pour le garant
+private async findActiveGuarantorSignLink(leaseId: string) {
+  const q = await this.pool.query(
+    `
+    SELECT id, expires_at, created_at
+    FROM public_links
+    WHERE lease_id=$1
+      AND purpose='GUARANT_SIGN_ACT'
+      AND signer_role='GARANT'
+      AND signer_tenant_id IS NULL
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [leaseId],
+  );
+  return q.rowCount ? q.rows[0] : null;
+}
+
+// ✅ Helper: supprimer le(s) lien(s) actif(s) garant (utile pour force=true)
+private async deleteActiveGuarantorSignLinks(leaseId: string) {
+  await this.pool.query(
+    `
+    DELETE FROM public_links
+    WHERE lease_id=$1
+      AND purpose='GUARANT_SIGN_ACT'
+      AND signer_role='GARANT'
+      AND signer_tenant_id IS NULL
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    `,
+    [leaseId],
+  );
+}
+
+    async resolveToken(
+      token: string,
+      opts?: { consume?: boolean; allowConsumedWithinGrace?: boolean },
+    ): Promise<any> {
     if (!token) throw new UnauthorizedException('Missing token');
 
     const tokenHash = this.sha256(token);
@@ -386,6 +655,14 @@ RentalOS
 
     if (new Date(row.expires_at).getTime() < Date.now()) {
       throw new GoneException('Link expired');
+    }
+
+    // ✅ Si le lien a déjà été consommé (signature faite),
+    // on autorise uniquement le download pendant la grace period (si demandé)
+    if (!consume && row.consumed_at && opts?.allowConsumedWithinGrace) {
+      if (!this.withinDownloadGrace(row.consumed_at)) {
+        throw new GoneException('Download window expired');
+      }
     }
 
 
@@ -443,11 +720,25 @@ RentalOS
       signerRole: row.signer_role ?? null,
       signerTenantId: row.signer_tenant_id ?? null,
       signerName: row.signer_name ?? null,
+      leaseHolderName: row.tenant_name,
+      consumedAt: row.consumed_at ?? null,
+      downloadGraceMinutes: this.getDownloadGraceMinutes(),
+      downloadAvailableUntil: this.downloadAvailableUntil(row.consumed_at)?.toISOString() ?? null,
     };
   }
 
   async downloadContract(token: string) {
-    const row = await this.resolveToken(token, { consume: false });
+    const row = await this.resolveToken(token, {
+      consume: false,
+      allowConsumedWithinGrace: true,
+    });
+
+    // download depuis page de signature: seulement pour tokens de signature
+    const allowed = new Set(['TENANT_SIGN_CONTRACT', 'LANDLORD_SIGN_CONTRACT', 'GUARANT_SIGN_ACT']);
+    if (!allowed.has(String(row.purpose || ''))) {
+      throw new UnauthorizedException('Invalid token purpose');
+    }
+
     const absPath = path.join(this.storageBase, row.storage_path);
     return { absPath, filename: row.filename };
   }
@@ -467,7 +758,8 @@ RentalOS
     }
 
     // Force signer identity from public_links ONLY (not from client)
-    const signerRole = String(row.signer_role || 'LOCATAIRE').toUpperCase();
+    const signerRole = String(row.signer_role || '').toUpperCase();
+    if (!signerRole) throw new UnauthorizedException('Missing signer role');
     const signerTenantId = row.signer_tenant_id ?? null;
 
     const signerName =
@@ -483,9 +775,14 @@ RentalOS
     );
 
     // Keep your current invalidation behavior (delete link)
-    await this.invalidateLink(row.id);
+    //await this.invalidateLink(row.id);
 
-    return result;
+    const until = this.downloadAvailableUntil(row.consumed_at || new Date());
+    return {
+      ...result,
+      downloadGraceMinutes: this.getDownloadGraceMinutes(),
+      downloadAvailableUntil: until ? until.toISOString() : null,
+    };
   }
 
 

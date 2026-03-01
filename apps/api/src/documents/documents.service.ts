@@ -2730,12 +2730,13 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   };
 
   await this.pool.query(
-    `INSERT INTO signatures (document_id, signer_role, signer_name, signature_image_path, ip, user_agent, pdf_sha256, audit_log, sequence)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    `INSERT INTO signatures (document_id, signer_role, signer_name, signer_tenant_id, signature_image_path, ip, user_agent, pdf_sha256, audit_log, sequence)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [
       doc.id,
       signerRole as SignRole,
       signerName,
+      signerTenantId ?? null, // ✅ NEW
       sigAbs.replace(this.storageBase, ''),
       req.ip,
       req.headers['user-agent'],
