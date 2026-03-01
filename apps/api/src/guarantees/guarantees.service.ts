@@ -41,6 +41,26 @@ export class GuaranteesService {
     throw new BadRequestException('Invalid guarantee status');
   }
 
+  private assertCautionHasContact(input: any) {
+    const type = String(input?.type || '').toUpperCase();
+    if (type !== 'CAUTION') return;
+
+    const name = String(
+      input?.guarantorFullName ?? input?.guarantor_full_name ?? '',
+    ).trim();
+
+    const email = String(
+      input?.guarantorEmail ?? input?.guarantor_email ?? '',
+    ).trim();
+
+    if (!name) {
+      throw new BadRequestException('CAUTION requires guarantor_full_name');
+    }
+    if (!email || !email.includes('@')) {
+      throw new BadRequestException('CAUTION requires valid guarantor_email');
+    }
+  }
+
   // ✅ derive lease_id from lease_tenants (source of truth)
   private async getLeaseTenantOrThrow(leaseTenantId: string) {
     const q = await this.pool.query(
@@ -93,6 +113,8 @@ export class GuaranteesService {
 
     const lt = await this.getLeaseTenantOrThrow(leaseTenantId);
     const type = this.normalizeType(body?.type);
+    // ✅ CAUTION: require contact fields
+    this.assertCautionHasContact({ ...body, type });
     const status = body?.status ? this.normalizeStatus(body.status) : ('DRAFT' as GuaranteeStatus);
 
     const selected = body?.selected === true;
@@ -166,6 +188,8 @@ export class GuaranteesService {
     if (!existing.rowCount) throw new NotFoundException('Guarantee not found');
 
     const row = existing.rows[0];
+    // ✅ If selecting a CAUTION, ensure mandatory contact fields exist
+    this.assertCautionHasContact(row);
     const leaseTenantId = row.lease_tenant_id;
 
     const client = await this.pool.connect();
@@ -224,6 +248,17 @@ export class GuaranteesService {
     const curQ = await this.pool.query(`SELECT * FROM lease_guarantees WHERE id=$1`, [id]);
     if (!curQ.rowCount) throw new BadRequestException('Guarantee not found');
     const cur = curQ.rows[0];
+    // ✅ Validate CAUTION fields against final merged state (patch-safe)
+    const merged = {
+      ...cur,
+      guarantor_full_name:
+        body?.guarantorFullName ?? body?.guarantor_full_name ?? cur.guarantor_full_name,
+      guarantor_email:
+        body?.guarantorEmail ?? body?.guarantor_email ?? cur.guarantor_email,
+      // type comes from DB (source of truth)
+      type: cur.type,
+    };
+    this.assertCautionHasContact(merged);
 
     // champs modifiables
     const guarantorFullName = body?.guarantorFullName ?? body?.guarantor_full_name ?? null;

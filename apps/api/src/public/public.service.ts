@@ -50,6 +50,10 @@ export class PublicService {
     return new Date(new Date(consumedAt).getTime() + graceMin * 60_000);
   }
 
+  private isUuid(v: string) {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v);
+  }
+
 
   private async createPublicLink(args: {
     leaseId: string;
@@ -59,6 +63,7 @@ export class PublicService {
     signerRole?: 'LOCATAIRE' | 'GARANT' | 'BAILLEUR';
     signerTenantId?: string | null;
     signerName?: string | null;
+    guaranteeId?: string | null;
   }) {
 
     if (!args.leaseId) throw new BadRequestException('Missing leaseId');
@@ -72,9 +77,9 @@ export class PublicService {
     const r = await this.pool.query(
       `
       INSERT INTO public_links
-        (token_hash, lease_id, document_id, purpose, expires_at, signer_role, signer_tenant_id, signer_name)
+        (token_hash, lease_id, document_id, purpose, expires_at, signer_role, signer_tenant_id, signer_name, guarantee_id)
       VALUES
-        ($1,$2,$3,$4, NOW() + ($5 || ' hours')::interval, $6, $7, $8)
+        ($1,$2,$3,$4, NOW() + ($5 || ' hours')::interval, $6, $7, $8, $9)
       RETURNING *
       `,
       [
@@ -86,6 +91,7 @@ export class PublicService {
         args.signerRole ?? null,
         args.signerTenantId ?? null,
         args.signerName ?? null,
+        args.guaranteeId ?? null,
       ],
     );
 
@@ -150,12 +156,12 @@ export class PublicService {
       SELECT 1
       FROM signatures
       WHERE document_id = $1
-        AND UPPER(signer_role) = $2
+        AND signer_role = ($2)::sign_role
       LIMIT 1
       `,
       [documentId, role],
     );
-    return !!q.rowCount;
+    return q.rowCount > 0;
   }
 
   async createTenantSignLink(leaseId: string, ttlHours = 72, purpose = 'TENANT_SIGN_CONTRACT') {
@@ -368,6 +374,19 @@ RentalOS
         role: t.role,
       });
 
+      // ✅ GUARD: si lien actif existe et force=false => skip
+      const active = await this.findActiveTenantSignLink(leaseId, tenantId);
+      if (active && !force) {
+        skipped.push({
+          tenantId,
+          role: t.role,
+          email: toEmail,
+          reason: 'active_link_exists',
+          activeExpiresAt: active.expires_at,
+        });
+        continue;
+      }
+
       // ✅ GUARD: si ce locataire a déjà signé => skip (même si pas de lien actif)
       const alreadySigned = await this.hasTenantAlreadySigned(contractDoc.id, tenantId);
       if (alreadySigned && !force) {
@@ -381,19 +400,6 @@ RentalOS
       }
 
       console.log('[sendTenantSignLinks] alreadySigned?', { tenantId, alreadySigned });
-
-      // ✅ GUARD: si lien actif existe et force=false => skip
-      const active = await this.findActiveTenantSignLink(leaseId, tenantId);
-      if (active && !force) {
-        skipped.push({
-          tenantId,
-          role: t.role,
-          email: toEmail,
-          reason: 'active_link_exists',
-          activeExpiresAt: active.expires_at,
-        });
-        continue;
-      }
 
       // ✅ FORCE: si on veut renvoyer, on supprime les liens actifs existants
       if (force) {
@@ -626,6 +632,228 @@ private async deleteActiveGuarantorSignLinks(leaseId: string) {
     `,
     [leaseId],
   );
+}
+
+private async findActiveGuarantorSignLinkByGuarantee(guaranteeId: string) {
+  const q = await this.pool.query(
+    `
+    SELECT id, expires_at, created_at
+    FROM public_links
+    WHERE guarantee_id = $1
+      AND purpose = 'GUARANT_SIGN_ACT'
+      AND signer_role = 'GARANT'
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [guaranteeId],
+  );
+  return q.rowCount ? q.rows[0] : null;
+}
+
+private async deleteActiveGuarantorSignLinksByGuarantee(guaranteeId: string) {
+  await this.pool.query(
+    `
+    DELETE FROM public_links
+    WHERE guarantee_id = $1
+      AND purpose = 'GUARANT_SIGN_ACT'
+      AND signer_role = 'GARANT'
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    `,
+    [guaranteeId],
+  );
+}
+
+async sendGuarantorSignLinkByGuarantee(
+  guaranteeId: string,
+  ttlHours = 72,
+  emailOverride?: string | null,
+  force = false,
+) {
+  const gid = String(guaranteeId || '').trim();
+  if (!gid) throw new BadRequestException('Missing guaranteeId');
+  if (!this.isUuid(gid)) throw new BadRequestException('Invalid guaranteeId (uuid expected)');
+
+  // 1) Charger la garantie + vérifier CAUTION
+  const gQ = await this.pool.query(
+    `
+    SELECT *
+    FROM lease_guarantees
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [gid],
+  );
+  if (!gQ.rowCount) throw new BadRequestException('Unknown guaranteeId');
+
+  const g = gQ.rows[0];
+
+  if (String(g.type).toUpperCase() !== 'CAUTION') {
+    throw new BadRequestException('Guarantee must be type CAUTION');
+  }
+
+  const leaseId = String(g.lease_id || '').trim();
+  if (!leaseId) throw new BadRequestException('Guarantee has no lease_id');
+
+  // 2) Infos garant depuis la garantie (pas leases)
+  const gName = String(g.guarantor_full_name || '').trim();
+  const gEmailRaw = String(g.guarantor_email || '').trim();
+
+  const override =
+    emailOverride && String(emailOverride).includes('@')
+      ? String(emailOverride).trim()
+      : '';
+  const gEmail = override || gEmailRaw;
+
+  if (!gName) throw new BadRequestException('Guarantor name missing on guarantee');
+  if (!gEmail) throw new BadRequestException('Guarantor email missing on guarantee');
+
+  // 3) Guard: déjà signé ?
+  // Spec: already_signed si signed_final_document_id existe
+  if (g.signed_final_document_id) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'already_signed',
+      email: gEmail,
+      guaranteeId: gid,
+    };
+  }
+
+  // 4) Guard: lien actif existant (scopé guarantee_id)
+  const active = await this.findActiveGuarantorSignLinkByGuarantee(gid);
+  if (active && !force) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'active_link_exists',
+      email: gEmail,
+      guaranteeId: gid,
+      activeExpiresAt: active.expires_at,
+    };
+  }
+
+  if (force) {
+    await this.deleteActiveGuarantorSignLinksByGuarantee(gid);
+  }
+
+  // 5) Récupérer ou générer l’acte (document) rattaché à la garantie
+  //    - si guarantor_act_document_id existe => on le prend
+  //    - sinon => on le génère (via DocumentsService) puis on stocke sur lease_guarantees
+  let actDoc: any = null;
+
+  const actDocId = String(g.guarantor_act_document_id || '').trim();
+  if (actDocId) {
+    const dQ = await this.pool.query(`SELECT * FROM documents WHERE id=$1 LIMIT 1`, [actDocId]);
+    if (dQ.rowCount) actDoc = dQ.rows[0];
+  }
+
+  if (!actDoc) {
+    // ⚠️ Ici, tu dois appeler la méthode existante de ton DocumentsService.
+    // Selon ton code actuel, tu as generateContractPdf(leaseId) mais pas montré la version "guarantor act".
+    // Donc:
+    // - si tu as déjà une méthode: generateGuarantorActPdf(leaseId) => utilise-la.
+    // - sinon, on peut temporairement aller chercher un doc existant de type GUARANTOR_ACT sur le lease.
+    const existingDocQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='GUARANTOR_ACT'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (existingDocQ.rowCount) {
+      actDoc = existingDocQ.rows[0];
+    } else {
+      // 👉 si tu as une méthode de génération, décommente et remplace:
+      // actDoc = await this.docs.generateGuarantorActPdf(leaseId);
+      throw new BadRequestException('No guarantor act document found (and no generator wired)');
+    }
+
+    // Stocker l’id sur la garantie
+    await this.pool.query(
+      `UPDATE lease_guarantees SET guarantor_act_document_id=$2 WHERE id=$1`,
+      [gid, actDoc.id],
+    );
+  }
+
+  // ✅ Guard already_signed (source de vérité: signatures)
+  // 1) si la garantie est déjà finalisée
+  if (g.signed_final_document_id) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'already_signed',
+      email: gEmail,
+      guaranteeId: gid,
+      documentId: actDoc.id,
+    };
+  }
+
+  // 2) sinon: si le GARANT a déjà signé l'acte (même si pas finalisé)
+  const alreadySigned = await this.hasGuarantorAlreadySigned(actDoc.id);
+  if (alreadySigned) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'already_signed',
+      email: gEmail,
+      guaranteeId: gid,
+      documentId: actDoc.id,
+    };
+}
+
+  // 6) Créer le lien public (scopé garantie)
+  const { token, row } = await this.createPublicLink({
+    leaseId,
+    documentId: actDoc.id,
+    purpose: 'GUARANT_SIGN_ACT',
+    expiresInHours: ttlHours,
+    signerRole: 'GARANT',
+    signerTenantId: null,
+    signerName: gName,
+    guaranteeId: gid,
+  });
+
+  const url = `https://app.rentalos.fr/public/sign/${token}`;
+  const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
+
+  // 7) Email
+  const subject = `Signature de l'acte de caution — ${actDoc.filename || ''}`;
+  const html = `
+    <p>Bonjour ${gName},</p>
+    <p>Merci de signer l’acte de caution.</p>
+    <p><b>Lien de signature :</b><br/>
+      <a href="${url}">${url}</a>
+    </p>
+    <p>Ce lien expire le : <b>${expiresPretty}</b></p>
+    <p>Bien cordialement,<br/>RentalOS</p>
+  `;
+
+  await this.mailer.sendMail(gEmail, subject, html);
+
+  return {
+    ok: true,
+    forceUsed: !!force,
+    sent: true,
+    email: gEmail,
+    expiresAt: row.expires_at,
+    overrideUsed: !!override,
+    guaranteeId: gid,
+    documentId: actDoc.id,
+    publicUrl: url,
+  };
 }
 
     async resolveToken(
