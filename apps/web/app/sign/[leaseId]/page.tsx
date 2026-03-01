@@ -875,6 +875,13 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           Renvoyer garant (force)
         </button>
 
+        <button
+          onClick={() => (window.location.href = `/guarantees/${leaseId}`)}
+          style={btnAction(border)}
+        >
+          Gérer garanties
+        </button>
+
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>

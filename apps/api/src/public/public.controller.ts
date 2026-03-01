@@ -76,6 +76,20 @@ sendGuarantorLink(@Body() body: any) {
   return this.pub.sendGuarantorSignLink(body.leaseId, ttlHours, emailOverride, force);
 }
 
+@Post('public-links/guarantor-sign/send-by-guarantee')
+@UseGuards(JwtGuard)
+sendGuarantorLinkByGuarantee(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  const force = !!body?.force;
+  const emailOverride = body?.emailOverride ?? null;
+  return this.pub.sendGuarantorSignLinkByGuarantee(
+    body?.guaranteeId,
+    ttlHours,
+    emailOverride,
+    force,
+  );
+}
+
 @Post('public-links/final-pdf')
 @UseGuards(JwtGuard)
 createFinalPdfLink(@Body() body: any) {
