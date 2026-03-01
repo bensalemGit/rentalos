@@ -25,6 +25,26 @@ type Unit = {
 
 type Tenant = { id: string; full_name: string; email?: string | null; phone?: string | null };
 
+type GuaranteeDraftType = "NONE" | "CAUTION" | "VISALE";
+
+type GuaranteeDraft = {
+  type: GuaranteeDraftType;
+  guarantorFullName: string;
+  guarantorEmail: string;
+  guarantorPhone: string;
+  visaleReference: string;
+};
+
+function emptyGuaranteeDraft(): GuaranteeDraft {
+  return {
+    type: "NONE",
+    guarantorFullName: "",
+    guarantorEmail: "",
+    guarantorPhone: "",
+    visaleReference: "",
+  };
+}
+
 type IrlIndexation = {
   enabled?: boolean;
   referenceQuarter?: string | null;
@@ -137,9 +157,7 @@ export default function LeasesPage() {
   const [createMounted, setCreateMounted] = useState(false); // keep in DOM for close animation
   const [createOpen, setCreateOpen] = useState(false);       // drives the CSS transition
   const [showArchives, setShowArchives] = useState(false);
-    // visale optional (RP only)
-  const [useVisale, setUseVisale] = useState(false);
-  const [visaNumber, setVisaNumber] = useState("");
+ 
 
   // -------------------------
   // CREATE FORM
@@ -150,9 +168,31 @@ export default function LeasesPage() {
   const [coTenantIds, setCoTenantIds] = useState<string[]>([]);
   const [newCoTenantIdCreate, setNewCoTenantIdCreate] = useState("");
 
+  const [guaranteeByTenantId, setGuaranteeByTenantId] = useState<Record<string, GuaranteeDraft>>({});
+
+  function ensureGuaranteeDraft(idLike: string) {
+    const id = String(idLike || "").trim();
+    if (!id) return;
+    setGuaranteeByTenantId((prev) => {
+      if (prev[id]) return prev;
+      return { ...prev, [id]: emptyGuaranteeDraft() };
+    });
+  }
+
+  function updateGuaranteeDraft(idLike: string, patch: Partial<GuaranteeDraft>) {
+    const id = String(idLike || "").trim();
+    if (!id) return;
+    setGuaranteeByTenantId((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] || emptyGuaranteeDraft()), ...patch },
+    }));
+  }
+
   useEffect(() => {
-  setCoTenantIds((prev) => prev.filter((id) => id && id !== tenantId));
-  setNewCoTenantIdCreate("");
+    setCoTenantIds((prev) => prev.filter((id) => id && id !== tenantId));
+    setNewCoTenantIdCreate("");
+    ensureGuaranteeDraft(tenantId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tenantId]);
 
   useEffect(() => {
@@ -182,12 +222,6 @@ export default function LeasesPage() {
 
   const [kind, setKind] = useState<string>("MEUBLE_RP");
 
-  // guarantor optional (RP only)
-  const [useGuarantor, setUseGuarantor] = useState(false);
-  const [gName, setGName] = useState("");
-  const [gEmail, setGEmail] = useState("");
-  const [gPhone, setGPhone] = useState("");
-  const [gAddress, setGAddress] = useState("");
 
   // designation (contract) at creation
   const [designation, setDesignation] = useState<LeaseDesignation>({
@@ -223,8 +257,7 @@ export default function LeasesPage() {
   const [editIrlEnabled, setEditIrlEnabled] = useState(false);
 
   const [newCoTenantId, setNewCoTenantId] = useState<string>("");
-  const [editVisaleEnabled, setEditVisaleEnabled] = useState(false);
-  const [editVisaNumber, setEditVisaNumber] = useState("");
+
 
   // amounts form (UPSERT by date)
   const [amountDate, setAmountDate] = useState<string>("");
@@ -476,6 +509,25 @@ async function generateIrlAvenant(lease: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
+  const createTenantsList = useMemo(() => {
+    const list: Array<{ id: string; full_name: string; email?: string | null; role: string }> = [];
+
+    const main = tenants.find((t) => t.id === tenantId);
+    if (main) list.push({ ...main, role: "principal" });
+
+    for (const id of coTenantIds) {
+      const t = tenants.find((x) => x.id === id);
+      if (t) list.push({ ...t, role: "cotenant" });
+    }
+
+    return list;
+  }, [tenants, tenantId, coTenantIds]);
+
+  useEffect(() => {
+    createTenantsList.forEach((t) => ensureGuaranteeDraft(t.id));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [createTenantsList]);
+
   // when unit changes, prefill designation
   useEffect(() => {
     const u = units.find((x) => x.id === unitId);
@@ -483,38 +535,98 @@ async function generateIrlAvenant(lease: any) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [unitId]);
 
-  // guarantees only for RP kinds (no guarantor/visale for SAISONNIER)
   useEffect(() => {
     if (kind === "SAISONNIER") {
-      setUseGuarantor(false);
-      setGName("");
-      setGEmail("");
-      setGPhone("");
-      setGAddress("");
-
-      setUseVisale(false);
-      setVisaNumber("");
+      setGuaranteeByTenantId({});
     }
   }, [kind]);
 
-  // exclusivity: Visale disables physical guarantor
-  useEffect(() => {
-    if (useVisale) {
-      setUseGuarantor(false);
-      setGName("");
-      setGEmail("");
-      setGPhone("");
-      setGAddress("");
-    }
-  }, [useVisale]);
 
-  // exclusivity: guarantor disables Visale
-  useEffect(() => {
-    if (useGuarantor) {
-      setUseVisale(false);
-      setVisaNumber("");
+  async function createGuaranteesAfterLeaseCreated(newLeaseId: string) {
+    // 1) Charger le lease bundle pour récupérer lease_tenants
+    const r = await fetch(`${API}/leases/${newLeaseId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+    const bundle = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error((bundle as any)?.message || "Failed to load lease after create");
+
+    const { tenants } = extractLeaseBundle(bundle);
+
+    // mapping tenant_id -> leaseTenantId (id du lease_tenant)
+    const mapTenantToLeaseTenantId = new Map<string, string>();
+    for (const t of Array.isArray(tenants) ? tenants : []) {
+      const tenantId = String(t.tenant_id || t.id || "").trim();
+      const leaseTenantId = String(t.lease_tenant_id || t.leaseTenantId || t.lease_tenantId || t.id || "").trim();
+      // ⚠️ selon ton extractLeaseBundle, t.id est souvent le tenant_id.
+      // Le plus fiable: inspecter un bundle /leases/:id une fois.
+      if (tenantId && leaseTenantId && tenantId !== leaseTenantId) mapTenantToLeaseTenantId.set(tenantId, leaseTenantId);
     }
-  }, [useGuarantor]);
+
+    // fallback défensif si extract retourne {id: lease_tenant_id, tenant_id: ...}
+    for (const t of Array.isArray(tenants) ? tenants : []) {
+      const tenantId = String(t.tenant_id || "").trim();
+      const leaseTenantId = String(t.id || "").trim();
+      if (tenantId && leaseTenantId) mapTenantToLeaseTenantId.set(tenantId, leaseTenantId);
+    }
+
+    // 2) créer les garanties
+    const entries = Object.entries(guaranteeByTenantId);
+
+    for (const [tenantId, g] of entries) {
+      if (!g || g.type === "NONE") continue;
+
+      const leaseTenantId = mapTenantToLeaseTenantId.get(String(tenantId).trim());
+      if (!leaseTenantId) {
+        throw new Error(`Impossible de trouver leaseTenantId pour tenantId=${tenantId} (mapping lease_tenants manquant)`);
+      }
+
+      console.log("extractLeaseBundle.tenants sample:", tenants?.[0]);
+
+      if (g.type === "CAUTION") {
+        const full = String(g.guarantorFullName || "").trim();
+        const em = String(g.guarantorEmail || "").trim();
+        if (!full || !em) throw new Error(`Caution: nom/email manquants pour le locataire ${tenantId}`);
+
+        const gr = await fetch(`${API}/guarantees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          credentials: "include",
+          body: JSON.stringify({
+            leaseTenantId,
+            type: "CAUTION",
+            selected: true,
+            guarantorFullName: full,
+            guarantorEmail: em,
+            guarantorPhone: String(g.guarantorPhone || "").trim() || null,
+          }),
+        });
+
+        const gj = await gr.json().catch(() => ({}));
+        if (!gr.ok) throw new Error(gj?.message || JSON.stringify(gj));
+      }
+
+      if (g.type === "VISALE") {
+        const ref = String(g.visaleReference || "").trim();
+        if (!ref) throw new Error(`Visale: référence manquante pour le locataire ${tenantId}`);
+
+        const vr = await fetch(`${API}/guarantees`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          credentials: "include",
+          body: JSON.stringify({
+            leaseTenantId,
+            type: "VISALE",
+            selected: true,
+            visaleReference: ref,
+          }),
+        });
+
+        const vj = await vr.json().catch(() => ({}));
+        if (!vr.ok) throw new Error(vj?.message || JSON.stringify(vj));
+      }
+    }
+  }
 
   async function createLease() {
     setError("");
@@ -556,16 +668,6 @@ async function generateIrlAvenant(lease: any) {
     //guarantorAddress: guarantorAddress || null,
   };
 
-
-
-    // guarantor optional (only RP)
-    if (kind !== "SAISONNIER" && useGuarantor) {
-      payload.guarantorFullName = gName.trim() || null;
-      payload.guarantorEmail = gEmail.trim() || null;
-      payload.guarantorPhone = gPhone.trim() || null;
-      payload.guarantorAddress = gAddress.trim() || null;
-    }
-
     try {
       const r = await fetch(`${API}/leases`, {
         method: "POST",
@@ -581,48 +683,32 @@ async function generateIrlAvenant(lease: any) {
         return;
       }
 
-            // ✅ If Visale enabled at creation: patch right after lease is created
       const createdLeaseId =
         j?.lease?.id || j?.leaseId || j?.id || j?.created?.id || null;
 
-      if (useVisale) {
-        if (!createdLeaseId) {
-          setStatus("");
-          setError("Bail créé mais impossible d'activer Visale: id bail introuvable dans la réponse API.");
-          return;
-        }
+      if (!createdLeaseId) {
+        setStatus("");
+        setError("Bail créé mais id introuvable dans la réponse API.");
+        return;
+      }
 
-        const vr = await fetch(`${API}/leases/${createdLeaseId}/visale`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          credentials: "include",
-          body: JSON.stringify({
-            enabled: true,
-            visaNumber: visaNumber.trim() || null,
-          }),
-        });
-
-        const vj = await vr.json().catch(() => ({}));
-        if (!vr.ok) {
-          setStatus("");
-          setError(vj?.message || JSON.stringify(vj));
-          return;
-        }
+      try {
+        await createGuaranteesAfterLeaseCreated(createdLeaseId);
+      } catch (e: any) {
+        // bail créé, mais garanties KO => message + lien
+        console.error(e);
+        setStatus("");
+        setError(
+          `Bail créé ✅ (id=${createdLeaseId}) mais création des garanties échouée : ${String(e?.message || e)}`
+        );
+        // on continue quand même: le bail existe
       }
 
       // (keys/IRL already sent in POST payload)
       setStatus("Bail créé ✅");
       setShowCreateLease(false);
 
-      // reset guarantor
-      setUseGuarantor(false);
-      setGName("");
-      setGEmail("");
-      setGPhone("");
-      setGAddress("");
-      // reset visale
-      setUseVisale(false);
-      setVisaNumber("");
+      setGuaranteeByTenantId({});
 
       await loadAll();
     } catch (e: any) {
@@ -804,13 +890,7 @@ async function generateIrlAvenant(lease: any) {
 
       setEditIrlQuarter(q ? String(q) : "");
       setEditIrlValue(vRaw === null || vRaw === undefined ? "" : String(vRaw));
-      
-      
-      
-      // ✅ hydrate Visale from terms (defensive naming)
-      const v = terms?.visale ?? leaseObj?.visale ?? {};
-      setEditVisaleEnabled(v?.enabled === true);
-      setEditVisaNumber(v?.visaNumber ? String(v.visaNumber) : "");
+  
       setStatus("");
 
     } catch (e: any) {
@@ -839,9 +919,6 @@ async function generateIrlAvenant(lease: any) {
       setEditIrlValue(irlVal2 === null || irlVal2 === undefined ? "" : String(irlVal2));
       // ✅ hydrate Visale from terms (defensive naming)
       const terms = leaseObj?.lease_terms ?? leaseObj?.leaseTerms ?? leaseObj?.terms ?? {};
-      const v = terms?.visale ?? leaseObj?.visale ?? {};
-      setEditVisaleEnabled(v?.enabled === true);
-      setEditVisaNumber(v?.visaNumber ? String(v.visaNumber) : "");
     }
   }
 
@@ -941,39 +1018,6 @@ async function generateIrlAvenant(lease: any) {
       setError(String(e?.message || e));
     }
   }
-
-    async function saveVisale() {
-    if (!editingLease) return;
-    setError("");
-    setStatus("Enregistrement Visale…");
-
-    try {
-      const r = await fetch(`${API}/leases/${editingLease.id}/visale`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        credentials: "include",
-        body: JSON.stringify({
-          enabled: editVisaleEnabled === true,
-          visaNumber: editVisaleEnabled ? (editVisaNumber.trim() || null) : null,
-        }),
-      });
-
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        return;
-      }
-
-      await refreshLeaseDetails();
-      await loadAll();
-      setStatus("Visale enregistrée ✅");
-      setTimeout(() => setStatus(""), 2500);
-    } catch (e: any) {
-      setStatus("");
-      setError(String(e?.message || e));
-    }
-  }
   
   async function addAmountsRow() {
     if (!editingLease) return;
@@ -1064,11 +1108,6 @@ async function generateIrlAvenant(lease: any) {
             Rafraîchir
           </button>
         </div>
-        {useVisale && (
-          <div style={{ marginTop: 10, color: "#7f1d1d", fontWeight: 800, fontSize: 12 }}>
-            Visale activée → caution solidaire indisponible.
-          </div>
-        )}
       </div>
 
       {status && <p style={{ marginTop: 10, color: "#0a6" }}>{status}</p>}
@@ -1164,6 +1203,7 @@ async function generateIrlAvenant(lease: any) {
               const id = String(newCoTenantIdCreate || "").trim();
               if (!id) return;
               setCoTenantIds((prev) => Array.from(new Set([...prev, id])));
+              ensureGuaranteeDraft(id);
               setNewCoTenantIdCreate("");
             }}
             style={btnSecondary(border)}
@@ -1436,98 +1476,108 @@ async function generateIrlAvenant(lease: any) {
             </div>
           </div>
 
-                    {/* Visale optionnel RP */}
+          {/* Garanties (optionnel) — par locataire */}
           {kind !== "SAISONNIER" && (
             <div style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 16, padding: 12, background: "#fff" }}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <div>
-                  <div style={{ fontWeight: 900 }}>Garantie Visale (optionnel)</div>
+                  <div style={{ fontWeight: 900 }}>Garanties (optionnel)</div>
                   <div style={{ color: muted, fontSize: 12 }}>
-                    Visale ne se cumule pas avec une caution solidaire.
+                    Choisis une garantie par locataire (Aucune / Caution / Visale). Une seule garantie sélectionnée par locataire.
                   </div>
                 </div>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
-                  <input
-                    type="checkbox"
-                    checked={useVisale}
-                    onChange={(e) => setUseVisale(e.target.checked)}
-                    disabled={useGuarantor}
-                  />
-                  Activer
-                </label>
               </div>
 
-              {useGuarantor && (
-                <div style={{ marginTop: 10, color: "#7f1d1d", fontWeight: 800, fontSize: 12 }}>
-                  Caution solidaire activée → Visale indisponible.
-                </div>
-              )}
+              <div style={{ marginTop: 10, display: "grid", gap: 12 }}>
+                {createTenantsList.map((t) => {
+                  const g = guaranteeByTenantId[t.id] || emptyGuaranteeDraft();
 
-              {useVisale && (
-                <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-                  <label style={labelStyle(muted)}>
-                    N° VISA (référence Visale) *
-                    <br />
-                    <input
-                      value={visaNumber}
-                      onChange={(e) => setVisaNumber(e.target.value)}
-                      placeholder="ex: VISA-123456"
-                      style={inputStyle(border)}
-                    />
-                  </label>
-                </div>
-              )}
-            </div>
-          )}
+                  return (
+                    <div key={t.id} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}>
+                      <div style={{ fontWeight: 900, marginBottom: 8 }}>
+                        {t.full_name}{" "}
+                        <span style={{ color: muted, fontWeight: 700, fontSize: 12 }}>
+                          ({t.role})
+                        </span>
+                      </div>
 
-          {/* Garant optionnel RP */}
-          {kind !== "SAISONNIER" && (
-            <div style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 16, padding: 12, background: "#fff" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                <div>
-                  <div style={{ fontWeight: 900 }}>Garant / caution (optionnel)</div>
-                  <div style={{ color: muted, fontSize: 12 }}>Si vous souhaitez ajouter un garant au contrat.</div>
-                </div>
-                <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
-                  <input
-                    type="checkbox"
-                    checked={useGuarantor}
-                    onChange={(e) => setUseGuarantor(e.target.checked)}
-                    disabled={useVisale}
-                  />
-                  Activer
-                </label>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        <div style={{ fontSize: 12, color: muted, fontWeight: 800 }}>Type de garantie</div>
+
+                        <select
+                          value={g.type}
+                          onChange={(e) => updateGuaranteeDraft(t.id, { type: e.target.value as GuaranteeDraftType })}
+                          style={{ ...inputStyle(border), cursor: "pointer" }}
+                        >
+                          <option value="NONE">Aucune</option>
+                          <option value="CAUTION">Caution / garant</option>
+                          <option value="VISALE">Visale</option>
+                        </select>
+
+                        {g.type === "CAUTION" && (
+                          <div style={{ display: "grid", gap: 10, marginTop: 6 }}>
+                            <label style={labelStyle(muted)}>
+                              Nom garant *
+                              <br />
+                              <input
+                                value={g.guarantorFullName}
+                                onChange={(e) => updateGuaranteeDraft(t.id, { guarantorFullName: e.target.value })}
+                                style={inputStyle(border)}
+                              />
+                            </label>
+
+                            <label style={labelStyle(muted)}>
+                              Email garant *
+                              <br />
+                              <input
+                                value={g.guarantorEmail}
+                                onChange={(e) => updateGuaranteeDraft(t.id, { guarantorEmail: e.target.value })}
+                                style={inputStyle(border)}
+                              />
+                            </label>
+
+                            <label style={labelStyle(muted)}>
+                              Téléphone
+                              <br />
+                              <input
+                                value={g.guarantorPhone}
+                                onChange={(e) => updateGuaranteeDraft(t.id, { guarantorPhone: e.target.value })}
+                                style={inputStyle(border)}
+                              />
+                            </label>
+                          </div>
+                        )}
+
+                        {g.type === "VISALE" && (
+                          <div style={{ display: "grid", gap: 10, marginTop: 6 }}>
+                            <label style={labelStyle(muted)}>
+                              Référence Visale *
+                              <br />
+                              <input
+                                value={g.visaleReference}
+                                onChange={(e) => updateGuaranteeDraft(t.id, { visaleReference: e.target.value })}
+                                placeholder="ex: VISALE-123"
+                                style={inputStyle(border)}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {createTenantsList.length === 0 && (
+                  <div style={{ color: muted, fontSize: 13 }}>
+                    Choisis d’abord un locataire principal.
+                  </div>
+                )}
               </div>
-
-              {useGuarantor && (
-                <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-                  <label style={labelStyle(muted)}>
-                    Nom complet
-                    <br />
-                    <input value={gName} onChange={(e) => setGName(e.target.value)} style={inputStyle(border)} />
-                  </label>
-                  <label style={labelStyle(muted)}>
-                    Email
-                    <br />
-                    <input value={gEmail} onChange={(e) => setGEmail(e.target.value)} style={inputStyle(border)} />
-                  </label>
-                  <label style={labelStyle(muted)}>
-                    Téléphone
-                    <br />
-                    <input value={gPhone} onChange={(e) => setGPhone(e.target.value)} style={inputStyle(border)} />
-                  </label>
-                  <label style={labelStyle(muted)}>
-                    Adresse
-                    <br />
-                    <input value={gAddress} onChange={(e) => setGAddress(e.target.value)} style={inputStyle(border)} />
-                  </label>
-                </div>
-              )}
             </div>
           )}
 
           <div style={{ marginTop: 12 }}>
-            <button onClick={createLease} style={btnPrimaryWide(blue)} disabled={useVisale && !visaNumber.trim()}>
+            <button onClick={createLease} style={btnPrimaryWide(blue)} >
               Créer le bail
             </button>
           </div>
@@ -1793,7 +1843,9 @@ async function generateIrlAvenant(lease: any) {
                       <div style={{ fontWeight: 900 }}>Désignation (contrat)</div>
                       <div style={{ color: muted, fontSize: 12 }}>Modifiable a posteriori (repris dans le contrat PDF).</div>
                     </div>
-                    <button onClick={saveDesignation} style={btnPrimarySmall(blue)} disabled={editVisaleEnabled && !editVisaNumber.trim()}>Enregistrer</button>
+                    <button onClick={saveDesignation} style={btnPrimarySmall(blue)}>
+                      Enregistrer
+                    </button>
                   </div>
 
                   <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
@@ -1923,13 +1975,13 @@ async function generateIrlAvenant(lease: any) {
                     <label style={labelStyle(muted)}>
                       IRL — Trimestre de référence
                       <br />
-                      <input value={editIrlQuarter} onChange={(e) => setEditIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!irlEnabledCreate} />
+                      <input value={editIrlQuarter} onChange={(e) => setEditIrlQuarter(e.target.value)} placeholder="ex: T3 2025" style={inputStyle(border)} disabled={!editIrlEnabled} />
                     </label>
 
                     <label style={labelStyle(muted)}>
                       IRL — Valeur de référence
                       <br />
-                      <input value={editIrlValue} onChange={(e) => setEditIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!irlEnabledCreate} />
+                      <input value={editIrlValue} onChange={(e) => setEditIrlValue(e.target.value)} placeholder="ex: 142.06" style={inputStyle(border)} disabled={!editIrlEnabled} />
                     </label>
                   </div>
 
@@ -2094,37 +2146,20 @@ async function generateIrlAvenant(lease: any) {
                     {!details.amounts.length && <div style={{ color: muted }}>Aucune ligne.</div>}
                   </div>
                 </section>
-                                {/* VISALE */}
+                
+                {/* GARANTIES (Option 1) */}
                 <section style={{ border: `1px solid ${border}`, borderRadius: 16, padding: 12 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                     <div>
-                      <div style={{ fontWeight: 900 }}>Garantie Visale</div>
-                      <div style={{ color: muted, fontSize: 12 }}>Ne se cumule pas avec une caution solidaire.</div>
+                      <div style={{ fontWeight: 900 }}>Garanties</div>
+                      <div style={{ color: muted, fontSize: 12 }}>
+                        La gestion des garanties (par locataire) se fait sur la page dédiée.
+                      </div>
                     </div>
-                    <button onClick={saveVisale} style={btnPrimarySmall(blue)}>Enregistrer</button>
-                  </div>
 
-                  <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-                    <label style={{ display: "flex", gap: 8, alignItems: "center", fontWeight: 800 }}>
-                      <input
-                        type="checkbox"
-                        checked={editVisaleEnabled}
-                        onChange={(e) => setEditVisaleEnabled(e.target.checked)}
-                      />
-                      Activer Visale
-                    </label>
-
-                    <label style={labelStyle(muted)}>
-                      N° VISA
-                      <br />
-                      <input
-                        value={editVisaNumber}
-                        onChange={(e) => setEditVisaNumber(e.target.value)}
-                        placeholder="ex: VISA-123456"
-                        style={inputStyle(border)}
-                        disabled={!editVisaleEnabled}
-                      />
-                    </label>
+                    <Link href={`/guarantees/${editingLease.id}`}>
+                      <button style={btnPrimarySmall(blue)}>Gérer les garanties</button>
+                    </Link>
                   </div>
                 </section>
               </div>
