@@ -694,35 +694,82 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
-  async function sendPublicLink() {
-  setError("");
-  setStatus("Envoi des liens locataires…");
+  async function sendPublicLink(force = false) {
+    setError("");
+    setStatus(force ? "Renvoi (force) des liens locataires…" : "Envoi des liens locataires…");
 
-  try {
-    const r = await fetch(`${API}/public-links/tenant-sign/send`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      credentials: "include",
-      body: JSON.stringify({ leaseId, ttlHours: 48 }),
-    });
+    try {
+      const r = await fetch(`${API}/public-links/tenant-sign/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, ttlHours: 48, force }),
+      });
 
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      const sentEmails = Array.isArray(j?.sent) ? j.sent.map((x: any) => x.email).filter(Boolean) : [];
+      const skippedEmails = Array.isArray(j?.skipped) ? j.skipped.map((x: any) => x.email).filter(Boolean) : [];
+
+      setStatus(`✅ ${j.sentCount || 0} envoyé(s) • ${j.skippedCount || 0} ignoré(s)`);
+
+      alert(
+        `✅ ${j.sentCount || 0} email(s) envoyé(s)\n` +
+          `⏭️ ${j.skippedCount || 0} ignoré(s) (lien actif)\n\n` +
+          `Envoyés:\n${sentEmails.join("\n") || "—"}\n\n` +
+          `Ignorés:\n${skippedEmails.join("\n") || "—"}`
+      );
+    } catch (e: any) {
       setStatus("");
-      setError(j?.message || JSON.stringify(j));
-      return;
+      setError(String(e?.message || e));
     }
-
-    // ✅ Nouveau format: { ok, sentCount, sent: [{ email, ... }] }
-    const emails = Array.isArray(j?.sent) ? j.sent.map((x: any) => x.email).filter(Boolean) : [];
-
-    setStatus(`✅ ${j.sentCount || 0} email(s) envoyé(s)`);
-    alert(`✅ ${j.sentCount || 0} email(s) envoyé(s)\n\nDestinataires:\n${emails.join("\n") || "—"}`);
-  } catch (e: any) {
-    setStatus("");
-    setError(String(e?.message || e));
   }
-}
+
+  async function sendGuarantorPublicLink(force = false) {
+    setError("");
+    setStatus(force ? "Renvoi (force) du lien garant…" : "Envoi du lien garant…");
+
+    try {
+      const r = await fetch(`${API}/public-links/guarantor-sign/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, ttlHours: 48, force }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      if (j?.sent) {
+        setStatus(`✅ Lien garant envoyé à ${j.email}`);
+        alert(`✅ Lien garant envoyé à ${j.email}`);
+      } else {
+        const reason = String(j?.reason || "");
+        if (reason === "active_link_exists") {
+          setStatus(`ℹ️ Lien garant déjà actif (expire: ${String(j.activeExpiresAt).slice(0, 19)})`);
+          alert(`ℹ️ Lien garant déjà actif\nExpire: ${String(j.activeExpiresAt).slice(0, 19)}`);
+        } else if (reason === "already_signed") {
+          setStatus("✅ Garant déjà signé (aucun envoi).");
+          alert("✅ Garant déjà signé (aucun envoi).");
+        } else {
+          setStatus("ℹ️ Aucun envoi.");
+          alert("ℹ️ Aucun envoi.");
+        }
+      }
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
 
   return (
     <div style={{ padding: 18, maxWidth: 980, margin: "0 auto", display: "grid", gap: 14 }}>
@@ -796,9 +843,38 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           Générer PACK_FINAL signé (V2)
         </button>
 
-        <button onClick={sendPublicLink} style={btnAction(border)}>
+        <button
+          onClick={() => sendPublicLink(false)}
+          style={btnAction(border)}
+          disabled={!contractDoc?.id}
+        >
           Envoyer lien locataire
         </button>
+
+        <button
+          onClick={() => sendPublicLink(true)}
+          style={btnAction(border)}
+          disabled={!contractDoc?.id}
+        >
+          Renvoyer locataire (force)
+        </button>
+
+        <button
+          onClick={() => sendGuarantorPublicLink(false)}
+          style={btnAction(border)}
+          disabled={!guarantorActDoc?.id}
+        >
+          Envoyer lien garant
+        </button>
+
+        <button
+          onClick={() => sendGuarantorPublicLink(true)}
+          style={btnAction(border)}
+          disabled={!guarantorActDoc?.id}
+        >
+          Renvoyer garant (force)
+        </button>
+
       </div>
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>

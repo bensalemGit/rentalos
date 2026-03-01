@@ -18,11 +18,12 @@ export class PublicController {
   // ✅ Admin: create link + send email (requires auth)
   // Now supports emailOverride in body
   @Post('public-links/tenant-sign/send')
-@UseGuards(JwtGuard)
+  @UseGuards(JwtGuard)
   sendTenantLinks(@Body() body: any) {
     const ttlHours = body?.ttlHours ?? 72;
     const emailOverride = body?.emailOverride ?? null;
-    return this.pub.sendTenantSignLinks(body.leaseId, ttlHours, emailOverride);
+    const force = body?.force ?? false;
+    return this.pub.sendTenantSignLinks(body.leaseId, ttlHours, emailOverride, !!force);
   }
 
   // --- Public: get info about link (no auth) ---
@@ -40,7 +41,8 @@ export class PublicController {
 
   // --- Public: tenant signs (no auth, token required) ---
   @Post('public/sign')
-  sign(@Query('token') token: string, @Body() body: any, @Req() req: any) {
+  sign(@Query('token') tokenQ: string, @Body() body: any, @Req() req: any) {
+    const token = body?.token || tokenQ; // ✅ accepte body.token (nouveau) ou query token (compat)
     return this.pub.publicSign(token, body, req);
   }
 
@@ -70,7 +72,8 @@ sendLandlordLink(@Body() body: any) {
 sendGuarantorLink(@Body() body: any) {
   const ttlHours = body?.ttlHours ?? 72;
   const emailOverride = body?.emailOverride ?? null;
-  return this.pub.sendGuarantorSignLink(body.leaseId, ttlHours, emailOverride);
+  const force = !!body?.force;
+  return this.pub.sendGuarantorSignLink(body.leaseId, ttlHours, emailOverride, force);
 }
 
 @Post('public-links/final-pdf')
