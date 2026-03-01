@@ -1,4 +1,15 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+  ParseUUIDPipe,
+} from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
 import { GuaranteesService } from './guarantees.service';
 
@@ -13,9 +24,15 @@ export class GuaranteesController {
     return this.guarantees.listByLease(leaseId);
   }
 
+  // GET /guarantees/by-lease-tenant?leaseTenantId=...
+  @Get('guarantees/by-lease-tenant')
+  listByLeaseTenant(@Query('leaseTenantId') leaseTenantId: string) {
+    return this.guarantees.listByLeaseTenant(leaseTenantId);
+  }
+
   // GET /guarantees/:id
   @Get('guarantees/:id')
-  get(@Param('id') id: string) {
+  get(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.guarantees.getOne(id);
   }
 
@@ -27,19 +44,19 @@ export class GuaranteesController {
 
   // PATCH /guarantees/:id
   @Patch('guarantees/:id')
-  update(@Param('id') id: string, @Body() body: any) {
+  update(@Param('id', new ParseUUIDPipe()) id: string, @Body() body: any) {
     return this.guarantees.update(id, body);
-  }
-
-  // POST /guarantees/:id/select
-  @Post('guarantees/:id/select')
-  select(@Param('id') id: string) {
-    return this.guarantees.select(id);
   }
 
   // DELETE /guarantees/:id
   @Delete('guarantees/:id')
-  remove(@Param('id') id: string) {
+  remove(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.guarantees.remove(id);
+  }
+
+  // POST /guarantees/:id/select
+  @Post('guarantees/:id/select')
+  select(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.guarantees.select(id);
   }
 }
