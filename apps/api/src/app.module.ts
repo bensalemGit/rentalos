@@ -17,6 +17,7 @@ import { ProjectsModule } from './projects/projects.module';
 import { BuildingsModule } from './buildings/buildings.module';
 import { ImportModule } from './import/import.module';
 import { UnitReferencesModule } from './unit-references/unit-references.module';
+import { GuaranteesModule } from './guarantees/guarantees.module';
 
 
 @Module({
@@ -28,15 +29,16 @@ import { UnitReferencesModule } from './unit-references/unit-references.module';
     LeasesModule,
     EdlModule,
     InventoryModule,
-	UnitReferencesModule,
+	  UnitReferencesModule,
     DocumentsModule,
     PublicModule,
     MailerModule,
     PaymentsModule,
     ReceiptsModule,
-	ProjectsModule,
-	BuildingsModule,
-	ImportModule,
+    ProjectsModule,
+    BuildingsModule,
+    ImportModule,
+    GuaranteesModule,
   ],
 })
 export class AppModule {}
