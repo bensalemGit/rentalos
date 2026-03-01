@@ -76,6 +76,29 @@ export class GuaranteesService {
     return q.rows[0];
   }
 
+  private async getLeaseTenantByLeaseAndTenantOrThrow(leaseId: string, tenantId: string) {
+    const leaseIdTrim = String(leaseId || '').trim();
+    const tenantIdTrim = String(tenantId || '').trim();
+
+    if (!leaseIdTrim || !tenantIdTrim) {
+      throw new BadRequestException('leaseId and tenantId are required');
+    }
+
+    const q = await this.pool.query(
+      `SELECT id, lease_id, tenant_id, role
+       FROM lease_tenants
+       WHERE lease_id = $1 AND tenant_id = $2
+       LIMIT 1`,
+      [leaseIdTrim, tenantIdTrim],
+    );
+
+    const row = q.rows?.[0];
+    if (!row) {
+      throw new NotFoundException(`Lease tenant not found for leaseId=${leaseIdTrim} tenantId=${tenantIdTrim}`);
+    }
+    return row;
+  }
+
   async listByLease(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
@@ -108,35 +131,51 @@ export class GuaranteesService {
   }
 
   async create(body: any) {
-    const leaseTenantId = String(body?.leaseTenantId || '').trim();
-    if (!leaseTenantId) throw new BadRequestException('Missing leaseTenantId');
+    // ✅ accepte soit leaseTenantId, soit (leaseId + tenantId)
+    const leaseTenantIdFromBody = String(body?.leaseTenantId || '').trim();
 
-    const lt = await this.getLeaseTenantOrThrow(leaseTenantId);
+    const leaseTenant = leaseTenantIdFromBody
+      ? await this.getLeaseTenantOrThrow(leaseTenantIdFromBody)
+      : await this.getLeaseTenantByLeaseAndTenantOrThrow(body?.leaseId, body?.tenantId);
+
+    const leaseTenantId = String(leaseTenant?.id || '').trim();
+    if (!leaseTenantId) throw new BadRequestException('Invalid leaseTenant');
+
     const type = this.normalizeType(body?.type);
+
     // ✅ CAUTION: require contact fields
     this.assertCautionHasContact({ ...body, type });
-    const status = body?.status ? this.normalizeStatus(body.status) : ('DRAFT' as GuaranteeStatus);
+
+    const status = body?.status
+      ? this.normalizeStatus(body.status)
+      : ('DRAFT' as GuaranteeStatus);
 
     const selected = body?.selected === true;
     const rank = body?.rank ?? null;
 
-    // fields
-    const guarantorFullName = body?.guarantorFullName ?? body?.guarantor_full_name ?? null;
-    const guarantorEmail = body?.guarantorEmail ?? body?.guarantor_email ?? null;
-    const guarantorPhone = body?.guarantorPhone ?? body?.guarantor_phone ?? null;
+    // fields (accept camelCase + snake_case)
+    const guarantorFullName =
+      body?.guarantorFullName ?? body?.guarantor_full_name ?? null;
+    const guarantorEmail =
+      body?.guarantorEmail ?? body?.guarantor_email ?? null;
+    const guarantorPhone =
+      body?.guarantorPhone ?? body?.guarantor_phone ?? null;
 
-    const visaleReference = body?.visaleReference ?? body?.visale_reference ?? null;
-    const visaleValidatedAt = body?.visaleValidatedAt ?? body?.visale_validated_at ?? null;
+    const visaleReference =
+      body?.visaleReference ?? body?.visale_reference ?? null;
+    const visaleValidatedAt =
+      body?.visaleValidatedAt ?? body?.visale_validated_at ?? null;
 
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
 
-      // if selected=true, deselect others for this lease_tenant
+      // ✅ if selected=true, deselect others for this lease_tenant
       if (selected) {
         await client.query(
-          `UPDATE lease_guarantees SET selected=false
-           WHERE lease_tenant_id=$1 AND selected=true`,
+          `UPDATE lease_guarantees
+          SET selected=false, updated_at=NOW()
+          WHERE lease_tenant_id=$1 AND selected=true`,
           [leaseTenantId],
         );
       }
@@ -145,15 +184,15 @@ export class GuaranteesService {
         `
         INSERT INTO lease_guarantees
           (lease_tenant_id, lease_id, type, status, selected, rank,
-           guarantor_full_name, guarantor_email, guarantor_phone,
-           visale_reference, visale_validated_at)
+          guarantor_full_name, guarantor_email, guarantor_phone,
+          visale_reference, visale_validated_at)
         VALUES
           ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
         RETURNING *
         `,
         [
           leaseTenantId,
-          lt.lease_id,
+          leaseTenant.lease_id, // ✅ FIX: c'était lt.lease_id (lt n'existe pas)
           type,
           status,
           selected,
@@ -170,7 +209,6 @@ export class GuaranteesService {
       return { ok: true, item: ins.rows[0] };
     } catch (e: any) {
       await client.query('ROLLBACK');
-      // Unique selected violation -> user-friendly
       if (String(e?.message || '').includes('uniq_selected_guarantee_per_lease_tenant')) {
         throw new ConflictException('Only one selected guarantee allowed per tenant');
       }

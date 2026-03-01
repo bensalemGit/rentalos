@@ -542,46 +542,15 @@ async function generateIrlAvenant(lease: any) {
   }, [kind]);
 
 
-  async function createGuaranteesAfterLeaseCreated(newLeaseId: string) {
-    // 1) Charger le lease bundle pour récupérer lease_tenants
-    const r = await fetch(`${API}/leases/${newLeaseId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      credentials: "include",
-    });
-    const bundle = await r.json().catch(() => ({}));
-    if (!r.ok) throw new Error((bundle as any)?.message || "Failed to load lease after create");
+  async function createGuaranteesAfterLeaseCreated(newLeaseId: string, allowedTenantIds: string[]) {
+    const allowed = new Set((allowedTenantIds || []).map((x) => String(x).trim()).filter(Boolean));
 
-    const { tenants } = extractLeaseBundle(bundle);
-
-    // mapping tenant_id -> leaseTenantId (id du lease_tenant)
-    const mapTenantToLeaseTenantId = new Map<string, string>();
-    for (const t of Array.isArray(tenants) ? tenants : []) {
-      const tenantId = String(t.tenant_id || t.id || "").trim();
-      const leaseTenantId = String(t.lease_tenant_id || t.leaseTenantId || t.lease_tenantId || t.id || "").trim();
-      // ⚠️ selon ton extractLeaseBundle, t.id est souvent le tenant_id.
-      // Le plus fiable: inspecter un bundle /leases/:id une fois.
-      if (tenantId && leaseTenantId && tenantId !== leaseTenantId) mapTenantToLeaseTenantId.set(tenantId, leaseTenantId);
-    }
-
-    // fallback défensif si extract retourne {id: lease_tenant_id, tenant_id: ...}
-    for (const t of Array.isArray(tenants) ? tenants : []) {
-      const tenantId = String(t.tenant_id || "").trim();
-      const leaseTenantId = String(t.id || "").trim();
-      if (tenantId && leaseTenantId) mapTenantToLeaseTenantId.set(tenantId, leaseTenantId);
-    }
-
-    // 2) créer les garanties
-    const entries = Object.entries(guaranteeByTenantId);
+    const entries = Object.entries(guaranteeByTenantId).filter(([tenantId]) =>
+      allowed.has(String(tenantId).trim())
+    );
 
     for (const [tenantId, g] of entries) {
       if (!g || g.type === "NONE") continue;
-
-      const leaseTenantId = mapTenantToLeaseTenantId.get(String(tenantId).trim());
-      if (!leaseTenantId) {
-        throw new Error(`Impossible de trouver leaseTenantId pour tenantId=${tenantId} (mapping lease_tenants manquant)`);
-      }
-
-      console.log("extractLeaseBundle.tenants sample:", tenants?.[0]);
 
       if (g.type === "CAUTION") {
         const full = String(g.guarantorFullName || "").trim();
@@ -593,7 +562,8 @@ async function generateIrlAvenant(lease: any) {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           credentials: "include",
           body: JSON.stringify({
-            leaseTenantId,
+            leaseId: newLeaseId,
+            tenantId,
             type: "CAUTION",
             selected: true,
             guarantorFullName: full,
@@ -615,7 +585,8 @@ async function generateIrlAvenant(lease: any) {
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
           credentials: "include",
           body: JSON.stringify({
-            leaseTenantId,
+            leaseId: newLeaseId,
+            tenantId,
             type: "VISALE",
             selected: true,
             visaleReference: ref,
@@ -693,7 +664,10 @@ async function generateIrlAvenant(lease: any) {
       }
 
       try {
-        await createGuaranteesAfterLeaseCreated(createdLeaseId);
+        await createGuaranteesAfterLeaseCreated(
+          createdLeaseId,
+          [tenantId, ...coTenantIds]
+        );
       } catch (e: any) {
         // bail créé, mais garanties KO => message + lien
         console.error(e);

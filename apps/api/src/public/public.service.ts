@@ -753,33 +753,13 @@ async sendGuarantorSignLinkByGuarantee(
   }
 
   if (!actDoc) {
-    // ⚠️ Ici, tu dois appeler la méthode existante de ton DocumentsService.
-    // Selon ton code actuel, tu as generateContractPdf(leaseId) mais pas montré la version "guarantor act".
-    // Donc:
-    // - si tu as déjà une méthode: generateGuarantorActPdf(leaseId) => utilise-la.
-    // - sinon, on peut temporairement aller chercher un doc existant de type GUARANTOR_ACT sur le lease.
-    const existingDocQ = await this.pool.query(
-      `
-      SELECT *
-      FROM documents
-      WHERE lease_id=$1
-        AND type='GUARANTOR_ACT'
-        AND parent_document_id IS NULL
-      ORDER BY created_at DESC
-      LIMIT 1
-      `,
-      [leaseId],
-    );
-
-    if (existingDocQ.rowCount) {
-      actDoc = existingDocQ.rows[0];
-    } else {
-      // 👉 si tu as une méthode de génération, décommente et remplace:
-      // actDoc = await this.docs.generateGuarantorActPdf(leaseId);
-      throw new BadRequestException('No guarantor act document found (and no generator wired)');
+    // ✅ Génère l'acte pour CE garant (scopé par guaranteeId) puis rattache sur lease_guarantees
+    const gen = await this.docs.generateGuarantorActPdf(leaseId, { guaranteeId: gid });
+    actDoc = gen?.document;
+    if (!actDoc?.id) {
+      throw new BadRequestException('Failed to generate guarantor act document');
     }
 
-    // Stocker l’id sur la garantie
     await this.pool.query(
       `UPDATE lease_guarantees SET guarantor_act_document_id=$2 WHERE id=$1`,
       [gid, actDoc.id],

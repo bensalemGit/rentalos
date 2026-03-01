@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req, DefaultValuePipe, ParseBoolPipe } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req, DefaultValuePipe, ParseBoolPipe } from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
 import { DocumentsService } from './documents.service';
 import type { Response } from 'express';
@@ -78,12 +78,47 @@ export class DocumentsController {
     const result = await this.docs.generatePackFinalV2(body.leaseId, { force });
     return this.replyCreated(res, result);
   }
-  
+
   @Post('guarantor-act')
-  async generateGuarantorAct(@Body() body: any, @Res({ passthrough: true }) res: Response) {
-    const result = await this.docs.generateGuarantorActPdf(body.leaseId);
-    return this.replyCreated(res, result);
+  async guarantorAct(@Body() body: any) {
+    const leaseId = String(body?.leaseId || '').trim();
+    const guaranteeId = body?.guaranteeId ? String(body.guaranteeId).trim() : '';
+    const leaseTenantId = body?.leaseTenantId ? String(body.leaseTenantId).trim() : '';
+    const tenantId = body?.tenantId ? String(body.tenantId).trim() : '';
+
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    // Si la UI a déjà choisi => on génère direct (priorité guaranteeId)
+    if (guaranteeId || leaseTenantId || tenantId) {
+      return this.docs.generateGuarantorActPdf(leaseId, {
+        guaranteeId: guaranteeId || undefined,
+        leaseTenantId: leaseTenantId || undefined,
+        tenantId: tenantId || undefined,
+      });
+    }
+
+    // Sinon: auto (0 / 1 / many)
+    const candidates = await this.docs.getGuarantorActCandidates(leaseId);
+
+    if (candidates.length === 0) {
+      throw new BadRequestException('No selected CAUTION guarantee on this lease');
+    }
+    if (candidates.length === 1) {
+      return this.docs.generateGuarantorActPdf(leaseId, {
+        guaranteeId: String(candidates[0].guaranteeId),
+      });
+    }
+
+    throw new BadRequestException({
+      message: 'Multiple guarantor guarantees found on this lease. Provide guaranteeId (preferred) or leaseTenantId or tenantId.',
+      candidates,
+    } as any);
   }
+
+  @Get('guarantor-act/candidates')
+  async guarantorActCandidates(@Query('leaseId') leaseId: string) {
+    return this.docs.getGuarantorActCandidates(String(leaseId || '').trim());
+}
 
   @Post(':id/sign')
   sign(@Param('id') id: string, @Body() body: any, @Req() req: any) {

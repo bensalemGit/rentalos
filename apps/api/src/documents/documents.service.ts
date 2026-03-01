@@ -6,8 +6,6 @@ import { PDFDocument } from 'pdf-lib';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 
-
-
 type SignRole = 'BAILLEUR' | 'LOCATAIRE' | 'GARANT';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
 type DocType =
@@ -630,8 +628,8 @@ export class DocumentsService {
    */
   private buildGuarantorBlock(row: AnyRow): string {
     if (row.guarantor_block && String(row.guarantor_block).includes('<')) return String(row.guarantor_block);
-
-    const gArr = this.parseJsonSafe(row.guarantors_json);
+    
+    const gArr = this.parseJsonSafe((row as any).guarantors_json);
     const guarantors: any[] = Array.isArray(gArr) ? gArr : [];
 
     // fallback legacy single guarantor
@@ -927,6 +925,60 @@ export class DocumentsService {
 `;
 }
 
+// -------------------------------------
+// GUARANTOR_ACT — candidates (UI helper)
+// -------------------------------------
+async getGuarantorActCandidates(leaseId: string) {
+  const leaseIdTrim = String(leaseId || '').trim();
+  if (!leaseIdTrim) throw new BadRequestException('Missing leaseId');
+
+  const q = await this.pool.query(
+    `
+    SELECT
+      lg.id AS guarantee_id,
+      lg.lease_tenant_id,
+      lt.tenant_id,
+      lt.role,
+      t.full_name AS tenant_full_name,
+      t.email AS tenant_email,
+      lg.guarantor_full_name,
+      lg.guarantor_email,
+      lg.guarantor_phone
+    FROM lease_guarantees lg
+    JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+    JOIN tenants t ON t.id = lt.tenant_id
+    WHERE lg.lease_id = $1
+      AND lg.type = 'CAUTION'
+      AND lg.selected = true
+    ORDER BY CASE WHEN lt.role='principal' THEN 0 ELSE 1 END, lt.created_at ASC, lg.created_at ASC
+    `,
+    [leaseIdTrim],
+  );
+
+  return (q.rows || []).map((r: any) => ({
+    guaranteeId: r.guarantee_id,
+    leaseTenantId: r.lease_tenant_id,
+    tenantId: r.tenant_id,
+    tenantFullName: r.tenant_full_name,
+    tenantEmail: r.tenant_email,
+    role: r.role,
+    guarantorFullName: r.guarantor_full_name,
+    guarantorEmail: r.guarantor_email,
+    guarantorPhone: r.guarantor_phone,
+  }));
+}
+
+// ✅ UI-friendly: toujours une structure stable
+async listGuarantorActCandidates(leaseId: string) {
+  const leaseIdTrim = String(leaseId || '').trim();
+  const candidates = await this.getGuarantorActCandidates(leaseIdTrim);
+
+  return {
+    leaseId: leaseIdTrim,
+    count: candidates.length,
+    candidates,
+  };
+}
   // -------------------------------------
   // Documents list & downloads
   // -------------------------------------
@@ -1466,10 +1518,210 @@ Fait à ${this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—')}
 }
 
   // -------------------------------------
+  // GUARANTEE picker (CAUTION) + UI helpers
+  // -------------------------------------
+  // ✅ Source de vérité : lease_guarantees (type='CAUTION', selected=true)
+  // Règles :
+  // - si guaranteeId fourni => 1 row (le plus robuste)
+  // - sinon si leaseTenantId fourni => 1 row
+  // - sinon si tenantId fourni => 1 row
+  // - sinon si 1 seul candidat => OK
+  // - sinon throw + candidates (UI-friendly)
+  private async pickSelectedCautionGuarantee(params: {
+    leaseId: string;
+    guaranteeId?: string;
+    leaseTenantId?: string;
+    tenantId?: string;
+  }) {
+    const leaseId = String(params.leaseId || '').trim();
+    const guaranteeId = params.guaranteeId ? String(params.guaranteeId).trim() : '';
+    const leaseTenantId = params.leaseTenantId ? String(params.leaseTenantId).trim() : '';
+    const tenantId = params.tenantId ? String(params.tenantId).trim() : '';
+
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    // 0) guaranteeId fourni -> exact
+    if (guaranteeId) {
+      const q = await this.pool.query(
+        `
+        SELECT lg.*,
+               lt.tenant_id,
+               lt.role,
+               t.full_name AS tenant_full_name,
+               t.email AS tenant_email
+        FROM lease_guarantees lg
+        JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+        JOIN tenants t ON t.id = lt.tenant_id
+        WHERE lg.lease_id = $1
+          AND lg.id = $2
+          AND lg.selected = true
+          AND lg.type = 'CAUTION'
+        LIMIT 1
+        `,
+        [leaseId, guaranteeId],
+      );
+      const row = q.rows?.[0];
+      if (!row) throw new BadRequestException('Guarantee not found (or not selected/CAUTION)');
+      return row;
+    }
+
+    // 1) leaseTenantId fourni -> exact
+    if (leaseTenantId) {
+      const q = await this.pool.query(
+        `
+        SELECT lg.*,
+               lt.tenant_id,
+               lt.role,
+               t.full_name AS tenant_full_name,
+               t.email AS tenant_email
+        FROM lease_guarantees lg
+        JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+        JOIN tenants t ON t.id = lt.tenant_id
+        WHERE lg.lease_id = $1
+          AND lg.lease_tenant_id = $2
+          AND lg.selected = true
+          AND lg.type = 'CAUTION'
+        ORDER BY lg.created_at DESC
+        LIMIT 1
+        `,
+        [leaseId, leaseTenantId],
+      );
+      return q.rows?.[0] || null;
+    }
+
+    // 2) tenantId fourni -> via lease_tenants
+    if (tenantId) {
+      const q = await this.pool.query(
+        `
+        SELECT lg.*,
+               lt.tenant_id,
+               lt.role,
+               t.full_name AS tenant_full_name,
+               t.email AS tenant_email
+        FROM lease_guarantees lg
+        JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+        JOIN tenants t ON t.id = lt.tenant_id
+        WHERE lg.lease_id = $1
+          AND lt.tenant_id = $2
+          AND lg.selected = true
+          AND lg.type = 'CAUTION'
+        ORDER BY lg.created_at DESC
+        LIMIT 1
+        `,
+        [leaseId, tenantId],
+      );
+      return q.rows?.[0] || null;
+    }
+
+    // 3) Sinon: tous les CAUTION sélectionnés
+    const q = await this.pool.query(
+      `
+      SELECT lg.*,
+             lt.tenant_id,
+             lt.role,
+             t.full_name AS tenant_full_name,
+             t.email AS tenant_email
+      FROM lease_guarantees lg
+      JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lg.lease_id = $1
+        AND lg.selected = true
+        AND lg.type = 'CAUTION'
+      ORDER BY CASE WHEN lt.role='principal' THEN 0 ELSE 1 END, lt.created_at ASC, lg.created_at ASC
+      `,
+      [leaseId],
+    );
+
+    if (!q.rows?.length) return null;
+    if (q.rows.length === 1) return q.rows[0];
+
+    const candidates = q.rows.map((r: any) => ({
+      guaranteeId: r.id,
+      leaseTenantId: r.lease_tenant_id,
+      tenantId: r.tenant_id,
+      tenantFullName: r.tenant_full_name,
+      role: r.role,
+      guarantorFullName: r.guarantor_full_name,
+      guarantorEmail: r.guarantor_email,
+    }));
+
+    throw new BadRequestException({
+      message:
+        'Multiple guarantor guarantees found on this lease. Provide guaranteeId (preferred) or leaseTenantId or tenantId.',
+      candidates,
+    } as any);
+  }
+
+// -------------------------------------
 // ACTE DE CAUTIONNEMENT (GUARANTOR_ACT)
 // -------------------------------------
-async generateGuarantorActPdf(leaseId: string) {
-  if (!leaseId) throw new BadRequestException('Missing leaseId');
+async generateGuarantorActPdf(
+  leaseId: string,
+  opts?: { guaranteeId?: string; leaseTenantId?: string; tenantId?: string },
+) {
+  const leaseIdTrim = String(leaseId || '').trim();
+  if (!leaseIdTrim) throw new BadRequestException('Missing leaseId');
+
+  // Charge le lease (inchangé)
+  const leaseQ = await this.pool.query(
+    `
+    SELECT l.*,
+           u.code AS unit_code,
+           u.label AS unit_label,
+           u.address_line1,
+           u.city,
+           u.postal_code,
+           p.name AS project_name
+    FROM leases l
+    JOIN units u ON u.id = l.unit_id
+    LEFT JOIN projects p ON p.id = u.project_id
+    WHERE l.id = $1
+    LIMIT 1
+    `,
+    [leaseIdTrim],
+  );
+
+  const lease = leaseQ.rows?.[0];
+  if (!lease) throw new BadRequestException('Lease not found');
+
+
+  // email pas forcément obligatoire pour signer sur place, donc on ne bloque pas ici.
+  // (mais tu peux le rendre obligatoire si ton template le nécessite)
+  //if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+  // ✅ Multi-garants: 1 acte par "caution sélectionnée" (scopée par lease_guarantees)
+  const g = await this.pickSelectedCautionGuarantee({
+    leaseId: leaseIdTrim,
+    guaranteeId: opts?.guaranteeId,
+    leaseTenantId: opts?.leaseTenantId,
+    tenantId: opts?.tenantId,
+  });
+
+  // legacy: guarantors_json peut être string JSON en DB
+  const legacyArr = this.parseJsonSafe(lease?.guarantors_json);
+  const legacyOne = Array.isArray(legacyArr) ? legacyArr[0] : null;
+
+  const guarantorFullName = String(
+    g?.guarantor_full_name ?? lease?.guarantor_full_name ?? legacyOne?.full_name ?? ''
+  ).trim();
+
+  const guarantorEmail = String(
+    g?.guarantor_email ?? lease?.guarantor_email ?? legacyOne?.email ?? ''
+  ).trim();
+
+  const guarantorPhone = String(
+    g?.guarantor_phone ?? lease?.guarantor_phone ?? legacyOne?.phone ?? ''
+  ).trim();
+
+  const guarantorAddress = String(
+    g?.guarantor_address ?? lease?.guarantor_address ?? legacyOne?.address ?? ''
+  ).trim();
+
+  
+
+  if (!guarantorFullName) {
+    throw new BadRequestException('No guarantor configured on this lease');
+  }
 
   const row = await this.fetchLeaseBundle(leaseId);
   const landlord = await this.getLandlordForLease(leaseId);
@@ -1486,8 +1738,11 @@ async generateGuarantorActPdf(leaseId: string) {
     throw new BadRequestException(`Unsupported lease kind for guarantor act: ${leaseKind}`);
   }
 
-    // ✅ IDEMPOTENCE: if same guarantor act already exists (same filename), return it.
-  const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+const gKey = String(g?.lease_tenant_id || g?.id || 'legacy').slice(0, 8);
+
+// ✅ IDEMPOTENCE: filename stable par garant
+const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}_${gKey}.pdf`;
+  
   const existing = await this.findExistingDocByFilename({
     leaseId,
     type: 'GUARANTOR_ACT',
@@ -1501,26 +1756,11 @@ async generateGuarantorActPdf(leaseId: string) {
   const tpl = await this.getTemplate('GUARANTOR_ACT', leaseKind, templateVersion);
 
   // ✅ Récupération garant (legacy + fallback guarantors_json)
-  const gArr = this.parseJsonSafe((row as any).guarantors_json);
-  const guarantors: any[] = Array.isArray(gArr) ? gArr : [];
+  
+  //}
 
-  const legacy = {
-    full_name: row.guarantor_full_name,
-    email: row.guarantor_email,
-    phone: row.guarantor_phone,
-    address: row.guarantor_address,
-  };
-
-  const g0 = guarantors[0] || legacy;
-
-  const guarantorName = String(g0?.full_name || g0?.name || '').trim();
-  const guarantorEmail = String(g0?.email || '').trim();
-  const guarantorPhone = String(g0?.phone || '').trim();
-  const guarantorAddress = String(g0?.address || g0?.current_address || '').trim();
-
-  if (!guarantorName && !guarantorEmail && !guarantorPhone && !guarantorAddress) {
-    throw new BadRequestException('No guarantor configured on this lease');
-  }
+  // ✅ Ici, on NE relit PAS row.guarantors_json : on utilise la sélection ci-dessus (g + fallback legacy lease)
+  const guarantorName = guarantorFullName; 
 
   const landlord_identifiers_html = `
     <div><b>${this.escapeHtml(landlord.name)}</b></div>
@@ -2515,7 +2755,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
   const leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
   const tenants = this.getTenantsFromLeaseRow(leaseRow);
 
-    // --- GARANT guard (MVP: legacy columns OR guarantors_json) ---
+  // --- GARANT guard (MVP: legacy columns OR guarantors_json) ---
   const hasLegacyGuarantor =
     Boolean(String(leaseRow?.guarantor_full_name || '').trim()) ||
     Boolean(String(leaseRow?.guarantor_email || '').trim()) ||
@@ -2530,7 +2770,15 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     if (String(doc.type) !== 'GUARANTOR_ACT') {
       throw new BadRequestException('GARANT signature only allowed on GUARANTOR_ACT documents');
     }
-    if (!hasLegacyGuarantor && !hasGuarantorsJson) {
+    // ✅ source robuste: lease_guarantees
+    const gq = await this.pool.query(
+      `SELECT 1
+       FROM lease_guarantees
+       WHERE lease_id=$1 AND type='CAUTION' AND selected=true
+       LIMIT 1`,
+      [doc.lease_id],
+    );
+    if (!gq.rowCount && !hasLegacyGuarantor && !hasGuarantorsJson) {
       throw new BadRequestException('No guarantor configured on this lease');
     }
   }
@@ -2736,7 +2984,7 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
       doc.id,
       signerRole as SignRole,
       signerName,
-      signerTenantId ?? null, // ✅ NEW
+      signerRole === 'LOCATAIRE' ? (effectiveTenantId || null) : null,
       sigAbs.replace(this.storageBase, ''),
       req.ip,
       req.headers['user-agent'],
