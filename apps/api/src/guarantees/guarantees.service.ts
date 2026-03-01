@@ -158,44 +158,6 @@ export class GuaranteesService {
     }
   }
 
-  async update(id: string, body: any) {
-    if (!id) throw new BadRequestException('Missing id');
-
-    const existing = await this.pool.query(`SELECT * FROM lease_guarantees WHERE id=$1`, [id]);
-    if (!existing.rowCount) throw new NotFoundException('Guarantee not found');
-
-    const patch: any = {};
-
-    if (body?.type) patch.type = this.normalizeType(body.type);
-    if (body?.status) patch.status = this.normalizeStatus(body.status);
-    if (body?.rank !== undefined) patch.rank = body.rank;
-
-    // allow update fields (both naming styles)
-    if (body?.guarantorFullName !== undefined || body?.guarantor_full_name !== undefined)
-      patch.guarantor_full_name = body?.guarantorFullName ?? body?.guarantor_full_name ?? null;
-    if (body?.guarantorEmail !== undefined || body?.guarantor_email !== undefined)
-      patch.guarantor_email = body?.guarantorEmail ?? body?.guarantor_email ?? null;
-    if (body?.guarantorPhone !== undefined || body?.guarantor_phone !== undefined)
-      patch.guarantor_phone = body?.guarantorPhone ?? body?.guarantor_phone ?? null;
-
-    if (body?.visaleReference !== undefined || body?.visale_reference !== undefined)
-      patch.visale_reference = body?.visaleReference ?? body?.visale_reference ?? null;
-    if (body?.visaleValidatedAt !== undefined || body?.visale_validated_at !== undefined)
-      patch.visale_validated_at = body?.visaleValidatedAt ?? body?.visale_validated_at ?? null;
-
-    const keys = Object.keys(patch);
-    if (!keys.length) return { ok: true, item: existing.rows[0] };
-
-    const sets = keys.map((k, i) => `${k}=$${i + 2}`).join(', ');
-    const values = keys.map((k) => patch[k]);
-
-    const q = await this.pool.query(
-      `UPDATE lease_guarantees SET ${sets} WHERE id=$1 RETURNING *`,
-      [id, ...values],
-    );
-    return { ok: true, item: q.rows[0] };
-  }
-
   // ✅ select = true (and deselect others)
   async select(id: string) {
     if (!id) throw new BadRequestException('Missing id');
@@ -234,10 +196,104 @@ export class GuaranteesService {
     }
   }
 
+  async listByLeaseTenant(leaseTenantId: string) {
+    if (!leaseTenantId) throw new BadRequestException('Missing leaseTenantId');
+
+    const q = await this.pool.query(
+      `
+      SELECT lg.*,
+            lt.tenant_id,
+            lt.role,
+            t.full_name as tenant_full_name,
+            t.email as tenant_email
+      FROM lease_guarantees lg
+      JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lg.lease_tenant_id = $1
+      ORDER BY lg.created_at DESC
+      `,
+      [leaseTenantId],
+    );
+
+    return { ok: true, items: q.rows };
+  }
+
+  async update(id: string, body: any) {
+    if (!id) throw new BadRequestException('Missing id');
+
+    const curQ = await this.pool.query(`SELECT * FROM lease_guarantees WHERE id=$1`, [id]);
+    if (!curQ.rowCount) throw new BadRequestException('Guarantee not found');
+    const cur = curQ.rows[0];
+
+    // champs modifiables
+    const guarantorFullName = body?.guarantorFullName ?? body?.guarantor_full_name ?? null;
+    const guarantorEmail = body?.guarantorEmail ?? body?.guarantor_email ?? null;
+    const guarantorPhone = body?.guarantorPhone ?? body?.guarantor_phone ?? null;
+    const visaleReference = body?.visaleReference ?? body?.visale_reference ?? null;
+
+    const selected = typeof body?.selected === 'boolean' ? body.selected : null;
+
+    // si selected=true => unselect les autres du même lease_tenant
+    if (selected === true) {
+      await this.pool.query(
+        `UPDATE lease_guarantees
+        SET selected=false, updated_at=NOW()
+        WHERE lease_tenant_id=$1 AND id <> $2`,
+        [cur.lease_tenant_id, id],
+      );
+    }
+
+    const updQ = await this.pool.query(
+      `
+      UPDATE lease_guarantees
+      SET guarantor_full_name = COALESCE($2, guarantor_full_name),
+          guarantor_email     = COALESCE($3, guarantor_email),
+          guarantor_phone     = COALESCE($4, guarantor_phone),
+          visale_reference    = COALESCE($5, visale_reference),
+          selected            = COALESCE($6, selected),
+          updated_at          = NOW()
+      WHERE id=$1
+      RETURNING *
+      `,
+      [id, guarantorFullName, guarantorEmail, guarantorPhone, visaleReference, selected],
+    );
+
+    return { ok: true, item: updQ.rows[0] };
+  }
+
   async remove(id: string) {
     if (!id) throw new BadRequestException('Missing id');
-    const q = await this.pool.query(`DELETE FROM lease_guarantees WHERE id=$1 RETURNING id`, [id]);
-    if (!q.rowCount) throw new NotFoundException('Guarantee not found');
+
+    const curQ = await this.pool.query(`SELECT * FROM lease_guarantees WHERE id=$1`, [id]);
+    if (!curQ.rowCount) throw new BadRequestException('Guarantee not found');
+    const cur = curQ.rows[0];
+
+    await this.pool.query(`DELETE FROM lease_guarantees WHERE id=$1`, [id]);
+
+    // si on a supprimé la selected, auto-select la plus récente restante
+    if (cur.selected) {
+      const nextQ = await this.pool.query(
+        `
+        SELECT id FROM lease_guarantees
+        WHERE lease_tenant_id=$1
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [cur.lease_tenant_id],
+      );
+
+      if (nextQ.rowCount) {
+        const nextId = nextQ.rows[0].id;
+        await this.pool.query(
+          `UPDATE lease_guarantees
+          SET selected=true, updated_at=NOW()
+          WHERE id=$1`,
+          [nextId],
+        );
+      }
+    }
+
     return { ok: true };
   }
+
 }
