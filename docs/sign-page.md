@@ -16,3 +16,7 @@ Affiche une ligne par `guaranteeId` (CAUTION sélectionnée) :
   - Envoyer lien garant (POST `/api/public-links/guarantor-sign/send-by-guarantee`)
   - Télécharger acte (source)
   - Télécharger signé (final)
+
+
+## UX
+Après chaque action structurante (génération doc, envoi lien, signature), la page rafraîchit automatiquement les statuts via `GET /api/signature-status`.
