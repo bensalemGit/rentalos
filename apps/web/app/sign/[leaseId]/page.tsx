@@ -948,7 +948,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           style={btnAction(border)}
           disabled={!contractDoc?.id}
         >
-          Envoyer lien locataire
+          Envoyer lien locataire (tous)
         </button>
 
         <button
@@ -956,7 +956,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           style={btnAction(border)}
           disabled={!contractDoc?.id}
         >
-          Renvoyer locataire (force)
+          Renvoyer liens locataires (force, tous)
         </button>
 
         <button
@@ -1086,6 +1086,72 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           </button>
         </div>
       )}
+
+      {/* ========================= */}
+      {/* Locataires (signature)    */}
+      {/* ========================= */}
+      <div style={card(border)}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+          <h2 style={{ marginTop: 0 }}>Locataires (signature)</h2>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              onClick={() => sendPublicLink(false)}
+              style={btnAction(border)}
+              disabled={!contractDoc?.id}
+            >
+              Envoyer liens (tous)
+            </button>
+
+            <button
+              onClick={() => sendPublicLink(true)}
+              style={btnAction(border)}
+              disabled={!contractDoc?.id}
+            >
+              Renvoyer (force, tous)
+            </button>
+          </div>
+        </div>
+
+        {!sigStatus?.contract?.tenants?.length ? (
+          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucun locataire.</div>
+        ) : (
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {sigStatus.contract.tenants.map((t) => (
+              <div key={t.leaseTenantId} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
+                  <div style={{ minWidth: 240 }}>
+                    <div style={{ fontWeight: 800 }}>
+                      {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
+                    </div>
+
+                    <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                      Statut:{" "}
+                      <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                        {t.signatureStatus}
+                      </span>
+                      {t.lastLink?.createdAt ? (
+                        <span style={{ marginLeft: 8 }}>
+                          (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                    <button
+                      style={btnSecondary(border)}
+                      onClick={() => fetchSignatureStatus(leaseId)}
+                    >
+                      Rafraîchir statuts
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div style={card(border)}>
         <h2 style={{ marginTop: 0 }}>Garanties (caution)</h2>
