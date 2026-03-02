@@ -1278,33 +1278,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
             </div>
           )}
 
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12, color: muted, fontWeight: 700, marginBottom: 6 }}>
-              Document à signer
-            </div>
-
-            <select
-              value={selectedLandlordDocKey}
-              onChange={(e) => setSelectedLandlordDocKey(e.target.value)}
-              disabled={!landlordSignables.length}
-              style={{ ...inputStyle(border), cursor: landlordSignables.length ? "pointer" : "not-allowed" }}
-            >
-              {landlordSignables.length === 0 ? (
-                <option value="">— Aucun document —</option>
-              ) : null}
-
-              {landlordSignables.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-
-            <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>
-              Le pad ci-dessous signera le document sélectionné.
-            </div>
-          </div>
-
           <div style={labelStyle(muted)}>
             <div>Nom signataire</div>
             <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} style={inputStyle(border)} />
@@ -1336,6 +1309,33 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
         <div style={card(border)}>
           <h2 style={{ marginTop: 0 }}>Signature bailleur</h2>
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: muted, fontWeight: 700, marginBottom: 6 }}>
+              Document à signer
+            </div>
+
+            <select
+              value={selectedLandlordDocKey}
+              onChange={(e) => setSelectedLandlordDocKey(e.target.value)}
+              disabled={!landlordSignables.length}
+              style={{ ...inputStyle(border), cursor: landlordSignables.length ? "pointer" : "not-allowed" }}
+            >
+              {landlordSignables.length === 0 ? (
+                <option value="">— Aucun document —</option>
+              ) : null}
+
+              {landlordSignables.map((d) => (
+                <option key={d.key} value={d.key}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>
+              Le pad ci-dessous signera le document sélectionné.
+            </div>
+          </div>
 
           <div style={labelStyle(muted)}>
             <div>Nom signataire</div>
