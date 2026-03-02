@@ -18,7 +18,7 @@ import { BuildingsModule } from './buildings/buildings.module';
 import { ImportModule } from './import/import.module';
 import { UnitReferencesModule } from './unit-references/unit-references.module';
 import { GuaranteesModule } from './guarantees/guarantees.module';
-
+import { SignatureStatusModule } from './signature-status/signature-status.module';
 
 @Module({
   imports: [
@@ -32,6 +32,7 @@ import { GuaranteesModule } from './guarantees/guarantees.module';
 	  UnitReferencesModule,
     DocumentsModule,
     PublicModule,
+    SignatureStatusModule,
     MailerModule,
     PaymentsModule,
     ReceiptsModule,
