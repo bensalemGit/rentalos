@@ -70,6 +70,12 @@ type LeaseTenant = {
   role?: "principal" | "cotenant" | string;
 };
 
+type LandlordSignable = {
+  key: string; // "contract" | "guarantee:<id>"
+  label: string;
+  documentId: string;
+};
+
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
   const [token, setToken] = useState("");
@@ -724,11 +730,73 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     if (selectedTenant) setTenantName(normalizeTenantName(selectedTenant));
   }, [selectedTenantId]);
 
+
+  // ✅ Patch 4.A — documents signables par le bailleur (contrat + actes caution)
+  const landlordSignables: LandlordSignable[] = useMemo(() => {
+    const items: LandlordSignable[] = [];
+
+    const contractDocId = sigStatus?.contract?.documentId;
+    if (contractDocId) {
+      items.push({
+        key: "contract",
+        label: "Contrat",
+        documentId: contractDocId,
+      });
+    }
+
+    const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
+    const acts = guarantees
+      .filter((g) => Boolean(g.actDocumentId))
+      .sort((a, b) => String(a.tenantFullName || "").localeCompare(String(b.tenantFullName || "")))
+      .map((g) => ({
+        key: `guarantee:${g.guaranteeId}`,
+        label: `Acte caution — ${String(g.guarantorFullName || g.tenantFullName || "Garant").trim()} (${String(
+          g.guaranteeId,
+        ).slice(0, 6)})`,
+        documentId: g.actDocumentId as string,
+      }));
+
+    items.push(...acts);
+    return items;
+  }, [sigStatus]);
+
+  const [selectedLandlordDocKey, setSelectedLandlordDocKey] = useState<string>("contract");
+
+  // garde une sélection valide après refresh des statuts
+  useEffect(() => {
+    if (!landlordSignables.length) return;
+
+    const stillThere = landlordSignables.some((x) => x.key === selectedLandlordDocKey);
+    if (!stillThere) {
+      const hasContract = landlordSignables.some((x) => x.key === "contract");
+      setSelectedLandlordDocKey(hasContract ? "contract" : landlordSignables[0].key);
+      return;
+    }
+
+    // si "contract" mais pas dispo → fallback premier acte
+    if (selectedLandlordDocKey === "contract" && !landlordSignables.some((x) => x.key === "contract")) {
+      setSelectedLandlordDocKey(landlordSignables[0].key);
+    }
+  }, [landlordSignables, selectedLandlordDocKey]);
+
+  const selectedLandlordDoc = useMemo(() => {
+    return landlordSignables.find((x) => x.key === selectedLandlordDocKey) || null;
+  }, [landlordSignables, selectedLandlordDocKey]);
+
   async function sign(role: "LOCATAIRE" | "BAILLEUR") {
-    if (!contractDoc?.id) {
+    // ✅ LOCATAIRE signe forcément le contrat (root)
+    if (role === "LOCATAIRE" && !contractDoc?.id) {
       setError("Aucun contrat. Génère d’abord le contrat.");
       return;
     }
+
+    // ✅ BAILLEUR signe le document sélectionné (contrat ou acte caution)
+    const landlordDocId = role === "BAILLEUR" ? selectedLandlordDoc?.documentId : null;
+    if (role === "BAILLEUR" && !landlordDocId) {
+      setError("Aucun document sélectionné à signer.");
+      return;
+    }
+
     setError("");
     setStatus(role === "LOCATAIRE" ? "Signature locataire…" : "Signature bailleur…");
 
@@ -765,7 +833,9 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       const payload: any = { signerName, signerRole: role, signatureDataUrl };
       if (role === "LOCATAIRE" && signerTenantId) payload.signerTenantId = signerTenantId;
 
-      const r = await fetch(`${API}/documents/${contractDoc.id}/sign`, {
+      const documentIdToSign = role === "BAILLEUR" ? landlordDocId! : contractDoc!.id;
+
+      const r = await fetch(`${API}/documents/${documentIdToSign}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -1240,6 +1310,33 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         <div style={card(border)}>
           <h2 style={{ marginTop: 0 }}>Signature bailleur</h2>
 
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: muted, fontWeight: 700, marginBottom: 6 }}>
+              Document à signer
+            </div>
+
+            <select
+              value={selectedLandlordDocKey}
+              onChange={(e) => setSelectedLandlordDocKey(e.target.value)}
+              disabled={!landlordSignables.length}
+              style={{ ...inputStyle(border), cursor: landlordSignables.length ? "pointer" : "not-allowed" }}
+            >
+              {landlordSignables.length === 0 ? (
+                <option value="">— Aucun document —</option>
+              ) : null}
+
+              {landlordSignables.map((d) => (
+                <option key={d.key} value={d.key}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>
+              Le pad ci-dessous signera le document sélectionné.
+            </div>
+          </div>
+
           <div style={labelStyle(muted)}>
             <div>Nom signataire</div>
             <input value={landlordName} onChange={(e) => setLandlordName(e.target.value)} style={inputStyle(border)} />
@@ -1263,7 +1360,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
             <button onClick={() => clearCanvas(landlordCanvasRef.current)} style={btnAction(border)}>
               Effacer
             </button>
-            <button onClick={() => sign("BAILLEUR")} style={btnPrimarySmall(blue)}>
+            <button
+              onClick={() => sign("BAILLEUR")}
+              style={btnPrimarySmall(blue)}
+              disabled={!selectedLandlordDoc}
+            >
               Signer
             </button>
           </div>
