@@ -261,6 +261,13 @@ export class SignatureStatusService {
       const sigs = actDocumentId ? guarantSigsByDocId.get(actDocumentId) || [] : [];
       const hasAnySig = sigs.length > 0;
 
+      const hasGuarantSig = sigs.some((s) => s.signer_role === 'GARANT');
+      const hasLandlordSig = sigs.some((s) => s.signer_role === 'BAILLEUR');
+
+      const need = signedFinalDocumentId
+        ? { guarantor: false, landlord: false }
+        : { guarantor: !hasGuarantSig, landlord: !hasLandlordSig };
+
       const signatureStatus: GuaranteeSigStatus =
         signedFinalDocumentId ? 'SIGNED' : hasAnySig ? 'IN_PROGRESS' : sent ? 'SENT' : 'NOT_SENT';
 
@@ -275,6 +282,7 @@ export class SignatureStatusService {
         actDocumentId,
         signedFinalDocumentId,
         signatureStatus,
+        need,
         lastLink: latestLink
           ? {
               createdAt: latestLink.created_at,
@@ -285,7 +293,11 @@ export class SignatureStatusService {
         guaranteeStatus: g.guarantee_status || null,
       };
     });
-
+    
+    const contractNeed = {
+      landlord: !landlordSigned,
+      tenants: tenantsOut.filter((t) => t.signatureStatus !== 'SIGNED').map((t) => t.tenantId),
+    };
     return {
       leaseId: cleanLeaseId,
       generatedAt: this.nowIso(),
@@ -295,6 +307,9 @@ export class SignatureStatusService {
         filename: contractDoc?.filename || null,
         signedFinalDocumentId: contractDoc?.signed_final_document_id || null,
         status: contractStatus,
+        need: contractDoc
+          ? contractNeed
+          : { landlord: true, tenants: tenantsOut.map((t) => t.tenantId) },
         landlord: landlordOut,
         tenants: tenantsOut,
       },

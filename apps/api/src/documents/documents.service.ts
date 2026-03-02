@@ -2298,12 +2298,20 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
   const contractSignatures = sigQ.rows || [];
 
-  // 2) ACTE DE CAUTION signé final (optionnel)
-  const guarantorActSignedFinal =
-    docs
-      .filter((d: any) => d.type === 'GUARANTOR_ACT')
-      .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
-      .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
+  // 2) ACTES DE CAUTION signés final (multi, optionnels)
+  const guarantorActsSignedFinal = docs
+    .filter((d: any) => d.type === 'GUARANTOR_ACT')
+    // on ne veut que les SIGNED_FINAL (parent_document_id != null) ou *_SIGNED_FINAL
+    .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+    // ordre stable (sinon pack “bouge” au fil des signatures)
+    .sort((a: any, b: any) => {
+      // tri par filename (stable et déterministe) puis created_at
+      const fa = String(a.filename || '');
+      const fb = String(b.filename || '');
+      const c = fa.localeCompare(fb);
+      if (c !== 0) return c;
+      return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+    });
 
   // 3) Annexes originales
   const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
@@ -2313,9 +2321,9 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   const annexesOrdered: any[] = [];
   // 1️⃣ Contrat signé final (toujours premier)
   annexesOrdered.push(contractSignedFinal);
-  // 2️⃣ Acte de caution signé (si présent)
-  if (guarantorActSignedFinal) {
-    annexesOrdered.push(guarantorActSignedFinal);
+  // 2️⃣ Actes de caution signés (si présents)
+  for (const act of guarantorActsSignedFinal) {
+    annexesOrdered.push(act);
   }
   // 3️⃣ Notice (RP uniquement)
   if (notice) {
@@ -2397,14 +2405,32 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   }
 
   // 7) Merge (via Gotenberg, plus robuste)
-  const ordered = [
-    { n: '01_CONTRAT_SIGNED_FINAL.pdf', doc: contractSignedFinal },
-    { n: '02_ACTE_CAUTION_SIGNED_FINAL.pdf', doc: guarantorActSignedFinal },
-    { n: '03_NOTICE.pdf', doc: notice },
-    { n: '04_EDL.pdf', doc: edl },
-    { n: '05_INVENTAIRE.pdf', doc: inventaire },
-    // audit ajouté après (voir plus bas)
-  ].filter(x => x.doc);
+  const ordered: Array<{ n: string; doc: any }> = [];
+
+  // 01 contrat
+  ordered.push({ n: '01_CONTRAT_SIGNED_FINAL.pdf', doc: contractSignedFinal });
+
+  // 02.. actes caution signés (multi)
+  guarantorActsSignedFinal.forEach((act: any, idx: number) => {
+    const num = String(2 + idx).padStart(2, '0');
+    ordered.push({ n: `${num}_ACTE_CAUTION_SIGNED_FINAL_${idx + 1}.pdf`, doc: act });
+  });
+
+  // ensuite on continue avec notice/edl/inventaire en respectant la numérotation dynamique
+  let next = 2 + guarantorActsSignedFinal.length;
+
+  if (notice) {
+    next += 1;
+    ordered.push({ n: `${String(next).padStart(2, '0')}_NOTICE.pdf`, doc: notice });
+  }
+  if (edl) {
+    next += 1;
+    ordered.push({ n: `${String(next).padStart(2, '0')}_EDL.pdf`, doc: edl });
+  }
+  if (inventaire) {
+    next += 1;
+    ordered.push({ n: `${String(next).padStart(2, '0')}_INVENTAIRE.pdf`, doc: inventaire });
+  }
 
   const parts = ordered
     .map(({ n, doc }) => {
@@ -3133,6 +3159,24 @@ async signDocumentMulti(documentId: string, body: any, req: any) {
     );
 
     await this.pool.query(`UPDATE documents SET signed_final_document_id=$1, finalized_at = NOW(), signed_final_sha256 = $3 WHERE id=$2`, [insDoc.rows[0].id, doc.id, mergedSha]);
+
+    // ✅ PATCH 3.B: sync lease_guarantees.signed_final_document_id for guarantor acts
+    if (isGuarantorAct) {
+      try {
+        await this.pool.query(
+          `
+          UPDATE lease_guarantees
+          SET signed_final_document_id = $1
+          WHERE lease_id = $2
+            AND type = 'CAUTION'
+            AND guarantor_act_document_id = $3
+          `,
+          [insDoc.rows[0].id, doc.lease_id, doc.id],
+        );
+      } catch (e) {
+        console.warn('[GUARANTOR_ACT] failed to sync lease_guarantees.signed_final_document_id', e);
+      }
+    }
 
     const finalSignedDocument = insDoc.rows[0];
 
