@@ -362,6 +362,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
       setStatus("Contrat généré ✅");
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -386,6 +387,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
       setStatus("Notice générée ✅");
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -410,6 +412,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
       setStatus("Pack généré ✅");
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -434,6 +437,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
       setStatus("PACK_FINAL_V2 généré ✅");
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -458,6 +462,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
       setStatus("Acte généré ✅");
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -692,6 +697,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
 
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -784,6 +790,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }
 
       await loadDocs();
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -820,6 +827,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           `Envoyés:\n${sentEmails.join("\n") || "—"}\n\n` +
           `Ignorés:\n${skippedEmails.join("\n") || "—"}`
       );
+      await fetchSignatureStatus(leaseId);
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -1100,41 +1108,70 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
                     )}
                   </div>
 
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <button
-                      style={btnPrimarySmall(blue)}
-                      onClick={() => sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e) => alert(e.message))}
-                    >
-                      Envoyer lien garant
-                    </button>
+                  {(() => {
+                    const sendLabel =
+                      g.signatureStatus === "NOT_SENT"
+                        ? "Envoyer lien garant"
+                        : g.signatureStatus === "SENT"
+                        ? "Renvoyer lien"
+                        : g.signatureStatus === "IN_PROGRESS"
+                        ? "Renvoyer lien"
+                        : "Lien envoyé";
 
-                    <button
-                      style={btnAction(border)}
-                      disabled={!g.actDocumentId}
-                      onClick={() =>
-                        g.actDocumentId && downloadDoc(g.actDocumentId, "acte_caution.pdf")
-                      }
-                    >
-                      Télécharger acte
-                    </button>
+                    const sendDisabled = g.signatureStatus === "SIGNED";
 
-                    <button
-                      style={btnAction(border)}
-                      disabled={!g.signedFinalDocumentId}
-                      onClick={() =>
-                        g.signedFinalDocumentId && downloadDoc(g.signedFinalDocumentId, "acte_caution_SIGNE.pdf")
-                      }
-                    >
-                      Télécharger signé
-                    </button>
+                    const hint =
+                      g.signatureStatus === "IN_PROGRESS"
+                        ? "Signature bailleur requise"
+                        : g.signatureStatus === "SENT"
+                        ? "En attente de signature garant"
+                        : null;
 
-                    <button
-                      style={btnAction(border)}
-                      onClick={() => sendGuarantorLinkByGuarantee(g.guaranteeId, true).catch((e) => alert(e.message))}
-                    >
-                      Renvoyer (force)
-                    </button>
-                  </div>
+                    return (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        <button
+                          style={btnPrimarySmall(blue)}
+                          disabled={sendDisabled}
+                          title={hint || undefined}
+                          onClick={() =>
+                            sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e) => alert(e.message))
+                          }
+                        >
+                          {sendLabel}
+                        </button>
+
+                        <button
+                          style={btnAction(border)}
+                          disabled={!g.actDocumentId}
+                          onClick={() => g.actDocumentId && downloadDoc(g.actDocumentId, "acte_caution.pdf")}
+                        >
+                          Télécharger acte
+                        </button>
+
+                        <button
+                          style={btnAction(border)}
+                          disabled={!g.signedFinalDocumentId}
+                          onClick={() =>
+                            g.signedFinalDocumentId && downloadDoc(g.signedFinalDocumentId, "acte_caution_SIGNE.pdf")
+                          }
+                        >
+                          Télécharger signé
+                        </button>
+
+                        <button
+                          style={btnAction(border)}
+                          disabled={g.signatureStatus === "SIGNED"}
+                          onClick={() => sendGuarantorLinkByGuarantee(g.guaranteeId, true).catch((e) => alert(e.message))}
+                        >
+                          Renvoyer (force)
+                        </button>
+
+                        {hint ? <span style={{ fontSize: 12, color: muted }}>{hint}</span> : null}
+                      </div>
+                    );
+                  })()}
+
+
                 </div>
               </div>
             ))}
