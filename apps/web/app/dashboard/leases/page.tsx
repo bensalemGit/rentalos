@@ -1660,6 +1660,8 @@ async function generateIrlAvenant(lease: any) {
                     Avenant IRL
                   </button>
 
+                
+                  <Link href={`/guarantor-act/${l.id}`}><button style={btnAction(border)}>Acte caution</button></Link>    
                   <Link href={`/edl/${l.id}`}><button style={btnAction(border)}>EDL</button></Link>
                   <Link href={`/inventory/${l.id}`}><button style={btnAction(border)}>Inventaire</button></Link>
                   <Link href={`/sign/${l.id}`}><button style={btnAction(border)}>Contrat + signatures</button></Link>
@@ -1705,8 +1707,8 @@ async function generateIrlAvenant(lease: any) {
                         border={border}
                         blue={blue}
                       />
-                      
-                                            <Link href={`/edl/${l.id}`}><button style={btnAction(border)}>EDL</button></Link>
+                      <Link href={`/guarantor-act/${l.id}`}><button style={btnAction(border)}>Acte caution</button></Link>
+                      <Link href={`/edl/${l.id}`}><button style={btnAction(border)}>EDL</button></Link>
                       <Link href={`/inventory/${l.id}`}><button style={btnAction(border)}>Inventaire</button></Link>
                       <Link href={`/sign/${l.id}`}><button style={btnAction(border)}>Contrat + signatures</button></Link>
                     </div>

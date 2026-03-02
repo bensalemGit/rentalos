@@ -98,7 +98,8 @@ export class DocumentsController {
     }
 
     // Sinon: auto (0 / 1 / many)
-    const candidates = await this.docs.getGuarantorActCandidates(leaseId);
+    const list = await this.docs.listGuarantorActCandidates(leaseId);
+    const candidates = list?.candidates || [];
 
     if (candidates.length === 0) {
       throw new BadRequestException('No selected CAUTION guarantee on this lease');
@@ -117,7 +118,7 @@ export class DocumentsController {
 
   @Get('guarantor-act/candidates')
   async guarantorActCandidates(@Query('leaseId') leaseId: string) {
-    return this.docs.getGuarantorActCandidates(String(leaseId || '').trim());
+    return this.docs.listGuarantorActCandidates(String(leaseId || '').trim());
 }
 
   @Post(':id/sign')
