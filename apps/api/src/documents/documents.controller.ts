@@ -51,13 +51,21 @@ export class DocumentsController {
 
   @Post('edl')
   async generateEdl(@Body() body: any, @Res({ passthrough: true }) res: Response) {
-    const result = await this.docs.generateEdlPdf(body.leaseId);
+    const phase = String(body.phase || '').toLowerCase();
+    if (phase !== 'entry' && phase !== 'exit') {
+      throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
+    }
+    const result = await this.docs.generateEdlPdf(body.leaseId, { phase, force: Boolean(body.force) });
     return this.replyCreated(res, result);
   }
 
   @Post('inventory')
   async generateInventory(@Body() body: any, @Res({ passthrough: true }) res: Response) {
-    const result = await this.docs.generateInventoryPdf(body.leaseId);
+    const phase = String(body.phase || '').toLowerCase();
+    if (phase !== 'entry' && phase !== 'exit') {
+      throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
+    }
+    const result = await this.docs.generateInventoryPdf(body.leaseId, { phase, force: Boolean(body.force) });
     return this.replyCreated(res, result);
   }
 

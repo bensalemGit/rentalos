@@ -78,15 +78,20 @@ sendGuarantorLink(@Body() body: any) {
 
 @Post('public-links/guarantor-sign/send-by-guarantee')
 @UseGuards(JwtGuard)
-sendGuarantorLinkByGuarantee(@Body() body: any) {
-  const ttlHours = body?.ttlHours ?? 72;
-  const force = !!body?.force;
-  const emailOverride = body?.emailOverride ?? null;
+sendGuarantorByGuarantee(
+  @Body()
+  body: {
+    guaranteeId: string;
+    force?: boolean;
+    mode?: 'SIGN' | 'SHARE_SIGNED';
+    channel?: 'email' | 'none';
+  },
+) {
   return this.pub.sendGuarantorSignLinkByGuarantee(
-    body?.guaranteeId,
-    ttlHours,
-    emailOverride,
-    force,
+    body.guaranteeId,
+    body.force ?? false,
+    body.mode ?? 'SIGN',
+    body.channel ?? 'email',
   );
 }
 

@@ -10,6 +10,7 @@ import * as crypto from 'crypto';
 import * as path from 'path';
 import { DocumentsService } from '../documents/documents.service';
 import { MailerService } from '../mailer/mailer.service';
+import { promises as fs } from 'fs';
 
 @Injectable()
 export class PublicService {
@@ -668,9 +669,9 @@ private async deleteActiveGuarantorSignLinksByGuarantee(guaranteeId: string) {
 
 async sendGuarantorSignLinkByGuarantee(
   guaranteeId: string,
-  ttlHours = 72,
-  emailOverride?: string | null,
   force = false,
+  mode: 'SIGN' | 'SHARE_SIGNED' = 'SIGN',
+  channel: 'email' | 'none' = 'email',
 ) {
   const gid = String(guaranteeId || '').trim();
   if (!gid) throw new BadRequestException('Missing guaranteeId');
@@ -701,26 +702,57 @@ async sendGuarantorSignLinkByGuarantee(
   const gName = String(g.guarantor_full_name || '').trim();
   const gEmailRaw = String(g.guarantor_email || '').trim();
 
-  const override =
-    emailOverride && String(emailOverride).includes('@')
-      ? String(emailOverride).trim()
-      : '';
-  const gEmail = override || gEmailRaw;
+  const gEmail = gEmailRaw; 
 
   if (!gName) throw new BadRequestException('Guarantor name missing on guarantee');
   if (!gEmail) throw new BadRequestException('Guarantor email missing on guarantee');
 
   // 3) Guard: déjà signé ?
-  // Spec: already_signed si signed_final_document_id existe
+  // -> si mode=SIGN : on garde le comportement actuel (already_signed)
+  // -> si mode=SHARE_SIGNED : on envoie le PDF signé en PJ
   if (g.signed_final_document_id) {
-    return {
-      ok: true,
-      forceUsed: !!force,
-      sent: false,
-      reason: 'already_signed',
-      email: gEmail,
-      guaranteeId: gid,
-    };
+    if (mode === 'SIGN') {
+      return {
+        ok: true,
+        forceUsed: !!force,
+        sent: false,
+        reason: 'already_signed',
+        email: gEmail,
+        guaranteeId: gid,
+      };
+    }
+
+    // SHARE_SIGNED
+    const signedFinalDocumentId = String(g.signed_final_document_id || '').trim();
+    if (!signedFinalDocumentId) {
+      return { ok: false, reason: 'not_signed_yet' };
+    }
+
+    if (channel === 'none') {
+      return { ok: true, mode: 'SHARE_SIGNED', signedFinalDocumentId };
+    }
+
+    // 1) récupérer le fichier via DocumentsService
+    const { absPath, filename } = await this.docs.getDocumentFile(signedFinalDocumentId);
+
+    // 2) lire le fichier
+    const buffer = await fs.readFile(absPath);
+
+    // 3) envoyer email au garant
+    const subject = 'Acte de caution signé';
+    const html =
+      `<p>Bonjour,</p>` +
+      `<p>Veuillez trouver en pièce jointe l’acte de caution signé.</p>`;
+
+    await this.mailer.sendMail(gEmail, subject, html, [
+      {
+        filename: filename ?? 'acte_caution_SIGNE.pdf',
+        content: buffer,
+        contentType: 'application/pdf',
+      },
+    ]);
+
+    return { ok: true, mode: 'SHARE_SIGNED', sentTo: gEmail };
   }
 
   // 4) Guard: lien actif existant (scopé guarantee_id)
@@ -799,7 +831,7 @@ async sendGuarantorSignLinkByGuarantee(
     leaseId,
     documentId: actDoc.id,
     purpose: 'GUARANT_SIGN_ACT',
-    expiresInHours: ttlHours,
+    expiresInHours: 48,
     signerRole: 'GARANT',
     signerTenantId: null,
     signerName: gName,
@@ -829,7 +861,6 @@ async sendGuarantorSignLinkByGuarantee(
     sent: true,
     email: gEmail,
     expiresAt: row.expires_at,
-    overrideUsed: !!override,
     guaranteeId: gid,
     documentId: actDoc.id,
     publicUrl: url,

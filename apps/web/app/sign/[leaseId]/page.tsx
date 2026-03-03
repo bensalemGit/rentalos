@@ -326,6 +326,56 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
+  async function generateEdl(phase: "entry" | "exit") {
+    setError("");
+    setStatus(`Génération EDL ${phase === "entry" ? "entrée" : "sortie"}…`);
+    try {
+      const r = await fetch(`${API}/documents/edl`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, phase }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+      setStatus("EDL généré ✅");
+      await loadDocs();
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+
+async function generateInventory(phase: "entry" | "exit") {
+  setError("");
+  setStatus(`Génération inventaire ${phase === "entry" ? "entrée" : "sortie"}…`);
+  try {
+    const r = await fetch(`${API}/documents/inventory`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      credentials: "include",
+      body: JSON.stringify({ leaseId, phase }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      setStatus("");
+      setError(j?.message || JSON.stringify(j));
+      return;
+    }
+    setStatus("Inventaire généré ✅");
+    await loadDocs();
+    await fetchSignatureStatus(leaseId);
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
+  }
+}
+
   async function generateGuarantorActFor(guaranteeId: string) {
     setError("");
     setStatus("Génération de l'acte de cautionnement…");
@@ -481,7 +531,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
-  async function sendGuarantorLinkByGuarantee(guaranteeId: string, force = false) {
+  async function sendGuarantorLinkByGuarantee(
+    guaranteeId: string,
+    force = false,
+    mode: "SIGN" | "SHARE_SIGNED" = "SIGN"
+  ) {
     const res = await fetch(`${API}/public-links/guarantor-sign/send-by-guarantee`, {
       method: "POST",
       headers: {
@@ -489,7 +543,12 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       credentials: "include",
-      body: JSON.stringify({ guaranteeId, force }),
+      body: JSON.stringify({
+        guaranteeId,
+        force,
+        mode,
+        channel: "email",
+      }),
     });
 
     if (!res.ok) {
@@ -654,6 +713,19 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       }));
 
     items.push(...acts);
+    // ✅ NEW: EDL & Inventaires (entrée/sortie)
+    const edlEntryId = sigStatus?.edl?.entry?.documentId;
+    if (edlEntryId) items.push({ key: "edl_entry", label: "EDL entrée", documentId: edlEntryId });
+
+    const invEntryId = sigStatus?.inventory?.entry?.documentId;
+    if (invEntryId) items.push({ key: "inv_entry", label: "Inventaire entrée", documentId: invEntryId });
+
+    const edlExitId = sigStatus?.edl?.exit?.documentId;
+    if (edlExitId) items.push({ key: "edl_exit", label: "EDL sortie", documentId: edlExitId });
+
+    const invExitId = sigStatus?.inventory?.exit?.documentId;
+    if (invExitId) items.push({ key: "inv_exit", label: "Inventaire sortie", documentId: invExitId });
+    
     return items;
   }, [sigStatus, guaranteeActOverride]);
 
@@ -681,6 +753,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }, [sigStatus, guaranteeActOverride]);
 
   const [selectedLandlordDocKey, setSelectedLandlordDocKey] = useState<string>("contract");
+  const [selectedTenantDocKey, setSelectedTenantDocKey] = useState<string>("contract");
 
   const [selectedGuaranteeId, setSelectedGuaranteeId] = useState("");
 
@@ -706,7 +779,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   useEffect(() => {
     if (!landlordSignables.length) return;
 
-    const stillThere = landlordSignables.some((x) => x.key === selectedLandlordDocKey);
+  const stillThere = landlordSignables.some((x) => x.key === selectedLandlordDocKey);
     if (!stillThere) {
       const hasContract = landlordSignables.some((x) => x.key === "contract");
       setSelectedLandlordDocKey(hasContract ? "contract" : landlordSignables[0].key);
@@ -719,21 +792,40 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }, [landlordSignables, selectedLandlordDocKey]);
 
+  // ✅ NEW: garde une sélection valide côté locataire
+  useEffect(() => {
+    if (!landlordSignables.length) return;
+
+    const stillThere = landlordSignables.some((x) => x.key === selectedTenantDocKey);
+    if (!stillThere) {
+      const hasContract = landlordSignables.some((x) => x.key === "contract");
+      setSelectedTenantDocKey(hasContract ? "contract" : landlordSignables[0].key);
+      return;
+    }
+
+    if (selectedTenantDocKey === "contract" && !landlordSignables.some((x) => x.key === "contract")) {
+      setSelectedTenantDocKey(landlordSignables[0].key);
+    }
+  }, [landlordSignables, selectedTenantDocKey]);
+
   const selectedLandlordDoc = useMemo(() => {
     return landlordSignables.find((x) => x.key === selectedLandlordDocKey) || null;
   }, [landlordSignables, selectedLandlordDocKey]);
 
-  async function sign(role: "LOCATAIRE" | "BAILLEUR") {
-    // ✅ LOCATAIRE signe forcément le contrat (root)
-    if (role === "LOCATAIRE" && !contractDoc?.id) {
-      setError("Aucun contrat. Génère d’abord le contrat.");
-      return;
-    }
+  const selectedTenantDoc = useMemo(() => {
+    return landlordSignables.find((x) => x.key === selectedTenantDocKey) || null;
+  }, [landlordSignables, selectedTenantDocKey]);
 
-    // ✅ BAILLEUR signe le document sélectionné (contrat ou acte caution)
-    const landlordDocId = role === "BAILLEUR" ? selectedLandlordDoc?.documentId : null;
-    if (role === "BAILLEUR" && !landlordDocId) {
-      setError("Aucun document sélectionné à signer.");
+  async function sign(role: "LOCATAIRE" | "BAILLEUR") {
+    const documentIdToSign =
+      role === "LOCATAIRE" ? selectedTenantDoc?.documentId : selectedLandlordDoc?.documentId;
+
+    if (!documentIdToSign) {
+      setError(
+        role === "LOCATAIRE"
+          ? "Aucun document sélectionné à signer (locataire)."
+          : "Aucun document sélectionné à signer (bailleur)."
+      );
       return;
     }
 
@@ -772,8 +864,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     try {
       const payload: any = { signerName, signerRole: role, signatureDataUrl };
       if (role === "LOCATAIRE" && signerTenantId) payload.signerTenantId = signerTenantId;
-
-      const documentIdToSign = role === "BAILLEUR" ? landlordDocId! : contractDoc!.id;
 
       const r = await fetch(`${API}/documents/${documentIdToSign}/sign`, {
         method: "POST",
@@ -1210,7 +1300,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
             const primaryLabel =
               g.signatureStatus === "SIGNED"
-                ? "Télécharger signé"
+                ? "📤 Partager au garant"
                 : g.lastLink
                   ? "Renvoyer lien signature"
                   : "Envoyer lien signature";
@@ -1241,14 +1331,24 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
                     label: primaryLabel,
                     onClick: () => {
                       if (g.signatureStatus === "SIGNED") {
-                        if (!g.signedFinalDocumentId) return alert("PDF signé introuvable.");
-                        return downloadDoc(g.signedFinalDocumentId, "acte_caution_SIGNE.pdf");
+                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
+                          alert(e.message || String(e))
+                        );
                       }
-                      return sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e: any) =>
+                      return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
                         alert(e.message || String(e))
                       );
                     },
                     disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !g.actDocumentId,
+                  },
+                  {
+                    label: "Générer acte",
+                    kind: "secondary",
+                    disabled: Boolean(g.actDocumentId),
+                    onClick: async () => {
+                      await generateGuarantorActFor(g.guaranteeId);
+                      await fetchSignatureStatus(leaseId);
+                    },
                   },
                   {
                     label: "Télécharger PDF",
@@ -1272,7 +1372,70 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           })}
         </div>
       )}
-    </div>
+      </div>
+
+      {sigStatus && (
+        <div style={card(border)}>
+          <h2 style={{ marginTop: 0 }}>EDL & Inventaires</h2>
+
+          {[
+            sigStatus.edl?.entry,
+            sigStatus.edl?.exit,
+            sigStatus.inventory?.entry,
+            sigStatus.inventory?.exit,
+          ]
+            .filter(Boolean)
+            .map((d: any) => (
+              <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
+                <div style={{ fontWeight: 800 }}>{d.label}</div>
+
+                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                  Statut:{" "}
+                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                    {d.status}
+                  </span>
+                </div>
+
+                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                  Bailleur: {d.need?.landlord?.signed ? "✅ signé" : "❌ manquant"} •
+                  Locataires:{" "}
+                  {(d.need?.tenants || []).filter((t: any) => !t.signed).length === 0 ? "✅ tous signés" : "❌ manquants"}
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+
+                  <button
+                    style={btnAction(border)}
+                    disabled={Boolean(d.documentId)}
+                    onClick={() => {
+                      if (d.key === "edl:entry") return generateEdl("entry");
+                      if (d.key === "edl:exit") return generateEdl("exit");
+                      if (d.key === "inv:entry") return generateInventory("entry");
+                      if (d.key === "inv:exit") return generateInventory("exit");
+                    }}
+                  >
+                    Générer PDF
+                  </button>
+                  <button
+                    style={btnSecondary(border)}
+                    disabled={!d.documentId}
+                    onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
+                  >
+                    Télécharger PDF
+                  </button>
+
+                  <button
+                    style={btnSecondary(border)}
+                    disabled={!d.signedFinalDocumentId}
+                    onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
+                  >
+                    Télécharger signé
+                  </button>
+                </div>
+              </div>
+            ))}
+        </div>
+      )}
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "start" }}>
         <div style={card(border)}>
@@ -1302,6 +1465,31 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
               </div>
             </div>
           )}
+
+          <div style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: muted, fontWeight: 700, marginBottom: 6 }}>
+              Document à signer (locataire)
+            </div>
+
+            <select
+              value={selectedTenantDocKey}
+              onChange={(e) => setSelectedTenantDocKey(e.target.value)}
+              disabled={!landlordSignables.length}
+              style={{ ...inputStyle(border), cursor: landlordSignables.length ? "pointer" : "not-allowed" }}
+            >
+              {landlordSignables.length === 0 ? <option value="">— Aucun document —</option> : null}
+
+              {landlordSignables.map((d) => (
+                <option key={d.key} value={d.key}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+
+            <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>
+              Le pad ci-dessous signera le document sélectionné.
+            </div>
+          </div>
 
           <div style={labelStyle(muted)}>
             <div>Nom signataire</div>

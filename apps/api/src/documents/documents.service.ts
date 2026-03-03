@@ -18,7 +18,11 @@ type DocType =
   | 'PACK'
   | 'PACK_FINAL'
   | 'GUARANTOR_ACT'
-  | 'AVENANT_IRL';
+  | 'AVENANT_IRL'
+  | 'EDL_ENTREE'
+  | 'EDL_SORTIE'
+  | 'INVENTAIRE_ENTREE'
+  | 'INVENTAIRE_SORTIE';
 
 type TemplateRow = {
   id: string;
@@ -2080,7 +2084,15 @@ h1{font-size:16pt;margin:0 0 10px 0}
   // ---------------------------------------------
   // EDL PDF (existing)
   // ---------------------------------------------
-  async generateEdlPdf(leaseId: string) {
+  async generateEdlPdf(
+    leaseId: string,
+    opts?: { phase: 'entry' | 'exit'; force?: boolean },
+  ) {
+    const phaseKey = opts?.phase;
+    const force = Boolean(opts?.force);
+    if (phaseKey !== 'entry' && phaseKey !== 'exit') {
+      throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
+    }
     const leaseQ = await this.pool.query(
       `SELECT l.*, u.id as unit_id, u.code as unit_code, u.label as unit_label, u.address_line1, u.city, u.postal_code,
               t.full_name as tenant_name
@@ -2093,9 +2105,21 @@ h1{font-size:16pt;margin:0 0 10px 0}
     if (!leaseQ.rowCount) throw new BadRequestException('Unknown leaseId');
     const lease = leaseQ.rows[0];
 
-    const sQ = await this.pool.query(`SELECT * FROM edl_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`, [
-      leaseId,
-    ]);
+
+    const phaseStatuses =
+      phaseKey === 'entry'
+        ? ['entry', 'draft', 'entry_signed']
+        : ['exit', 'exit_signed'];
+
+    const sQ = await this.pool.query(
+      `SELECT *
+      FROM edl_sessions
+      WHERE lease_id=$1
+        AND status = ANY($2::text[])
+      ORDER BY created_at DESC
+      LIMIT 1`,
+      [leaseId, phaseStatuses],
+    );
     if (!sQ.rowCount) throw new BadRequestException('No EDL session for this lease');
     const edlSession = sQ.rows[0];
 
@@ -2225,15 +2249,41 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 ${annexHtml}
 </body></html>`;
 
-    const pdfName = `EDL_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
-    // ✅ IDEMPOTENCE: if same EDL already exists (same filename), return it.
+
+    const phaseLabel = phaseKey === 'entry' ? 'ENTREE' : 'SORTIE';
+    const docType: DocType = phaseKey === 'entry' ? 'EDL_ENTREE' : 'EDL_SORTIE';
+
+    const pdfName = `EDL_${phaseLabel}_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
+    
+    // ✅ IDEMPOTENCE + FORCE REBUILD (même logique que contrat)
     const existing = await this.findExistingDocByFilename({
       leaseId,
-      type: 'EDL',
+      type: docType,
       filename: pdfName,
       parentNullOnly: true,
     });
-    if (existing) return { created: false, document: existing };
+
+    if (existing) {
+      if (!force) return { created: false, document: existing };
+
+      // force === true
+      if (existing.signed_final_document_id) {
+        throw new BadRequestException('Cannot force rebuild: EDL already finalized (SIGNED_FINAL exists)');
+      }
+
+      const sigQ = await this.pool.query(
+        `SELECT 1 FROM signatures WHERE document_id=$1 LIMIT 1`,
+        [existing.id],
+      );
+      if (sigQ.rowCount) {
+        throw new BadRequestException('Cannot force rebuild: signatures already exist on this EDL');
+      }
+
+      // purge DB + file
+      const abs = this.absFromStoragePath(existing.storage_path);
+      await this.deleteDocumentRow(existing.id);
+      await this.safeUnlinkAbs(abs);
+    }
 
     const outDir = path.join(this.storageBase, 'units', lease.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
@@ -2246,8 +2296,15 @@ ${annexHtml}
 
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
-       VALUES ($1,$2,'EDL',$3,$4,$5) RETURNING *`,
-      [lease.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
+      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [
+        lease.unit_id,                                 // $1
+        leaseId,                                       // $2
+        docType,                                       // $3 ✅
+        pdfName,                                       // $4
+        outPdfPath.replace(this.storageBase, ''),      // $5
+        sha,                                           // $6
+      ],
     );
 
     return { created: true, document: ins.rows[0] };
@@ -2256,7 +2313,15 @@ ${annexHtml}
   // ---------------------------------------------
   // INVENTAIRE PDF (existing)
   // ---------------------------------------------
-  async generateInventoryPdf(leaseId: string) {
+  async generateInventoryPdf(
+    leaseId: string,
+    opts?: { phase: 'entry' | 'exit'; force?: boolean },
+  ) {
+    const phase = opts?.phase;
+    const force = Boolean(opts?.force);
+    if (phase !== 'entry' && phase !== 'exit') {
+      throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
+    }
     const leaseQ = await this.pool.query(
       `SELECT l.*, u.id as unit_id, u.code as unit_code, u.label as unit_label, u.address_line1, u.city, u.postal_code,
               t.full_name as tenant_name
@@ -2269,9 +2334,29 @@ ${annexHtml}
     if (!leaseQ.rowCount) throw new BadRequestException('Unknown leaseId');
     const lease = leaseQ.rows[0];
 
+    // --------------------
+    // PHASE (repère)
+    // --------------------
+    const phaseKey = phase;
+    const phaseLabel = phaseKey === 'entry' ? 'ENTREE' : 'SORTIE';
+    const docType: DocType =
+      phaseKey === 'entry' ? 'INVENTAIRE_ENTREE' : 'INVENTAIRE_SORTIE';
+
+    const pdfName = `INVENTAIRE_${phaseLabel}_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
+
+    const phaseStatuses =
+      phaseKey === 'entry'
+        ? ['entry', 'draft', 'entry_signed']
+        : ['exit', 'exit_signed'];
+
     const sQ = await this.pool.query(
-      `SELECT * FROM inventory_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`,
-      [leaseId],
+      `SELECT *
+      FROM inventory_sessions
+      WHERE lease_id=$1
+        AND status = ANY($2::text[])
+      ORDER BY created_at DESC
+      LIMIT 1`,
+      [leaseId, phaseStatuses],
     );
     if (!sQ.rowCount) throw new BadRequestException('No inventory session for this lease');
     const invSession = sQ.rows[0];
@@ -2331,7 +2416,7 @@ th{background:#f5f5f5}
 .notes{width:24%}
 </style></head>
 <body>
-<h1>Inventaire (Entrée + Sortie) — ${this.escapeHtml(lease.unit_code)}</h1>
+<h1>Inventaire ${phaseLabel === 'ENTREE' ? "d’entrée" : "de sortie"} — ${this.escapeHtml(lease.unit_code)}</h1>
 <div class="small">Bail: ${leaseId} • Session Inventaire: ${invSession.id}</div>
 
 <div class="box">
@@ -2358,16 +2443,36 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
 <p class="small">Document généré par RentalOS.</p>
 </body></html>`;
-
-    const pdfName = `INVENTAIRE_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
-    // ✅ IDEMPOTENCE: if same inventory already exists (same filename), return it.
+    
+    // ✅ IDEMPOTENCE + FORCE REBUILD (même logique que contrat)
     const existing = await this.findExistingDocByFilename({
       leaseId,
-      type: 'INVENTAIRE',
+      type: docType,
       filename: pdfName,
       parentNullOnly: true,
     });
-    if (existing) return { created: false, document: existing };
+
+    if (existing) {
+      if (!force) return { created: false, document: existing };
+
+      // force === true
+      if (existing.signed_final_document_id) {
+        throw new BadRequestException('Cannot force rebuild: inventory already finalized (SIGNED_FINAL exists)');
+      }
+
+      const sigQ = await this.pool.query(
+        `SELECT 1 FROM signatures WHERE document_id=$1 LIMIT 1`,
+        [existing.id],
+      );
+      if (sigQ.rowCount) {
+        throw new BadRequestException('Cannot force rebuild: signatures already exist on this inventory');
+      }
+
+      // purge DB + file
+      const abs = this.absFromStoragePath(existing.storage_path);
+      await this.deleteDocumentRow(existing.id);
+      await this.safeUnlinkAbs(abs);
+    }
     const outDir = path.join(this.storageBase, 'units', lease.unit_id, 'leases', leaseId, 'documents');
     this.ensureDir(outDir);
     const outPdfPath = path.join(outDir, pdfName);
@@ -2379,8 +2484,15 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     const ins = await this.pool.query(
       `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
-       VALUES ($1,$2,'INVENTAIRE',$3,$4,$5) RETURNING *`,
-      [lease.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
+      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [
+        lease.unit_id,                                 // $1
+        leaseId,                                       // $2
+        docType,                                       // $3 ✅
+        pdfName,                                       // $4
+        outPdfPath.replace(this.storageBase, ''),      // $5
+        sha,                                           // $6
+      ],
     );
 
     return { created: true, document: ins.rows[0] };
@@ -2391,7 +2503,7 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   const row = await this.fetchLeaseBundle(leaseId);
   const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
-  const docs = await this.listDocsForLease(leaseId);
+  const docs: any [] = await this.listDocsForLease(leaseId);
 
   // 1) CONTRAT signé final (obligatoire)
   const contractSignedFinal =
@@ -2430,8 +2542,15 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
   // 3) Annexes originales
   const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
-  const edl = docs.find((d: any) => d.type === 'EDL' && !d.parent_document_id) || null;
-  const inventaire = docs.find((d: any) => d.type === 'INVENTAIRE' && !d.parent_document_id) || null;
+  const edl =
+    docs.find((d) => d.type === 'EDL_ENTREE' && !d.parent_document_id) ||
+    docs.find((d) => d.type === 'EDL_SORTIE' && !d.parent_document_id) ||
+    null;
+
+  const inventaire =
+    docs.find((d) => d.type === 'INVENTAIRE_ENTREE' && !d.parent_document_id) ||
+    docs.find((d) => d.type === 'INVENTAIRE_SORTIE' && !d.parent_document_id) ||
+    null;
 
   const annexesOrdered: any[] = [];
   // 1️⃣ Contrat signé final (toujours premier)
@@ -2641,8 +2760,8 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       notice = await this.generateNoticePdf(leaseId);
     }
 
-    const edlRes = await this.generateEdlPdf(leaseId);
-    const invRes = await this.generateInventoryPdf(leaseId);
+    const edlRes = await this.generateEdlPdf(leaseId, { phase: 'entry' });
+    const invRes = await this.generateInventoryPdf(leaseId, { phase: 'entry' });
 
     // ----- Variables du template 2026-03 -----
     const signature_date_fr = this.formatDateFr(new Date());
