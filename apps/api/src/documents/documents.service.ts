@@ -979,10 +979,81 @@ async listGuarantorActCandidates(leaseId: string) {
     candidates,
   };
 }
-  // -------------------------------------
-  // Documents list & downloads
-  // -------------------------------------
-  async listByLease(leaseId: string) {
+
+// ===============================
+// ACKNOWLEDGE (prise de connaissance)
+// ===============================
+async acknowledgeDocument(args: {
+  documentId: string;
+  tenantId: string;
+  ip: string | null;
+  userAgent: string | null;
+}) {
+  const documentId = String(args.documentId || '').trim();
+  const tenantId = String(args.tenantId || '').trim();
+
+  if (!documentId) throw new BadRequestException('Missing documentId');
+  if (!tenantId) throw new BadRequestException('Missing tenantId');
+
+  // 1) Charge le doc pour récupérer lease_id
+  const docQ = await this.pool.query(
+    `SELECT id, lease_id, parent_document_id, filename, signed_final_document_id, type
+     FROM documents
+     WHERE id=$1
+     LIMIT 1`,
+    [documentId],
+  );
+  if (!docQ.rowCount) throw new BadRequestException('Document not found');
+  const doc = docQ.rows[0];
+  // ✅ Correctif 2: empêcher l'ACK sur autre chose que le PDF SIGNED_FINAL
+  const filename = String(doc.filename || '');
+  const type = String(doc.type || '');
+  const isSignedFinal =
+    Boolean(doc.parent_document_id) || filename.includes('SIGNED_FINAL');
+
+  if (!isSignedFinal) {
+    throw new BadRequestException('ACK requires a SIGNED_FINAL document');
+  }
+
+  const leaseId = String(doc.lease_id || '').trim();
+  if (!leaseId) throw new BadRequestException('Document has no lease_id');
+
+  // 2) Vérifie que le tenant appartient bien au bail (sécurité/consistance)
+  const ltQ = await this.pool.query(
+    `SELECT 1
+     FROM lease_tenants
+     WHERE lease_id=$1 AND tenant_id=$2
+     LIMIT 1`,
+    [leaseId, tenantId],
+  );
+  if (!ltQ.rowCount) throw new BadRequestException('tenantId not in this lease');
+
+  // 3) Upsert ACK (idempotent)
+  const insQ = await this.pool.query(
+    `
+    INSERT INTO document_acknowledgements (document_id, lease_id, tenant_id, ip, user_agent)
+    VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (document_id, tenant_id)
+    DO UPDATE SET acknowledged_at = EXCLUDED.acknowledged_at,
+                  ip = EXCLUDED.ip,
+                  user_agent = EXCLUDED.user_agent
+    RETURNING document_id, tenant_id, acknowledged_at
+    `,
+    [documentId, leaseId, tenantId, args.ip, args.userAgent],
+  );
+
+  return {
+    ok: true,
+    documentId,
+    tenantId,
+    acknowledgedAt: insQ.rows?.[0]?.acknowledged_at || new Date().toISOString(),
+  };
+}
+
+// -------------------------------------
+// Documents list & downloads
+// -------------------------------------
+async listByLease(leaseId: string) {
     const r = await this.pool.query(`SELECT * FROM documents WHERE lease_id=$1 ORDER BY created_at DESC`, [leaseId]);
     return r.rows;
   }
@@ -1362,6 +1433,7 @@ async listGuarantorActCandidates(leaseId: string) {
       [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
     );
 
+
     return { created: true, document: ins.rows[0] };
   }
 
@@ -1738,7 +1810,7 @@ async generateGuarantorActPdf(
     throw new BadRequestException(`Unsupported lease kind for guarantor act: ${leaseKind}`);
   }
 
-const gKey = String(g?.lease_tenant_id || g?.id || 'legacy').slice(0, 8);
+const gKey = String(g?.id || g?.lease_tenant_id || 'legacy').slice(0, 8);
 
 // ✅ IDEMPOTENCE: filename stable par garant
 const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}_${gKey}.pdf`;
@@ -1749,7 +1821,26 @@ const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.s
     filename: pdfName,
     parentNullOnly: true,
   });
-  if (existing) return { created: false, document: existing };
+
+  // ✅ IMPORTANT: on "attache" toujours l'acte au guarantee (même en idempotence)
+  if (existing) {
+    const guaranteeId = String(g?.id || '').trim(); // g = lease_guarantees row
+    if (guaranteeId) {
+      await this.pool.query(
+        `
+        UPDATE lease_guarantees
+        SET guarantor_act_document_id = $1
+        WHERE id = $2
+          AND lease_id = $3
+          AND type = 'CAUTION'
+          AND selected = true
+        `,
+        [existing.id, guaranteeId, leaseIdTrim],
+      );
+    }
+
+    return { created: false, document: existing };
+  }
 
   // ✅ On réutilise la version/template que tu utilises déjà
   const templateVersion = '2026-04';
@@ -1849,7 +1940,31 @@ const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.s
     [row.unit_id, leaseId, pdfName, outPdfPath.replace(this.storageBase, ''), sha],
   );
 
-  return { created: true, document: ins.rows[0] };
+  const createdDoc = ins.rows[0];
+
+  // ✅ IMPORTANT: lier l'acte généré à la garantie sélectionnée
+  // (sinon signature-status ne verra jamais actDocumentId)
+  try {
+    const guaranteeId = String(g?.id || '').trim(); // ou g?.guarantee_id selon ta query
+    if (guaranteeId) {
+      await this.pool.query(
+        `
+        UPDATE lease_guarantees
+        SET guarantor_act_document_id = $1
+        WHERE id = $2
+          AND lease_id = $3
+          AND type = 'CAUTION'
+        `,
+        [createdDoc.id, guaranteeId, leaseIdTrim],
+      );
+    }
+  } catch (e) {
+    console.warn('[GUARANTOR_ACT] failed to sync lease_guarantees.guarantor_act_document_id', e);
+  }
+
+
+
+  return { created: true, document: createdDoc };
 }
 
   // ---------------------------------------------
