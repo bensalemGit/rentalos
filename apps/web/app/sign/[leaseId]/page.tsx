@@ -45,6 +45,14 @@ type SignatureStatusPayload = {
     signatureStatus: GuaranteeSigStatus;
     lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
     guaranteeStatus: string | null;
+        ack?: {
+      required: boolean;
+      tenants: Array<{
+        tenantId: string;
+        acknowledged: boolean;
+        acknowledgedAt: string | null;
+      }>;
+    };
   }>;
 };
 
@@ -59,6 +67,7 @@ type Doc = {
   filename: string;
   created_at: string;
   parent_document_id?: string | null;
+  signed_final_document_id?: string | null; // ✅ add
 };
 
 type LeaseTenant = {
@@ -80,8 +89,9 @@ type GuarantorSignable = {
   key: string;               // guaranteeId
   label: string;             // "Jean Dupont (xxxxxx)"
   guaranteeId: string;
-  documentId: string;        // actDocumentId
+  documentId: string | null; // actDocumentId (peut être null)
   defaultName: string;       // guarantorFullName
+  hasAct: boolean;           // actDocumentId != null
 };
 
 export default function SignPage({ params }: { params: { leaseId: string } }) {
@@ -135,6 +145,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const drawingLandlord = useRef(false);
 
   const [sigStatus, setSigStatus] = useState<SignatureStatusPayload | null>(null);
+  // ✅ Local override: permet d'utiliser immédiatement l'id d'acte renvoyé par /documents/guarantor-act
+  const [guaranteeActOverride, setGuaranteeActOverride] = useState<Record<string, string>>({});
   const [loadingSigStatus, setLoadingSigStatus] = useState(false);
   const [sigStatusError, setSigStatusError] = useState<string | null>(null);
 
@@ -377,15 +389,42 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       });
 
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) {
         setStatus("");
         setError(j?.message || JSON.stringify(j));
         return;
       }
 
-      setStatus("Acte généré ✅");
+      const newDocId = String(j?.document?.id || "").trim();
+      if (!newDocId) {
+        setStatus("");
+        setError("Acte généré mais document.id est manquant dans la réponse API.");
+        return;
+      }
+
+      // ✅ override local: l'UI doit débloquer la signature même si /signature-status est en retard
+      setGuaranteeActOverride((prev) => ({ ...prev, [guaranteeId]: newDocId }));
+
+      // ✅ optimistic update: on met à jour sigStatus tout de suite
+      setSigStatus((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          guarantees: prev.guarantees.map((g) =>
+            g.guaranteeId === guaranteeId ? { ...g, actDocumentId: newDocId } : g
+          ),
+        };
+      });
+
+      // ✅ refresh docs (pour activer Télécharger acte etc.)
       await loadDocs();
-      await fetchSignatureStatus(leaseId);
+
+      // ⚠️ IMPORTANT: signature-status peut être "stale" => ne doit PAS casser l'optimistic update
+      // Donc on le fait en best-effort, sans écraser si l'API renvoie encore actDocumentId=null
+      fetchSignatureStatus(leaseId).catch(() => {});
+
+      setStatus("Acte généré ✅");
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -508,6 +547,26 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
       throw new Error(`send-by-guarantee failed (${res.status}): ${txt}`);
     }
 
+    await fetchSignatureStatus(leaseId);
+  }
+
+  async function acknowledgeDoc(documentId: string, tenantId: string) {
+    const res = await fetch(`${API}/documents/${documentId}/acknowledge`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ tenantId }),
+    });
+
+    if (!res.ok) {
+      const txt = await res.text().catch(() => "");
+      throw new Error(`acknowledge failed (${res.status}): ${txt}`);
+    }
+
+    // refresh status
     await fetchSignatureStatus(leaseId);
   }
 
@@ -634,35 +693,42 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
     const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
     const acts = guarantees
-      .filter((g) => Boolean(g.actDocumentId))
+      .filter((g) => Boolean(guaranteeActOverride[g.guaranteeId] || g.actDocumentId))
       .sort((a, b) => String(a.tenantFullName || "").localeCompare(String(b.tenantFullName || "")))
       .map((g) => ({
         key: `guarantee:${g.guaranteeId}`,
         label: `Acte caution — ${String(g.guarantorFullName || g.tenantFullName || "Garant").trim()} (${String(
           g.guaranteeId,
         ).slice(0, 6)})`,
-        documentId: g.actDocumentId as string,
+        documentId: (guaranteeActOverride[g.guaranteeId] || g.actDocumentId) as string,
       }));
 
     items.push(...acts);
     return items;
-  }, [sigStatus]);
+  }, [sigStatus, guaranteeActOverride]);
 
   const guarantorSignables: GuarantorSignable[] = useMemo(() => {
     const gs = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
+
     return gs
-      .filter((g) => Boolean(g.actDocumentId)) // il faut l'acte généré
+      .slice()
       .sort((a, b) =>
         String(a.guarantorFullName || "").localeCompare(String(b.guarantorFullName || ""))
       )
-      .map((g) => ({
-        key: g.guaranteeId,
-        label: `${String(g.guarantorFullName || "Garant").trim()} (${String(g.guaranteeId).slice(0, 6)})`,
-        guaranteeId: g.guaranteeId,
-        documentId: g.actDocumentId as string,
-        defaultName: String(g.guarantorFullName || "Garant").trim(),
-      }));
-  }, [sigStatus]);
+      .map((g) => {
+        const overrideDocId = guaranteeActOverride[g.guaranteeId];
+        const effectiveDocId = overrideDocId || g.actDocumentId;
+
+        return {
+          key: g.guaranteeId,
+          label: `${String(g.guarantorFullName || "Garant").trim()} (${String(g.guaranteeId).slice(0, 6)})`,
+          guaranteeId: g.guaranteeId,
+          documentId: effectiveDocId, // peut être null
+          defaultName: String(g.guarantorFullName || "Garant").trim(),
+          hasAct: Boolean(effectiveDocId),
+        };
+      });
+  }, [sigStatus, guaranteeActOverride]);
 
   const [selectedLandlordDocKey, setSelectedLandlordDocKey] = useState<string>("contract");
 
@@ -792,8 +858,9 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
 
   async function signGuarantor() {
-    if (!selectedGuarantor?.documentId) {
-      setError("Aucun acte de caution sélectionné (ou acte non généré).");
+    const docId = selectedGuarantor?.documentId;
+    if (!docId) {
+      setError("Acte non généré : génère l’acte pour permettre la signature sur place.");
       return;
     }
 
@@ -809,12 +876,12 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
     try {
       const payload = {
-        signerName: guarantorName || selectedGuarantor.defaultName,
+        signerName: guarantorName || selectedGuarantor?.defaultName || "Garant",
         signerRole: "GARANT",
         signatureDataUrl,
       };
 
-      const r = await fetch(`${API}/documents/${selectedGuarantor.documentId}/sign`, {
+      const r = await fetch(`${API}/documents/${docId}/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -827,6 +894,22 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         setError(j?.message || JSON.stringify(j));
         return;
       }
+
+      // ✅ optimistic UI : le garant a signé, on passe la garantie en IN_PROGRESS
+      setSigStatus((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          guarantees: prev.guarantees.map((g) =>
+            g.guaranteeId === selectedGuarantor.guaranteeId
+              ? {
+                  ...g,
+                  signatureStatus: "IN_PROGRESS",
+                }
+              : g
+          ),
+        };
+      });
 
       clearCanvas(guarantorCanvasRef.current);
       guarantorDirty.current = false;
@@ -891,7 +974,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           <div style={{ color: muted, marginTop: 6, fontSize: 13 }}>
             Bail {leaseId.slice(0, 8)}… • Contrat: {contractDoc?.id ? "OK" : "—"} • Notice:{" "}
             {noticeDoc?.id ? "OK" : isRP ? "—" : "n/a"} • Pack: {packDoc?.id ? "OK" : "—"} • PACK_FINAL_V2: {packFinalV2Doc?.id ? "OK" : "—"} • Contrat SIGNED_FINAL: {hasFinal ? "OK" : "—"}
-            {hasFinal ? "OK" : "—"}
           </div>
         </div>
 
@@ -1153,7 +1235,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         )}
       </div>
 
-      <div style={card(border)}>
+      <div id="guarantees-block" style={card(border)}>
         <h2 style={{ marginTop: 0 }}>Garanties (caution)</h2>
 
         {!sigStatus && loadingSigStatus && <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>}
@@ -1165,110 +1247,211 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
         {sigStatus && sigStatus.guarantees.length > 0 && (
           <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            {sigStatus.guarantees.map((g) => (
-              <div key={g.guaranteeId} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                  <div style={{ minWidth: 240 }}>
-                    <div style={{ fontWeight: 800 }}>
-                      {g.guarantorFullName || "Garant"} → {g.tenantFullName}
-                    </div>
+            {sigStatus.guarantees.map((g) => {
+              const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;
 
-                    <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                      Statut: <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>{g.signatureStatus}</span>
-                      {g.lastLink?.createdAt ? (
-                        <span style={{ marginLeft: 8 }}>
-                          (lien: {new Date(g.lastLink.createdAt).toLocaleString()})
-                        </span>
-                      ) : null}
-                    </div>
+                // meilleur fallback: le root doc contient signed_final_document_id (mais ton type Doc ne l'a pas)
+                const rootDoc = actId ? docs.find((d) => d.id === actId) : null;
+                const signedIdFromRoot = rootDoc?.signed_final_document_id || null;
+                const signedIdFromChild =
+                  actId
+                    ? docs.find(
+                        (d) =>
+                          d.parent_document_id === actId &&
+                          String(d.filename || "").includes("SIGNED_FINAL")
+                      )?.id || null
+                    : null;
 
-                    {(g.guarantorEmail || g.guarantorPhone) && (
+                // id final utilisé
+                const signedId = g.signedFinalDocumentId || signedIdFromRoot || signedIdFromChild;
+                const ackTenantId = g.tenantId;
+                const ackRequired = Boolean(g.ack?.required);
+                const ackInfo = ackRequired
+                  ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenantId) || null
+                  : null;
+
+                const ackOk = Boolean(ackInfo?.acknowledged);
+                const ackAt = ackInfo?.acknowledgedAt ? new Date(ackInfo.acknowledgedAt).toLocaleString() : null;
+
+              return (
+                <div
+                  key={g.guaranteeId}
+                  style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      gap: 12,
+                      alignItems: "flex-start",
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    <div style={{ minWidth: 240 }}>
+                      <div style={{ fontWeight: 800 }}>
+                        {g.guarantorFullName || "Garant"} → {g.tenantFullName}
+                      </div>
+
                       <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                        {g.guarantorEmail ? <span>{g.guarantorEmail}</span> : null}
-                        {g.guarantorEmail && g.guarantorPhone ? <span> • </span> : null}
-                        {g.guarantorPhone ? <span>{g.guarantorPhone}</span> : null}
+                        Statut:{" "}
+                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                          {g.signatureStatus}
+                        </span>
+                        {g.lastLink?.createdAt ? (
+                          <span style={{ marginLeft: 8 }}>
+                            (lien: {new Date(g.lastLink.createdAt).toLocaleString()})
+                          </span>
+                        ) : null}
                       </div>
-                    )}
+
+                      {(g.guarantorEmail || g.guarantorPhone) && (
+                        <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                          {g.guarantorEmail ? <span>{g.guarantorEmail}</span> : null}
+                          {g.guarantorEmail && g.guarantorPhone ? <span> • </span> : null}
+                          {g.guarantorPhone ? <span>{g.guarantorPhone}</span> : null}
+                        </div>
+                      )}
+                    </div>
+
+                    {(() => {
+                      const linkExists = Boolean(g.lastLink);
+                      const linkActive = Boolean(g.lastLink && !g.lastLink.consumedAt);
+
+                      const sigLabel =
+                        g.signatureStatus === "SIGNED"
+                          ? "Acte: signé"
+                          : g.signatureStatus === "IN_PROGRESS"
+                          ? "Acte: en cours"
+                          : g.signatureStatus === "SENT"
+                          ? "Acte: lien envoyé"
+                          : "Acte: non envoyé";
+
+                      const linkLabel = !linkExists ? "Lien: non envoyé" : linkActive ? "Lien: actif" : "Lien: consommé";
+
+                      const ackLabel = !ackRequired ? "Locataire: —" : ackOk ? "Locataire: pris connaissance ✅" : "Locataire: à lire";
+
+                      // 🔵 bouton principal :
+                      // - si SIGNED => ouvrir/télécharger le PDF signé
+                      // - sinon => envoyer / renvoyer lien de signature
+                      const primaryLabel =
+                        g.signatureStatus === "SIGNED"
+                          ? "Ouvrir le PDF signé"
+                          : linkExists
+                          ? "Renvoyer lien de signature"
+                          : "Envoyer lien de signature";
+
+                      const primaryDisabled =
+                        g.signatureStatus === "SIGNED"
+                          ? !signedId
+                          : !actId; // pas d'acte => pas de lien de signature
+
+                      const primaryHint =
+                        g.signatureStatus === "SIGNED"
+                          ? !signedId
+                            ? "PDF signé introuvable."
+                            : "Ouvre le PDF signé (à partager ensuite)."
+                          : !actId
+                          ? "Génère l’acte avant d’envoyer un lien."
+                          : g.signatureStatus === "IN_PROGRESS"
+                          ? "Signature bailleur requise"
+                          : g.signatureStatus === "SENT"
+                          ? "En attente de signature garant"
+                          : null;
+
+                      const onPrimary = () => {
+                        if (g.signatureStatus === "SIGNED") {
+                          if (!signedId) return alert("PDF signé introuvable.");
+                          return downloadDoc(signedId, "acte_caution_SIGNE.pdf");
+                        }
+                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e) => alert(e.message));
+                      };
+
+                      // 1) Pas d’acte => UI minimaliste
+                      if (!actId) {
+                        return (
+                          <div style={{ display: "grid", gap: 10, justifyItems: "start" }}>
+                            {/* Badges (états) */}
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <span style={chip(border, "#111")}>{sigLabel}</span>
+                              <span style={chip(border, muted)}>{linkLabel}</span>
+                              <span style={chip(border, ackOk ? green : muted)}>{ackLabel}</span>
+                            </div>
+
+                            {/* Actions */}
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                              <button style={btnAction(border)} onClick={() => generateGuarantorActFor(g.guaranteeId)}>
+                                Générer acte
+                              </button>
+
+                              {primaryHint ? <span style={{ fontSize: 12, color: muted }}>{primaryHint}</span> : null}
+                            </div>
+                          </div>
+                        );
+                      }
+
+                      // 2) Acte présent => badges + actions complètes
+                      return (
+                        <div style={{ display: "grid", gap: 10, justifyItems: "start" }}>
+                          {/* Badges (états) */}
+                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                            <span style={chip(border, "#111")}>{sigLabel}</span>
+                            <span style={chip(border, linkActive ? "#0b2a6f" : muted)}>{linkLabel}</span>
+                            <span style={chip(border, ackOk ? green : muted)}>{ackLabel}</span>
+                            {ackRequired && ackAt ? <span style={chip(border, muted)}>Lu: {ackAt}</span> : null}
+                          </div>
+
+                          {/* Actions (ordre stable) */}
+                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                            {/* Action principale */}
+                            <button style={btnPrimarySmall(blue)} disabled={primaryDisabled} title={primaryHint || undefined} onClick={onPrimary}>
+                              {primaryLabel}
+                            </button>
+
+                            {/* Téléchargements */}
+                            <button style={btnAction(border)} onClick={() => downloadDoc(actId, "acte_caution.pdf")}>
+                              Télécharger acte
+                            </button>
+
+                            <button style={btnAction(border)} disabled={!signedId} onClick={() => signedId && downloadDoc(signedId, "acte_caution_SIGNE.pdf")}>
+                              Télécharger signé
+                            </button>
+
+                            {/* ACK (prise de connaissance) */}
+                            {ackRequired ? (
+                              <button
+                                style={btnAction(border)}
+                                disabled={!signedId || ackOk}
+                                onClick={() => signedId && acknowledgeDoc(signedId, ackTenantId).catch((e) => alert(e.message))}
+                                title={!signedId ? "Acte non signé final : l’ACK vise le PDF signé final." : undefined}
+                              >
+                                {ackOk ? "Pris connaissance ✅" : "Marquer comme lu"}
+                              </button>
+                            ) : null}
+
+                            {/* Avancé */}
+                            <button style={btnAction(border)} onClick={() => generateGuarantorActFor(g.guaranteeId)}>
+                              Regénérer acte
+                            </button>
+
+                            {/* Force seulement si lien existe (sinon inutile) */}
+                            {linkExists && g.signatureStatus !== "SIGNED" ? (
+                              <button style={btnAction(border)} onClick={() => sendGuarantorLinkByGuarantee(g.guaranteeId, true).catch((e) => alert(e.message))}>
+                                Renvoyer (force)
+                              </button>
+                            ) : null}
+
+                            {primaryHint ? <span style={{ fontSize: 12, color: muted }}>{primaryHint}</span> : null}
+                          </div>
+                        </div>
+                      );
+                    })()}
+                          </div>
+                        </div>
+                      );
+                  })}
                   </div>
-
-                  {(() => {
-                    const sendLabel =
-                      g.signatureStatus === "NOT_SENT"
-                        ? "Envoyer lien garant"
-                        : g.signatureStatus === "SENT"
-                        ? "Renvoyer lien"
-                        : g.signatureStatus === "IN_PROGRESS"
-                        ? "Renvoyer lien"
-                        : "Lien envoyé";
-
-                    const sendDisabled = g.signatureStatus === "SIGNED";
-
-                    const hint =
-                      g.signatureStatus === "IN_PROGRESS"
-                        ? "Signature bailleur requise"
-                        : g.signatureStatus === "SENT"
-                        ? "En attente de signature garant"
-                        : null;
-
-                    return (
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                        <button
-                          style={btnPrimarySmall(blue)}
-                          disabled={sendDisabled}
-                          title={hint || undefined}
-                          onClick={() =>
-                            sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e) => alert(e.message))
-                          }
-                        >
-                          {sendLabel}
-                        </button>
-
-                        <button
-                          style={btnAction(border)}
-                          onClick={() => generateGuarantorActFor(g.guaranteeId)}
-                        >
-                          {g.actDocumentId ? "Regénérer acte" : "Générer acte"}
-                        </button>
-                        
-                        
-                        <button
-                          style={btnAction(border)}
-                          disabled={!g.actDocumentId}
-                          onClick={() => g.actDocumentId && downloadDoc(g.actDocumentId, "acte_caution.pdf")}
-                        >
-                          Télécharger acte
-                        </button>
-
-                        <button
-                          style={btnAction(border)}
-                          disabled={!g.signedFinalDocumentId}
-                          onClick={() =>
-                            g.signedFinalDocumentId && downloadDoc(g.signedFinalDocumentId, "acte_caution_SIGNE.pdf")
-                          }
-                        >
-                          Télécharger signé
-                        </button>
-
-                        <button
-                          style={btnAction(border)}
-                          disabled={g.signatureStatus === "SIGNED"}
-                          onClick={() => sendGuarantorLinkByGuarantee(g.guaranteeId, true).catch((e) => alert(e.message))}
-                        >
-                          Renvoyer (force)
-                        </button>
-
-                        {hint ? <span style={{ fontSize: 12, color: muted }}>{hint}</span> : null}
-                      </div>
-                    );
-                  })()}
-
-
-                </div>
+                )}
               </div>
-            ))}
-          </div>
-        )}
-      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "start" }}>
         <div style={card(border)}>
@@ -1336,17 +1519,36 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
             <select
               value={selectedGuaranteeId}
               onChange={(e) => setSelectedGuaranteeId(e.target.value)}
-              disabled={!guarantorSignables.length}
+              disabled={guarantorSignables.length === 0}
               style={{ ...inputStyle(border), cursor: guarantorSignables.length ? "pointer" : "not-allowed" }}
             >
-              {guarantorSignables.length === 0 ? <option value="">— Aucun acte généré —</option> : null}
+              {guarantorSignables.length === 0 ? <option value="">— Aucun garant —</option> : null}
+
               {guarantorSignables.map((g) => (
                 <option key={g.key} value={g.guaranteeId}>
-                  {g.label}
+                  {g.label}{g.hasAct ? "" : " — (acte non généré)"}
                 </option>
               ))}
             </select>
           </label>
+
+          {selectedGuarantor && !selectedGuarantor.documentId && (
+            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+              <div style={{ fontSize: 12, color: muted }}>
+                Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
+              </div>
+
+              <button
+                type="button"
+                style={{ ...btnAction(border), minWidth: "auto" }}
+                onClick={() => {
+                  document.getElementById("guarantees-block")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              >
+                Aller aux garanties
+              </button>
+            </div>
+          )}
 
           <div style={labelStyle(muted)}>
             <div>Nom signataire</div>
@@ -1378,7 +1580,11 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
               Effacer
             </button>
 
-            <button onClick={signGuarantor} style={btnPrimarySmall(blue)} disabled={!selectedGuarantor}>
+            <button
+              onClick={signGuarantor}
+              style={btnPrimarySmall(blue)}
+              disabled={!selectedGuarantor || !selectedGuarantor.documentId}
+            >
               Signer
             </button>
           </div>

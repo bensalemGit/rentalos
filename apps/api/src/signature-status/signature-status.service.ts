@@ -49,6 +49,12 @@ type GuaranteeRow = {
   tenant_full_name: string;
 };
 
+type DocAckRow = {
+  document_id: string;
+  tenant_id: string;
+  acknowledged_at: string;
+};
+
 @Injectable()
 export class SignatureStatusService {
   private pool = new Pool({ connectionString: process.env.DATABASE_URL });
@@ -189,6 +195,46 @@ export class SignatureStatusService {
       }
     }
 
+
+    // 7) Read acknowledgements (tenant "prise de connaissance" of signed final act)
+    // We key by `${documentId}:${tenantId}`
+    const ackByDocTenant = new Map<string, DocAckRow>();
+
+    // We'll query only for guarantees that have a signed final doc id
+    const ackTargets = guarantees
+      .map((g: GuaranteeRow) => ({
+        signedFinalId: g.guarantee_signed_final_document_id
+          ? String(g.guarantee_signed_final_document_id)
+          : null,
+        tenantId: g.tenant_id ? String(g.tenant_id) : null,
+      }))
+      .filter((x) => Boolean(x.signedFinalId) && Boolean(x.tenantId)) as Array<{
+        signedFinalId: string;
+        tenantId: string;
+      }>;
+
+    if (ackTargets.length) {
+      const docIds = Array.from(new Set(ackTargets.map((x) => x.signedFinalId)));
+      // tenantIds is optional; we can filter anyway
+      const tenantIds = Array.from(new Set(ackTargets.map((x) => x.tenantId)));
+
+      const ackQ = await this.pool.query(
+        `
+        SELECT document_id, tenant_id, acknowledged_at
+        FROM document_acknowledgements
+        WHERE document_id = ANY($1::uuid[])
+          AND tenant_id = ANY($2::uuid[])
+        `,
+        [docIds, tenantIds],
+      );
+
+      const rows: DocAckRow[] = (ackQ.rows || []) as DocAckRow[];
+      for (const r of rows) {
+        const key = `${String(r.document_id)}:${String(r.tenant_id)}`;
+        ackByDocTenant.set(key, r);
+      }
+    }
+
     // ---- Assemble response -------------------------------------------------
 
     const tenantsOut = leaseTenants.map((lt: LeaseTenantRow) => {
@@ -271,6 +317,35 @@ export class SignatureStatusService {
       const signatureStatus: GuaranteeSigStatus =
         signedFinalDocumentId ? 'SIGNED' : hasAnySig ? 'IN_PROGRESS' : sent ? 'SENT' : 'NOT_SENT';
 
+        const ack = (() => {
+      // ACK n'a de sens que si le SIGNED_FINAL existe
+      const finalId = signedFinalDocumentId;
+      const tenantId = String(g.tenant_id || '').trim();
+
+      if (!finalId || !tenantId) {
+        return {
+          required: false,
+          tenants: tenantId
+            ? [{ tenantId, acknowledged: false, acknowledgedAt: null }]
+            : [],
+        };
+      }
+
+      const k = `${finalId}:${tenantId}`;
+      const row = ackByDocTenant.get(k) || null;
+
+      return {
+        required: true,
+        tenants: [
+          {
+            tenantId,
+            acknowledged: Boolean(row),
+            acknowledgedAt: row ? String(row.acknowledged_at) : null,
+          },
+        ],
+      };
+    })();
+
       return {
         guaranteeId,
         leaseTenantId: String(g.lease_tenant_id),
@@ -283,6 +358,7 @@ export class SignatureStatusService {
         signedFinalDocumentId,
         signatureStatus,
         need,
+        ack, // ✅ NEW
         lastLink: latestLink
           ? {
               createdAt: latestLink.created_at,

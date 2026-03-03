@@ -1,7 +1,7 @@
 import { BadRequestException, Body, Controller, Get, Param, Post, Query, Res, UseGuards, Req, DefaultValuePipe, ParseBoolPipe } from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
 import { DocumentsService } from './documents.service';
-import type { Response } from 'express';
+import type { Response, Request } from 'express';
 
 @Controller('documents')
 @UseGuards(JwtGuard)
@@ -125,4 +125,23 @@ export class DocumentsController {
   sign(@Param('id') id: string, @Body() body: any, @Req() req: any) {
     return this.docs.signDocumentMulti(id, body, req);
   }
+
+// ===============================
+// ACKNOWLEDGE (prise de connaissance)
+// POST /documents/:documentId/acknowledge
+// body: { tenantId: string }
+// ===============================
+@Post(':documentId/acknowledge')
+async acknowledge(
+  @Param('documentId') documentId: string,
+  @Body() body: { tenantId?: string },
+  @Req() req: Request,
+) {
+  return this.docs.acknowledgeDocument({
+    documentId,
+    tenantId: String(body?.tenantId || '').trim(),
+    ip: String(req.ip || '').trim() || null,
+    userAgent: String(req.headers['user-agent'] || '').trim() || null,
+  });
+}
 }
