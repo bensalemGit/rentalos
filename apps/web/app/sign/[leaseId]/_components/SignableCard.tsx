@@ -20,7 +20,7 @@ export function SignableCard(props: {
   const secondary = props.actions.filter((a) => a.kind === "secondary");
 
   return (
-    <section style={{ border: "1px solid #e5e7eb", borderRadius: 16, background: "#fff", padding: 14 }}>
+    <section style={{ border: "1px solid #e5e7eb", borderRadius: 16, background: "#fff", padding: 14, marginTop: 12 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
