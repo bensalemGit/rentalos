@@ -3,58 +3,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { extractLeaseBundle } from "../../_lib/extractLease";
-
-type TenantSigStatus = "NOT_SENT" | "SENT" | "SIGNED";
-type LandlordSigStatus = "NOT_SENT" | "SENT" | "SIGNED";
-type DocSigStatus = "NOT_GENERATED" | "DRAFT" | "IN_PROGRESS" | "SIGNED";
-type GuaranteeSigStatus = "NOT_SENT" | "SENT" | "IN_PROGRESS" | "SIGNED";
-
-type SignatureStatusPayload = {
-  leaseId: string;
-  generatedAt: string;
-
-  contract: {
-    documentId: string | null;
-    filename: string | null;
-    signedFinalDocumentId: string | null;
-    status: DocSigStatus;
-    landlord: {
-      signatureStatus: LandlordSigStatus;
-      lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
-    };
-    tenants: Array<{
-      leaseTenantId: string;
-      tenantId: string;
-      role: string;
-      fullName: string;
-      signatureStatus: TenantSigStatus;
-      lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
-    }>;
-  };
-
-  guarantees: Array<{
-    guaranteeId: string;
-    leaseTenantId: string;
-    tenantId: string;
-    tenantFullName: string;
-    guarantorFullName: string;
-    guarantorEmail: string | null;
-    guarantorPhone: string | null;
-    actDocumentId: string | null;
-    signedFinalDocumentId: string | null;
-    signatureStatus: GuaranteeSigStatus;
-    lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
-    guaranteeStatus: string | null;
-        ack?: {
-      required: boolean;
-      tenants: Array<{
-        tenantId: string;
-        acknowledged: boolean;
-        acknowledgedAt: string | null;
-      }>;
-    };
-  }>;
-};
+import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
+import { SignableCard } from "./_components/SignableCard";
 
 const API =
   typeof window !== "undefined"
@@ -1060,80 +1010,74 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
         )}
 
-        {sigStatus && (
-          <>
-            <div style={{ fontSize: 13, color: muted }}>
-              Statut document:{" "}
-              <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                {sigStatus.contract.status}
+        {sigStatus ? (
+          <SignableCard
+            title="Contrat de location"
+            statusChip={
+              <span
+                style={chip(
+                  "#e5e7eb",
+                  sigStatus.contract.status === "SIGNED" ? "#16a34a" : "#b45309"
+                )}
+              >
+                {sigStatus.contract.status === "SIGNED"
+                  ? "🟢 Signé"
+                  : sigStatus.contract.status === "IN_PROGRESS"
+                    ? "🟡 En cours"
+                    : sigStatus.contract.status === "DRAFT"
+                      ? "🟠 Brouillon"
+                      : "🔵 Non généré"}
               </span>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 800 }}>Locataires</div>
-              <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
-                {sigStatus.contract.tenants.map((t) => (
-                  <div
-                    key={t.tenantId}
-                    style={{ display: "flex", justifyContent: "space-between", gap: 12, fontSize: 13 }}
-                  >
-                    <div style={{ color: "#111" }}>
-                      {t.fullName}{" "}
-                      <span style={{ color: muted }}>
-                        ({t.role || "tenant"})
-                      </span>
-                    </div>
-                    <div style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                      {t.signatureStatus}
-                    </div>
-                  </div>
-                ))}
+            }
+            subtitle={
+              <div style={{ display: "grid", gap: 6 }}>
+                <div>
+                  <strong>Manquent :</strong>{" "}
+                  {[
+                    ...sigStatus.contract.tenants
+                      .filter((t) => t.signatureStatus !== "SIGNED")
+                      .map((t) => t.fullName),
+                    sigStatus.contract.landlord.signatureStatus !== "SIGNED" ? "Bailleur" : null,
+                  ]
+                    .filter(Boolean)
+                    .join(", ") || "Personne"}
+                </div>
               </div>
-            </div>
-
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontWeight: 800 }}>Bailleur</div>
-              <div style={{ marginTop: 6, fontSize: 13, color: muted }}>
-                Statut:{" "}
-                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", color: "#111" }}>
-                  {sigStatus.contract.landlord.signatureStatus}
-                </span>
-              </div>
-            </div>
-
-            <div style={{ marginTop: 14, display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                style={btnAction(border)}
-                disabled={!sigStatus.contract.documentId}
-                onClick={() =>
+            }
+            actions={[
+              {
+                label: "Rafraîchir",
+                kind: "secondary",
+                onClick: () => fetchSignatureStatus(leaseId),
+              },
+              {
+                label: "Télécharger PDF",
+                kind: "secondary",
+                disabled: !sigStatus.contract.documentId,
+                onClick: () =>
                   sigStatus.contract.documentId &&
-                  downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf")
-                }
-              >
-                Télécharger contrat
-              </button>
-
-              <button
-                style={btnAction(border)}
-                disabled={!sigStatus.contract.signedFinalDocumentId}
-                onClick={() =>
+                  downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
+              },
+              {
+                label: "Télécharger signé",
+                kind: "secondary",
+                disabled: !sigStatus.contract.signedFinalDocumentId,
+                onClick: () =>
                   sigStatus.contract.signedFinalDocumentId &&
-                  downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf")
-                }
-              >
-                Télécharger signé
-              </button>
-
-              <button
-                style={btnSecondary(border)}
-                onClick={() => fetchSignatureStatus(leaseId)}
-              >
-                Rafraîchir statuts
-              </button>
-            </div>
-          </>
-        )}
+                  downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
+              },
+            ]}
+          />
+        ) : null}
       </div>
+
+
+
+
+
+
+
+
 
       {status && (
         <div style={{ ...card(border), background: "rgba(31,111,235,0.05)", borderColor: "rgba(31,111,235,0.25)" }}>
@@ -1246,212 +1190,89 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         )}
 
         {sigStatus && sigStatus.guarantees.length > 0 && (
-          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            {sigStatus.guarantees.map((g) => {
-              const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;
+        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+          {sigStatus?.guarantees?.map((g) => {
+            const statusText =
+              g.signatureStatus === "SIGNED"
+                ? "🟢 Signé"
+                : g.signatureStatus === "IN_PROGRESS"
+                  ? "🟡 En cours"
+                  : g.signatureStatus === "SENT"
+                    ? "🟠 Lien envoyé"
+                    : "🔵 Non envoyé";
 
-                // meilleur fallback: le root doc contient signed_final_document_id (mais ton type Doc ne l'a pas)
-                const rootDoc = actId ? docs.find((d) => d.id === actId) : null;
-                const signedIdFromRoot = rootDoc?.signed_final_document_id || null;
-                const signedIdFromChild =
-                  actId
-                    ? docs.find(
-                        (d) =>
-                          d.parent_document_id === actId &&
-                          String(d.filename || "").includes("SIGNED_FINAL")
-                      )?.id || null
-                    : null;
+            const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
 
-                // id final utilisé
-                const signedId = g.signedFinalDocumentId || signedIdFromRoot || signedIdFromChild;
-                const ackTenantId = g.tenantId;
-                const ackRequired = Boolean(g.ack?.required);
-                const ackInfo = ackRequired
-                  ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenantId) || null
-                  : null;
+            const ackTenant = g.tenantId;
+            const ackRequired = Boolean(g.ack?.required);
+            const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
+            const ackOk = Boolean(ackInfo?.acknowledged);
 
-                const ackOk = Boolean(ackInfo?.acknowledged);
-                const ackAt = ackInfo?.acknowledgedAt ? new Date(ackInfo.acknowledgedAt).toLocaleString() : null;
+            const primaryLabel =
+              g.signatureStatus === "SIGNED"
+                ? "Télécharger signé"
+                : g.lastLink
+                  ? "Renvoyer lien signature"
+                  : "Envoyer lien signature";
 
-              return (
-                <div
-                  key={g.guaranteeId}
-                  style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}
-                >
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      alignItems: "flex-start",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <div style={{ minWidth: 240 }}>
-                      <div style={{ fontWeight: 800 }}>
-                        {g.guarantorFullName || "Garant"} → {g.tenantFullName}
-                      </div>
-
-                      <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                        Statut:{" "}
-                        <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                          {g.signatureStatus}
-                        </span>
-                        {g.lastLink?.createdAt ? (
-                          <span style={{ marginLeft: 8 }}>
-                            (lien: {new Date(g.lastLink.createdAt).toLocaleString()})
-                          </span>
-                        ) : null}
-                      </div>
-
-                      {(g.guarantorEmail || g.guarantorPhone) && (
-                        <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                          {g.guarantorEmail ? <span>{g.guarantorEmail}</span> : null}
-                          {g.guarantorEmail && g.guarantorPhone ? <span> • </span> : null}
-                          {g.guarantorPhone ? <span>{g.guarantorPhone}</span> : null}
-                        </div>
-                      )}
+            return (
+              <SignableCard
+                key={g.guaranteeId}
+                title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
+                statusChip={
+                  <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
+                    {statusText}
+                  </span>
+                }
+                subtitle={
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div>
+                      <strong>Lien :</strong> {linkState}
+                      {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
                     </div>
-
-                    {(() => {
-                      const linkExists = Boolean(g.lastLink);
-                      const linkActive = Boolean(g.lastLink && !g.lastLink.consumedAt);
-
-                      const sigLabel =
-                        g.signatureStatus === "SIGNED"
-                          ? "Acte: signé"
-                          : g.signatureStatus === "IN_PROGRESS"
-                          ? "Acte: en cours"
-                          : g.signatureStatus === "SENT"
-                          ? "Acte: lien envoyé"
-                          : "Acte: non envoyé";
-
-                      const linkLabel = !linkExists ? "Lien: non envoyé" : linkActive ? "Lien: actif" : "Lien: consommé";
-
-                      const ackLabel = !ackRequired ? "Locataire: —" : ackOk ? "Locataire: pris connaissance ✅" : "Locataire: à lire";
-
-                      // 🔵 bouton principal :
-                      // - si SIGNED => ouvrir/télécharger le PDF signé
-                      // - sinon => envoyer / renvoyer lien de signature
-                      const primaryLabel =
-                        g.signatureStatus === "SIGNED"
-                          ? "Ouvrir le PDF signé"
-                          : linkExists
-                          ? "Renvoyer lien de signature"
-                          : "Envoyer lien de signature";
-
-                      const primaryDisabled =
-                        g.signatureStatus === "SIGNED"
-                          ? !signedId
-                          : !actId; // pas d'acte => pas de lien de signature
-
-                      const primaryHint =
-                        g.signatureStatus === "SIGNED"
-                          ? !signedId
-                            ? "PDF signé introuvable."
-                            : "Ouvre le PDF signé (à partager ensuite)."
-                          : !actId
-                          ? "Génère l’acte avant d’envoyer un lien."
-                          : g.signatureStatus === "IN_PROGRESS"
-                          ? "Signature bailleur requise"
-                          : g.signatureStatus === "SENT"
-                          ? "En attente de signature garant"
-                          : null;
-
-                      const onPrimary = () => {
-                        if (g.signatureStatus === "SIGNED") {
-                          if (!signedId) return alert("PDF signé introuvable.");
-                          return downloadDoc(signedId, "acte_caution_SIGNE.pdf");
-                        }
-                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e) => alert(e.message));
-                      };
-
-                      // 1) Pas d’acte => UI minimaliste
-                      if (!actId) {
-                        return (
-                          <div style={{ display: "grid", gap: 10, justifyItems: "start" }}>
-                            {/* Badges (états) */}
-                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                              <span style={chip(border, "#111")}>{sigLabel}</span>
-                              <span style={chip(border, muted)}>{linkLabel}</span>
-                              <span style={chip(border, ackOk ? green : muted)}>{ackLabel}</span>
-                            </div>
-
-                            {/* Actions */}
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                              <button style={btnAction(border)} onClick={() => generateGuarantorActFor(g.guaranteeId)}>
-                                Générer acte
-                              </button>
-
-                              {primaryHint ? <span style={{ fontSize: 12, color: muted }}>{primaryHint}</span> : null}
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      // 2) Acte présent => badges + actions complètes
-                      return (
-                        <div style={{ display: "grid", gap: 10, justifyItems: "start" }}>
-                          {/* Badges (états) */}
-                          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                            <span style={chip(border, "#111")}>{sigLabel}</span>
-                            <span style={chip(border, linkActive ? "#0b2a6f" : muted)}>{linkLabel}</span>
-                            <span style={chip(border, ackOk ? green : muted)}>{ackLabel}</span>
-                            {ackRequired && ackAt ? <span style={chip(border, muted)}>Lu: {ackAt}</span> : null}
-                          </div>
-
-                          {/* Actions (ordre stable) */}
-                          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                            {/* Action principale */}
-                            <button style={btnPrimarySmall(blue)} disabled={primaryDisabled} title={primaryHint || undefined} onClick={onPrimary}>
-                              {primaryLabel}
-                            </button>
-
-                            {/* Téléchargements */}
-                            <button style={btnAction(border)} onClick={() => downloadDoc(actId, "acte_caution.pdf")}>
-                              Télécharger acte
-                            </button>
-
-                            <button style={btnAction(border)} disabled={!signedId} onClick={() => signedId && downloadDoc(signedId, "acte_caution_SIGNE.pdf")}>
-                              Télécharger signé
-                            </button>
-
-                            {/* ACK (prise de connaissance) */}
-                            {ackRequired ? (
-                              <button
-                                style={btnAction(border)}
-                                disabled={!signedId || ackOk}
-                                onClick={() => signedId && acknowledgeDoc(signedId, ackTenantId).catch((e) => alert(e.message))}
-                                title={!signedId ? "Acte non signé final : l’ACK vise le PDF signé final." : undefined}
-                              >
-                                {ackOk ? "Pris connaissance ✅" : "Marquer comme lu"}
-                              </button>
-                            ) : null}
-
-                            {/* Avancé */}
-                            <button style={btnAction(border)} onClick={() => generateGuarantorActFor(g.guaranteeId)}>
-                              Regénérer acte
-                            </button>
-
-                            {/* Force seulement si lien existe (sinon inutile) */}
-                            {linkExists && g.signatureStatus !== "SIGNED" ? (
-                              <button style={btnAction(border)} onClick={() => sendGuarantorLinkByGuarantee(g.guaranteeId, true).catch((e) => alert(e.message))}>
-                                Renvoyer (force)
-                              </button>
-                            ) : null}
-
-                            {primaryHint ? <span style={{ fontSize: 12, color: muted }}>{primaryHint}</span> : null}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                          </div>
-                        </div>
-                      );
-                  })}
+                    <div>
+                      <strong>ACK locataire :</strong>{" "}
+                      {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
+                    </div>
                   </div>
-                )}
-              </div>
+                }
+                actions={[
+                  {
+                    label: primaryLabel,
+                    onClick: () => {
+                      if (g.signatureStatus === "SIGNED") {
+                        if (!g.signedFinalDocumentId) return alert("PDF signé introuvable.");
+                        return downloadDoc(g.signedFinalDocumentId, "acte_caution_SIGNE.pdf");
+                      }
+                      return sendGuarantorLinkByGuarantee(g.guaranteeId, false).catch((e: any) =>
+                        alert(e.message || String(e))
+                      );
+                    },
+                    disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !g.actDocumentId,
+                  },
+                  {
+                    label: "Télécharger PDF",
+                    kind: "secondary",
+                    disabled: !g.actDocumentId,
+                    onClick: () => g.actDocumentId && downloadDoc(g.actDocumentId, "acte_caution.pdf"),
+                  },
+                  {
+                    label: "ACK : Marquer comme lu",
+                    kind: "secondary",
+                    disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
+                    onClick: () =>
+                      g.signedFinalDocumentId &&
+                      acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
+                        alert(e.message || String(e))
+                      ),
+                  },
+                ]}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "start" }}>
         <div style={card(border)}>
