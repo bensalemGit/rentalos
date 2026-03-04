@@ -22,7 +22,9 @@ type DocType =
   | 'EDL_ENTREE'
   | 'EDL_SORTIE'
   | 'INVENTAIRE_ENTREE'
-  | 'INVENTAIRE_SORTIE';
+  | 'INVENTAIRE_SORTIE'
+  | 'PACK_EDL_INV_ENTREE'
+  | 'PACK_EDL_INV_SORTIE';
 
 type TemplateRow = {
   id: string;
@@ -2106,19 +2108,13 @@ h1{font-size:16pt;margin:0 0 10px 0}
     const lease = leaseQ.rows[0];
 
 
-    const phaseStatuses =
-      phaseKey === 'entry'
-        ? ['entry', 'draft', 'entry_signed']
-        : ['exit', 'exit_signed'];
-
     const sQ = await this.pool.query(
       `SELECT *
       FROM edl_sessions
       WHERE lease_id=$1
-        AND status = ANY($2::text[])
       ORDER BY created_at DESC
       LIMIT 1`,
-      [leaseId, phaseStatuses],
+      [leaseId],
     );
     if (!sQ.rowCount) throw new BadRequestException('No EDL session for this lease');
     const edlSession = sQ.rows[0];
@@ -2150,23 +2146,22 @@ h1{font-size:16pt;margin:0 0 10px 0}
       photoMap.set(p.edl_item_id, arr);
     }
 
+    const phase = opts?.phase === 'exit' ? 'exit' : 'entry';
+    const showExit = phase === 'exit';
+
     const rowsHtml = items
       .map((it: any) => {
-        const eCond = it.entry_condition ?? '';
-        const eNotes = it.entry_notes ?? '';
-        const xCond = it.exit_condition ?? '';
-        const xNotes = it.exit_notes ?? '';
+        const cond = showExit ? (it.exit_condition ?? '') : (it.entry_condition ?? '');
+        const notes = showExit ? (it.exit_notes ?? '') : (it.entry_notes ?? '');
         const photoCount = (photoMap.get(it.id) || []).length;
 
         return `<tr>
-        <td class="sec">${this.escapeHtml(it.section)}</td>
-        <td class="lab">${this.escapeHtml(it.label)}</td>
-        <td class="cond">${this.escapeHtml(eCond)}</td>
-        <td class="notes">${this.escapeHtml(eNotes)}</td>
-        <td class="cond">${this.escapeHtml(xCond)}</td>
-        <td class="notes">${this.escapeHtml(xNotes)}</td>
-        <td class="pc">${photoCount}</td>
-      </tr>`;
+          <td class="sec">${this.escapeHtml(it.section)}</td>
+          <td class="lab">${this.escapeHtml(it.label)}</td>
+          <td class="cond">${this.escapeHtml(cond)}</td>
+          <td class="notes">${this.escapeHtml(notes)}</td>
+          <td class="pc">${photoCount}</td>
+        </tr>`;
       })
       .join('\n');
 
@@ -2223,7 +2218,7 @@ th{background:#f5f5f5}
 .missing{color:#b00;font-size:10pt}
 </style></head>
 <body>
-<h1>État des lieux (Entrée + Sortie) — ${this.escapeHtml(lease.unit_code)}</h1>
+<h1>État des lieux (${phase === 'exit' ? 'Sortie' : 'Entrée'}) — ${this.escapeHtml(lease.unit_code)}</h1>
 <div class="small">Bail: ${leaseId} • Session EDL: ${edlSession.id}</div>
 
 <div class="box">
@@ -2236,9 +2231,10 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 <table>
   <thead>
     <tr>
-      <th>Pièce</th><th>Élément</th>
-      <th>Entrée<br/>État</th><th>Entrée<br/>Observations</th>
-      <th>Sortie<br/>État</th><th>Sortie<br/>Observations</th>
+      <th>Pièce</th>
+      <th>Élément</th>
+      <th>${phase === 'exit' ? 'Sortie — État' : 'Entrée — État'}</th>
+      <th>${phase === 'exit' ? 'Sortie — Observations' : 'Entrée — Observations'}</th>
       <th>Photos</th>
     </tr>
   </thead>
@@ -2252,6 +2248,7 @@ ${annexHtml}
 
     const phaseLabel = phaseKey === 'entry' ? 'ENTREE' : 'SORTIE';
     const docType: DocType = phaseKey === 'entry' ? 'EDL_ENTREE' : 'EDL_SORTIE';
+  
 
     const pdfName = `EDL_${phaseLabel}_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
     
@@ -2339,24 +2336,20 @@ ${annexHtml}
     // --------------------
     const phaseKey = phase;
     const phaseLabel = phaseKey === 'entry' ? 'ENTREE' : 'SORTIE';
+    const showExit = phaseKey === 'exit';
+
     const docType: DocType =
       phaseKey === 'entry' ? 'INVENTAIRE_ENTREE' : 'INVENTAIRE_SORTIE';
 
     const pdfName = `INVENTAIRE_${phaseLabel}_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
 
-    const phaseStatuses =
-      phaseKey === 'entry'
-        ? ['entry', 'draft', 'entry_signed']
-        : ['exit', 'exit_signed'];
-
     const sQ = await this.pool.query(
       `SELECT *
       FROM inventory_sessions
       WHERE lease_id=$1
-        AND status = ANY($2::text[])
       ORDER BY created_at DESC
       LIMIT 1`,
-      [leaseId, phaseStatuses],
+      [leaseId],
     );
     if (!sQ.rowCount) throw new BadRequestException('No inventory session for this lease');
     const invSession = sQ.rows[0];
@@ -2381,20 +2374,17 @@ ${annexHtml}
           cat !== currentCat
             ? (() => {
                 currentCat = cat;
-                return `<tr class="catrow"><td colspan="7"><b>${this.escapeHtml(cat)}</b></td></tr>`;
+                return `<tr class="catrow"><td colspan="4"><b>${this.escapeHtml(cat)}</b></td></tr>`;
               })()
             : '';
         return (
           header +
           `<tr>
-        <td class="item">${this.escapeHtml(ln.name)}</td>
-        <td class="qty">${ln.entry_qty ?? ''}</td>
-        <td class="state">${this.escapeHtml(ln.entry_state ?? '')}</td>
-        <td class="notes">${this.escapeHtml(ln.entry_notes ?? '')}</td>
-        <td class="qty">${ln.exit_qty ?? ''}</td>
-        <td class="state">${this.escapeHtml(ln.exit_state ?? '')}</td>
-        <td class="notes">${this.escapeHtml(ln.exit_notes ?? '')}</td>
-      </tr>`
+            <td class="item">${this.escapeHtml(ln.name)}</td>
+            <td class="qty">${showExit ? (ln.exit_qty ?? '') : (ln.entry_qty ?? '')}</td>
+            <td class="state">${this.escapeHtml(showExit ? (ln.exit_state ?? '') : (ln.entry_state ?? ''))}</td>
+            <td class="notes">${this.escapeHtml(showExit ? (ln.exit_notes ?? '') : (ln.entry_notes ?? ''))}</td>
+          </tr>`
         );
       })
       .join('\n');
@@ -2430,12 +2420,9 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   <thead>
     <tr>
       <th>Objet</th>
-      <th>Entrée<br/>Qté</th>
-      <th>Entrée<br/>État</th>
-      <th>Entrée<br/>Obs</th>
-      <th>Sortie<br/>Qté</th>
-      <th>Sortie<br/>État</th>
-      <th>Sortie<br/>Obs</th>
+      <th>${phaseLabel} — Qté</th>
+      <th>${phaseLabel} — État</th>
+      <th>${phaseLabel} — Obs</th>
     </tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
@@ -2497,6 +2484,8 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     return { created: true, document: ins.rows[0] };
   }
+
+  
 
   async generatePackFinalV2(leaseId: string, opts?: { force?: boolean }, parentDocumentId?: string) {
     const force = !!opts?.force;
@@ -2846,6 +2835,122 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     return { created: true, document: ins.rows[0] };
   }
+
+
+  // ---------------------------------------------
+// PACK EDL+INV (Entrée/Sortie) = merge (EDL + Inventory)
+// ---------------------------------------------
+async generatePackEdlInvPdf(
+  leaseId: string,
+  opts?: { phase: 'entry' | 'exit'; force?: boolean },
+) {
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+  const phase = opts?.phase;
+  const force = Boolean(opts?.force);
+  if (phase !== 'entry' && phase !== 'exit') {
+    throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
+  }
+
+  const row = await this.fetchLeaseBundle(leaseId);
+
+  const phaseLabel = phase === 'entry' ? 'ENTREE' : 'SORTIE';
+  const docType: DocType = phase === 'entry' ? 'PACK_EDL_INV_ENTREE' : 'PACK_EDL_INV_SORTIE';
+
+  // ✅ IDEMPOTENCE: if same pack already exists (same filename), return it (unless force)
+  const packName = `PACK_EDL_INV_${phaseLabel}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+  const existing = await this.findExistingDocByFilename({
+    leaseId,
+    type: docType,
+    filename: packName,
+    parentNullOnly: true,
+  });
+
+  if (existing && !force) return { created: false, document: existing };
+
+  // if already finalized, refuse rebuild even with force (same logic as contract/avenant)
+  if (existing?.signed_final_document_id) {
+    throw new BadRequestException('Cannot force rebuild: pack already finalized (SIGNED_FINAL exists)');
+  }
+
+  // Ensure EDL + Inventory docs exist for this phase
+  // Reco: auto-generate if missing (smooth UX)
+  const edlRes = await this.generateEdlPdf(leaseId, { phase, force: false });
+  const invRes = await this.generateInventoryPdf(leaseId, { phase, force: false });
+
+  // ----- Variables template (reuse pack style) -----
+  const signature_date_fr = this.formatDateFr(new Date());
+  const signature_place =
+    row.unit_city && /^\d{5}$/.test(String(row.unit_city).trim()) ? '' : row.unit_city;
+
+  const lease_start_date_fr = this.formatDateFr(row.start_date);
+  const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
+
+  let annexes_list_html = '<ul>';
+  if (edlRes) annexes_list_html += `<li>État des lieux (${phaseLabel.toLowerCase()})</li>`;
+  if (invRes) annexes_list_html += `<li>Inventaire (${phaseLabel.toLowerCase()})</li>`;
+  annexes_list_html += '</ul>';
+
+  const parts: Array<{ filename: string; buffer: Buffer }> = [];
+
+  const pEdl = this.safeReadPdfPart(edlRes?.document);
+  if (pEdl) parts.push({ filename: `01_EDL_${phaseLabel}.pdf`, buffer: pEdl.buffer });
+
+  const pInv = this.safeReadPdfPart(invRes?.document);
+  if (pInv) parts.push({ filename: `02_INVENTAIRE_${phaseLabel}.pdf`, buffer: pInv.buffer });
+
+  if (!parts.length) {
+    throw new BadRequestException('PACK_EDL_INV: no PDFs found to merge');
+  }
+
+  const infoHtml = `
+  <html><head><style>body { font-family: Arial; font-size: 10pt; }</style></head><body>
+    <h2>Pack EDL + Inventaire (${this.escapeHtml(phaseLabel)})</h2>
+    <p>Date : ${signature_date_fr}</p>
+    <p>Lieu : ${this.escapeHtml(signature_place || '')}</p>
+    <p>Bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
+    <p>Annexes incluses :</p>
+    ${annexes_list_html}
+  </body></html>`;
+
+  const infoPdfBuf = await this.htmlToPdfBuffer(infoHtml);
+  parts.unshift({ filename: 'info_pack_edl_inv.pdf', buffer: infoPdfBuf });
+
+  let mergedBuf: Buffer;
+  try {
+    mergedBuf = await this.mergePdfsGotenberg(parts);
+  } catch (e) {
+    console.error('[PACK_EDL_INV MERGE ERROR]', {
+      leaseId,
+      phase,
+      parts: this.summarizeParts(parts),
+      error: e,
+    });
+    throw e;
+  }
+
+  const mergedSha = this.sha256Buffer(mergedBuf);
+
+  const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
+  this.ensureDir(outDir);
+  const outPdfPath = path.join(outDir, packName);
+  fsSync.writeFileSync(outPdfPath, mergedBuf);
+
+  const ins = await this.pool.query(
+    `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
+     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+    [
+      row.unit_id,
+      leaseId,
+      docType,
+      packName,
+      outPdfPath.replace(this.storageBase, ''),
+      mergedSha,
+    ],
+  );
+
+  return { created: true, document: ins.rows[0], parts: { edlId: edlRes?.document?.id || null, invId: invRes?.document?.id || null } };
+}
 
     private safeReadPdfPart(doc: any): { filename: string; buffer: Buffer } | null {
       const d = doc?.document ? doc.document : doc; // accepte {created, document} OU document direct

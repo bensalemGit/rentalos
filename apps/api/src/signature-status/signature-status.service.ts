@@ -108,6 +108,12 @@ export class SignatureStatusService {
       docsRows.find((d: any) => d.type === 'INVENTAIRE_SORTIE' && !d.parent_document_id) ||
       null;
 
+    const packEdlInvEntry =
+      docsRows.find((d: any) => d.type === 'PACK_EDL_INV_ENTREE' && !d.parent_document_id) || null;
+
+    const packEdlInvExit =
+      docsRows.find((d: any) => d.type === 'PACK_EDL_INV_SORTIE' && !d.parent_document_id) || null;
+
     // ⚠️ TEMP si tu n’as pas encore PR3.1 (types distincts) :
     // const edlEntry = docsRows.find((d:any)=>d.type==='EDL' && !d.parent_document_id) || null;
     // const edlExit = null;
@@ -494,7 +500,22 @@ export class SignatureStatusService {
           signedByDoc,
         }),
       },
-
+      packEdlInv: {
+        entry: this.buildDocBlock({
+          key: 'pack:edl_inv:entry',
+          label: 'Pack EDL + Inventaire (entrée)',
+          doc: packEdlInvEntry,
+          leaseTenants,
+          signedByDoc,
+        }),
+        exit: this.buildDocBlock({
+          key: 'pack:edl_inv:exit',
+          label: 'Pack EDL + Inventaire (sortie)',
+          doc: packEdlInvExit,
+          leaseTenants,
+          signedByDoc,
+        }),
+      },
     };
   }
 

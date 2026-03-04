@@ -351,30 +351,56 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     }
   }
 
-async function generateInventory(phase: "entry" | "exit") {
-  setError("");
-  setStatus(`Génération inventaire ${phase === "entry" ? "entrée" : "sortie"}…`);
-  try {
-    const r = await fetch(`${API}/documents/inventory`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-      credentials: "include",
-      body: JSON.stringify({ leaseId, phase }),
-    });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok) {
+  async function generateInventory(phase: "entry" | "exit") {
+    setError("");
+    setStatus(`Génération inventaire ${phase === "entry" ? "entrée" : "sortie"}…`);
+    try {
+      const r = await fetch(`${API}/documents/inventory`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, phase }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+      setStatus("Inventaire généré ✅");
+      await loadDocs();
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
       setStatus("");
-      setError(j?.message || JSON.stringify(j));
-      return;
+      setError(String(e?.message || e));
     }
-    setStatus("Inventaire généré ✅");
-    await loadDocs();
-    await fetchSignatureStatus(leaseId);
-  } catch (e: any) {
-    setStatus("");
-    setError(String(e?.message || e));
   }
-}
+
+  async function generatePackEdlInv(phase: "entry" | "exit") {
+    setError("");
+    setStatus(`Génération du pack EDL+Inventaire (${phase === "entry" ? "entrée" : "sortie"})…`);
+    try {
+      const r = await fetch(`${API}/documents/pack-edl-inv`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, phase }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+      setStatus("Pack EDL+Inventaire généré ✅");
+      await loadDocs();
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+
 
   async function generateGuarantorActFor(guaranteeId: string) {
     setError("");
@@ -725,6 +751,25 @@ async function generateInventory(phase: "entry" | "exit") {
 
     const invExitId = sigStatus?.inventory?.exit?.documentId;
     if (invExitId) items.push({ key: "inv_exit", label: "Inventaire sortie", documentId: invExitId });
+
+    // ✅ NEW: Pack EDL+Inventaire (entrée/sortie)
+    const packEntryId = (sigStatus as any)?.packEdlInv?.entry?.documentId;
+    if (packEntryId) {
+      items.push({
+        key: "pack_edl_inv_entry",
+        label: "Pack EDL+Inventaire (entrée)",
+        documentId: packEntryId,
+      });
+    }
+
+    const packExitId = (sigStatus as any)?.packEdlInv?.exit?.documentId;
+    if (packExitId) {
+      items.push({
+        key: "pack_edl_inv_exit",
+        label: "Pack EDL+Inventaire (sortie)",
+        documentId: packExitId,
+      });
+    }
     
     return items;
   }, [sigStatus, guaranteeActOverride]);
@@ -1378,6 +1423,68 @@ async function generateInventory(phase: "entry" | "exit") {
         <div style={card(border)}>
           <h2 style={{ marginTop: 0 }}>EDL & Inventaires</h2>
 
+          {/* ✅ Pack EDL + Inventaire (recommandé) */}
+          {[
+            (sigStatus as any)?.packEdlInv?.entry,
+            (sigStatus as any)?.packEdlInv?.exit,
+          ]
+            .filter(Boolean)
+            .map((p: any) => (
+              <div
+                key={p.key || p.label}
+                style={{
+                  border: `1px solid ${border}`,
+                  borderRadius: 14,
+                  padding: 12,
+                  marginTop: 10,
+                  background: "rgba(31,111,235,0.04)",
+                }}
+              >
+                <div style={{ fontWeight: 800 }}>
+                  {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
+                </div>
+
+                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                  Statut:{" "}
+                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                    {p.status}
+                  </span>
+                </div>
+
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                  <button
+                    style={btnAction(border)}
+                    disabled={Boolean(p.documentId)}
+                    onClick={() => {
+                      // on déduit la phase depuis la key (ou fallback)
+                      const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
+                      return generatePackEdlInv(phase as "entry" | "exit");
+                    }}
+                  >
+                    Générer PDF
+                  </button>
+
+                  <button
+                    style={btnSecondary(border)}
+                    disabled={!p.documentId}
+                    onClick={() => p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)}
+                  >
+                    Télécharger PDF
+                  </button>
+
+                  <button
+                    style={btnSecondary(border)}
+                    disabled={!p.signedFinalDocumentId}
+                    onClick={() =>
+                      p.signedFinalDocumentId && downloadDoc(p.signedFinalDocumentId, `${p.key || "pack_edl_inv"}_SIGNE.pdf`)
+                    }
+                  >
+                    Télécharger signé
+                  </button>
+                </div>
+              </div>
+            ))}
+
           {[
             sigStatus.edl?.entry,
             sigStatus.edl?.exit,
@@ -1408,10 +1515,11 @@ async function generateInventory(phase: "entry" | "exit") {
                     style={btnAction(border)}
                     disabled={Boolean(d.documentId)}
                     onClick={() => {
-                      if (d.key === "edl:entry") return generateEdl("entry");
-                      if (d.key === "edl:exit") return generateEdl("exit");
-                      if (d.key === "inv:entry") return generateInventory("entry");
-                      if (d.key === "inv:exit") return generateInventory("exit");
+                      const k = String(d.key || "");
+                      if (k === "edl:entry" || k === "edl_entry") return generateEdl("entry");
+                      if (k === "edl:exit" || k === "edl_exit") return generateEdl("exit");
+                      if (k === "inv:entry" || k === "inv_entry") return generateInventory("entry");
+                      if (k === "inv:exit" || k === "inv_exit") return generateInventory("exit");
                     }}
                   >
                     Générer PDF
