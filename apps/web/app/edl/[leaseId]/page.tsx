@@ -91,6 +91,12 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   // search
   const [q, setQ] = useState("");
 
+  type ViewMode = "COMPARE" | "ENTRY" | "EXIT";
+  const [viewMode, setViewMode] = useState<ViewMode>("COMPARE");
+
+  const showEntry = viewMode !== "EXIT";
+  const showExit = viewMode !== "ENTRY";
+
   // collapses by section
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
@@ -658,7 +664,11 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     setTimeout(() => addLabelRef.current?.focus(), 50);
   }
 
-  const gridTemplate = "minmax(240px, 1.2fr) minmax(260px, 1fr) minmax(260px, 1fr) 260px";
+  const gridTemplate =
+    "minmax(240px, 1.2fr) " +
+    (showEntry ? "minmax(260px, 1fr) " : "") +
+    (showExit ? "minmax(260px, 1fr) " : "") +
+    "260px";
 
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: 12, background: bg, minHeight: "100vh" }}>
@@ -772,6 +782,19 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
             <div style={{ color: muted, fontSize: 12 }}>Bail {leaseId.slice(0, 8)}… • sessions/items/photos</div>
           </div>
 
+          <div style={chipGroup(border)}>
+            <span style={chipLabel(muted)}>Vue</span>
+            <button onClick={() => setViewMode("COMPARE")} style={chip(border, viewMode === "COMPARE")}>
+              Comparatif
+            </button>
+            <button onClick={() => setViewMode("ENTRY")} style={chip(border, viewMode === "ENTRY")}>
+              Entrée
+            </button>
+            <button onClick={() => setViewMode("EXIT")} style={chip(border, viewMode === "EXIT")}>
+              Sortie
+            </button>
+          </div>
+
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
             <input
               value={q}
@@ -813,9 +836,15 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 
             <button onClick={() => loadSessions()} style={btnSecondary(border)}>Rafraîchir</button>
 
-            <button onClick={copyEntryToExit} disabled={!sessionId} style={{ ...btnPrimary(blue), opacity: sessionId ? 1 : 0.5 }}>
-              Copier entrée → sortie
-            </button>
+            {viewMode !== "EXIT" && (
+              <button
+                onClick={copyEntryToExit}
+                disabled={!sessionId}
+                style={{ ...btnPrimary(blue), opacity: sessionId ? 1 : 0.5 }}
+              >
+                Copier entrée → sortie
+              </button>
+            )}
 
             <button
               onClick={saveAsUnitReferenceEdl}
@@ -864,8 +893,10 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
         <div style={{ position: "sticky", top: 8, zIndex: 20, marginTop: 12, ...card(border, "#fff"), padding: 10 }}>
           <div style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: 10, alignItems: "center" }}>
             <div style={{ color: muted, fontSize: 12, fontWeight: 900 }}>Désignation</div>
-            <div style={{ textAlign: "center", fontSize: 12, fontWeight: 900 }}>Entrée</div>
-            <div style={{ textAlign: "center", fontSize: 12, fontWeight: 900 }}>Sortie</div>
+
+            {showEntry && <div style={{ textAlign: "center", fontSize: 12, fontWeight: 900 }}>Entrée</div>}
+            {showExit && <div style={{ textAlign: "center", fontSize: 12, fontWeight: 900 }}>Sortie</div>}
+
             <div style={{ textAlign: "right", color: muted, fontSize: 12, fontWeight: 900 }}>Actions</div>
           </div>
         </div>
@@ -915,31 +946,39 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
                             </div>
                           </div>
 
-                          <div style={cell(border)}>
-                            <select
-                              value={it.entry_condition || ""}
-                              onChange={(e) => patchItem(it.id, { entry_condition: e.target.value })}
-                              style={selectInline(border)}
-                            >
-                              <option value="">—</option>
-                              {CONDITION_PRESETS.map((x) => (
-                                <option key={x} value={x}>{x}</option>
-                              ))}
-                            </select>
-                          </div>
+                          {showEntry && (
+                            <div style={cell(border)}>
+                              <select
+                                value={it.entry_condition || ""}
+                                onChange={(e) => patchItem(it.id, { entry_condition: e.target.value })}
+                                style={selectInline(border)}
+                              >
+                                <option value="">—</option>
+                                {CONDITION_PRESETS.map((x) => (
+                                  <option key={x} value={x}>
+                                    {x}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
 
-                          <div style={cell(border)}>
-                            <select
-                              value={it.exit_condition || ""}
-                              onChange={(e) => patchItem(it.id, { exit_condition: e.target.value })}
-                              style={selectInline(border)}
-                            >
-                              <option value="">—</option>
-                              {CONDITION_PRESETS.map((x) => (
-                                <option key={x} value={x}>{x}</option>
-                              ))}
-                            </select>
-                          </div>
+                          {showExit && (
+                            <div style={cell(border)}>
+                              <select
+                                value={it.exit_condition || ""}
+                                onChange={(e) => patchItem(it.id, { exit_condition: e.target.value })}
+                                style={selectInline(border)}
+                              >
+                                <option value="">—</option>
+                                {CONDITION_PRESETS.map((x) => (
+                                  <option key={x} value={x}>
+                                    {x}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+                          )}
 
                           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                             <button onClick={() => toggleNotes(it.id)} style={btnGhost(border)}>Notes</button>
@@ -971,23 +1010,35 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
                         </div>
 
                         {notesOpen[it.id] && (
-                          <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
-                            <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fbfbfd" }}>
-                              <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Notes Entrée</div>
-                              <textarea
-                                value={it.entry_notes || ""}
-                                onChange={(e) => patchItem(it.id, { entry_notes: e.target.value })}
-                                style={{ ...inputStyle(border), minHeight: 70, resize: "vertical", background: "#fff" }}
-                              />
-                            </div>
-                            <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fbfbfd" }}>
-                              <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Notes Sortie</div>
-                              <textarea
-                                value={it.exit_notes || ""}
-                                onChange={(e) => patchItem(it.id, { exit_notes: e.target.value })}
-                                style={{ ...inputStyle(border), minHeight: 70, resize: "vertical", background: "#fff" }}
-                              />
-                            </div>
+                          <div
+                            style={{
+                              marginTop: 10,
+                              display: "grid",
+                              gap: 10,
+                              gridTemplateColumns: showEntry && showExit ? "1fr 1fr" : "1fr",
+                            }}
+                          >
+                            {showEntry && (
+                              <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fbfbfd" }}>
+                                <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Notes Entrée</div>
+                                <textarea
+                                  value={it.entry_notes || ""}
+                                  onChange={(e) => patchItem(it.id, { entry_notes: e.target.value })}
+                                  style={{ ...inputStyle(border), minHeight: 70, resize: "vertical", background: "#fff" }}
+                                />
+                              </div>
+                            )}
+
+                            {showExit && (
+                              <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fbfbfd" }}>
+                                <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Notes Sortie</div>
+                                <textarea
+                                  value={it.exit_notes || ""}
+                                  onChange={(e) => patchItem(it.id, { exit_notes: e.target.value })}
+                                  style={{ ...inputStyle(border), minHeight: 70, resize: "vertical", background: "#fff" }}
+                                />
+                              </div>
+                            )}
                           </div>
                         )}
 

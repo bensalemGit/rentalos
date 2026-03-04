@@ -68,6 +68,15 @@ export class DocumentsController {
     const result = await this.docs.generateInventoryPdf(body.leaseId, { phase, force: Boolean(body.force) });
     return this.replyCreated(res, result);
   }
+  
+  @Post('pack-edl-inv')
+  async generatePackEdlInv(@Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const phase = body?.phase;
+    const force = Boolean(body?.force);
+    const result = await this.docs.generatePackEdlInvPdf(body.leaseId, { phase, force });
+    res.status(200);
+    return result;
+  }
 
   // ✅ Pack: Contrat + Notice (RP) + EDL + Inventaire
   @Post('pack')
