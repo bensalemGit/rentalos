@@ -61,6 +61,9 @@ type Toast = {
 export default function InventoryPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
 
+  const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
   const [token, setToken] = useState("");
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
@@ -286,9 +289,22 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
   useEffect(() => {
     if (!token) return;
+
+    // Guard: ne jamais appeler l'API si l'URL n'a pas un UUID
+    if (!UUID_RE.test(leaseId)) {
+      setStatus("");
+      setError(`URL invalide: leaseId="${leaseId}" (uuid attendu)`);
+      setSessions([]);
+      setSessionId("");
+      setLines([]);
+      return;
+    }
+
+    setError("");
     loadSessions();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, leaseId]);
 
   useEffect(() => {
     if (!token || !sessionId) return;
