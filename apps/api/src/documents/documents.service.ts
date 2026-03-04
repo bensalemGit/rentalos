@@ -55,6 +55,38 @@ export class DocumentsService {
     return path.join(this.storageBase, rel);
   }
 
+// -------------------------------------
+// UUID guard (anti "sessions" en uuid)
+// -------------------------------------
+private isUuidV4(id: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(id || ''));
+}
+
+private assertUuidV4(id: string, label: string) {
+  if (!this.isUuidV4(id)) {
+    throw new BadRequestException(`Invalid ${label} (expected uuid v4)`);
+  }
+}
+
+// -------------------------------------
+// Session selector by phase
+// -------------------------------------
+private async getLatestSessionByPhase(args: {
+  leaseId: string;
+  table: 'inventory_sessions' | 'edl_sessions';
+  phase: 'entry' | 'exit';
+}) {
+  const { leaseId, table, phase } = args;
+
+  // IMPORTANT: phase == status dans ton modèle actuel
+  const q = await this.pool.query(
+    `SELECT * FROM ${table} WHERE lease_id=$1 AND status=$2 ORDER BY created_at DESC LIMIT 1`,
+    [leaseId, phase],
+  );
+
+  return q.rowCount ? q.rows[0] : null;
+}
+
     /**
    * Idempotence helper:
    * - returns an existing document row (same lease/type/filename) if present and file exists.
@@ -2108,16 +2140,17 @@ h1{font-size:16pt;margin:0 0 10px 0}
     const lease = leaseQ.rows[0];
 
 
-    const sQ = await this.pool.query(
-      `SELECT *
-      FROM edl_sessions
-      WHERE lease_id=$1
-      ORDER BY created_at DESC
-      LIMIT 1`,
-      [leaseId],
-    );
-    if (!sQ.rowCount) throw new BadRequestException('No EDL session for this lease');
-    const edlSession = sQ.rows[0];
+    this.assertUuidV4(leaseId, 'leaseId');
+
+    const edlSession = await this.getLatestSessionByPhase({
+      leaseId,
+      table: 'edl_sessions',
+      phase: phaseKey, // phaseKey vaut 'entry' | 'exit'
+    });
+
+    if (!edlSession) {
+      throw new BadRequestException(`No EDL session for this lease in phase=${phaseKey}`);
+    }
 
     const itemsQ = await this.pool.query(
       `SELECT id, section, label, entry_condition, entry_notes, exit_condition, exit_notes
@@ -2343,16 +2376,17 @@ ${annexHtml}
 
     const pdfName = `INVENTAIRE_${phaseLabel}_${lease.unit_code}_${this.isoDate(lease.start_date)}.pdf`;
 
-    const sQ = await this.pool.query(
-      `SELECT *
-      FROM inventory_sessions
-      WHERE lease_id=$1
-      ORDER BY created_at DESC
-      LIMIT 1`,
-      [leaseId],
-    );
-    if (!sQ.rowCount) throw new BadRequestException('No inventory session for this lease');
-    const invSession = sQ.rows[0];
+    this.assertUuidV4(leaseId, 'leaseId');
+
+    const invSession = await this.getLatestSessionByPhase({
+      leaseId,
+      table: 'inventory_sessions',
+      phase: phaseKey, // 'entry' | 'exit'
+    });
+
+    if (!invSession) {
+      throw new BadRequestException(`No inventory session for this lease in phase=${phaseKey}`);
+    }
 
     const linesQ = await this.pool.query(
       `SELECT c.category, c.name,

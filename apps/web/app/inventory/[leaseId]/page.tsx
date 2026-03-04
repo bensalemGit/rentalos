@@ -74,7 +74,8 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   const [lines, setLines] = useState<InvLine[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
-
+  const [copying, setCopying] = useState(false);
+  
   const [savingReference, setSavingReference] = useState(false);
   const [applyingReference, setApplyingReference] = useState(false);
   const [lastReferenceInfo, setLastReferenceInfo] = useState<{
@@ -470,31 +471,88 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   }
 
   async function copyEntryToExit() {
-    if (!sessionId) return;
-    setError("");
-    setStatus("Copie entrée → sortie…");
+    if (copying) return;
+
     try {
-      const r = await fetch(`${API}/inventory/copy-entry-to-exit?leaseId=${leaseId}`, {
-        method: "POST",
+      if (!token) throw new Error("Non connecté (token manquant).");
+      setCopying(true);
+
+      // 1) sessions fraîches (ne pas dépendre de `sessions` React)
+      const rSess = await fetch(`${API}/inventory/sessions?leaseId=${leaseId}`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
+      const jSess = await rSess.json().catch(() => []);
+      if (!rSess.ok) throw new Error(jSess?.message || "Impossible de charger les sessions (inventory).");
 
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        pushToast({ kind: "err", message: "Erreur copie" });
-        return;
+      const fresh: InvSession[] = Array.isArray(jSess) ? jSess : [];
+      fresh.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+
+      // 2) exit existante ?
+      let exitSessionId = fresh.find((s) => s.status === "exit")?.id;
+
+      // 3) sinon créer une exit (FETCH DIRECT, pas createStatus)
+      if (!exitSessionId) {
+        const rCreate = await fetch(`${API}/inventory/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          credentials: "include",
+          body: JSON.stringify({ leaseId, status: "exit" }),
+        });
+
+        const jCreate = await rCreate.json().catch(() => ({}));
+        if (!rCreate.ok) {
+          throw new Error(jCreate?.message || "Impossible de créer la session sortie (inventory).");
+        }
+
+        exitSessionId =
+          jCreate?.id ||
+          jCreate?.inventorySessionId ||
+          jCreate?.sessionId ||
+          jCreate?.session?.id ||
+          jCreate?.inventorySession?.id;
+
+        // fallback: re-fetch sessions et repick
+        if (!exitSessionId) {
+          const rSess2 = await fetch(`${API}/inventory/sessions?leaseId=${leaseId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "include",
+          });
+          const jSess2 = await rSess2.json().catch(() => []);
+          const fresh2: InvSession[] = Array.isArray(jSess2) ? jSess2 : [];
+          fresh2.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+          exitSessionId = fresh2.find((s) => s.status === "exit")?.id;
+        }
       }
 
-      setStatus("Copie effectuée ✅");
-      pushToast({ kind: "ok", message: "Copie effectuée ✅" });
-      await loadLines(sessionId);
+      if (!exitSessionId) throw new Error("Aucune session sortie disponible (inventory).");
+
+      // 4) bascule UI
+      setSessionId(exitSessionId);
+      setViewMode("EXIT");
+
+      // 5) nouvel endpoint ciblé
+      const rCopy = await fetch(`${API}/inventory/sessions/${exitSessionId}/copy-from-entry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+
+      if (!rCopy.ok) {
+        const t = await rCopy.text().catch(() => "");
+        throw new Error(t || "Copie entrée → sortie impossible (inventory).");
+      }
+
+      // 6) reload lines
+      await loadLines(exitSessionId);
+
+      pushToast({ kind: "ok", message: "Copie entrée → sortie ✅" });
     } catch (e: any) {
-      setStatus("");
-      setError(String(e?.message || e));
-      pushToast({ kind: "err", message: "Erreur réseau (copie)" });
+      console.error(e);
+      pushToast({ kind: "err", message: e?.message || "Erreur copie entrée → sortie (inventory)" });
+    } finally {
+      setCopying(false);
     }
   }
 
@@ -798,10 +856,10 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
             {viewMode !== "EXIT" && (
               <button
                 onClick={copyEntryToExit}
-                disabled={!sessionId}
-                style={{ ...btnPrimary(blue), opacity: sessionId ? 1 : 0.5 }}
+                disabled={!sessionId || copying}
+                style={{ ...btnPrimary(blue), opacity: !sessionId || copying ? 0.5 : 1 }}
               >
-                Copier entrée → sortie
+                {copying ? "Copie…" : "Copier entrée → sortie"}
               </button>
             )}
 

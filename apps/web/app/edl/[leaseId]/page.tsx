@@ -74,6 +74,7 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   const [items, setItems] = useState<EdlItem[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
+  const [copying, setCopying] = useState(false);
 
   const [photosByItem, setPhotosByItem] = useState<Record<string, Photo[]>>({});
   const [photosOpen, setPhotosOpen] = useState<Record<string, boolean>>({});
@@ -490,35 +491,90 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   }
 
   async function copyEntryToExit() {
-    if (!sessionId) return;
+    if (copying) return;
 
-    if (!confirm("Copier les états d\'entrée vers la sortie ?\n\nAttention : cela écrasera les états de sortie existants.")) {
-      return;
-    }
-    setError("");
-    setStatus("Copie entrée → sortie…");
     try {
-      const r = await fetch(`${API}/edl/copy-entry-to-exit?leaseId=${leaseId}`, {
-        method: "POST",
+      if (!token) throw new Error("Non connecté (token manquant).");
+      setCopying(true);
+
+      // 1) sessions fraîches
+      const rSess = await fetch(`${API}/edl/sessions?leaseId=${leaseId}`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
       });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        pushToast({ kind: "err", message: "Erreur copie" });
-        return;
+      const jSess = await rSess.json().catch(() => []);
+      if (!rSess.ok) throw new Error(jSess?.message || "Impossible de charger les sessions (EDL).");
+
+      const fresh: EdlSession[] = Array.isArray(jSess) ? jSess : [];
+      fresh.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+
+      // 2) exit existante ?
+      let exitSessionId = fresh.find((s) => s.status === "exit")?.id;
+
+      // 3) sinon créer exit (FETCH DIRECT, pas createStatus)
+      if (!exitSessionId) {
+        const rCreate = await fetch(`${API}/edl/sessions`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          credentials: "include",
+          body: JSON.stringify({ leaseId, status: "exit" }),
+        });
+
+        const jCreate = await rCreate.json().catch(() => ({}));
+        if (!rCreate.ok) {
+          throw new Error(jCreate?.message || "Impossible de créer la session sortie (EDL).");
+        }
+
+        exitSessionId =
+          jCreate?.id ||
+          jCreate?.edlSessionId ||
+          jCreate?.sessionId ||
+          jCreate?.session?.id ||
+          jCreate?.edlSession?.id;
+
+        // fallback: re-fetch sessions
+        if (!exitSessionId) {
+          const rSess2 = await fetch(`${API}/edl/sessions?leaseId=${leaseId}`, {
+            headers: { Authorization: `Bearer ${token}` },
+            credentials: "include",
+          });
+          const jSess2 = await rSess2.json().catch(() => []);
+          const fresh2: EdlSession[] = Array.isArray(jSess2) ? jSess2 : [];
+          fresh2.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+          exitSessionId = fresh2.find((s) => s.status === "exit")?.id;
+        }
       }
-      setStatus("Copie effectuée ✅");
-      pushToast({ kind: "ok", message: "Copie effectuée ✅" });
-      await loadItems(sessionId);
-    } catch (e: any) {
-      setStatus("");
-      setError(String(e?.message || e));
-      pushToast({ kind: "err", message: "Erreur réseau (copie)" });
+
+      if (!exitSessionId) throw new Error("Aucune session sortie disponible (EDL).");
+
+      // 4) bascule UI
+      setSessionId(exitSessionId);
+      setViewMode("EXIT");
+
+      // 5) nouvel endpoint ciblé
+      const rCopy = await fetch(`${API}/edl/sessions/${exitSessionId}/copy-from-entry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({}),
+      });
+
+    if (!rCopy.ok) {
+      const t = await rCopy.text().catch(() => "");
+      throw new Error(t || "Copie entrée → sortie impossible (EDL).");
     }
+
+    // 6) reload items
+    await loadItems(exitSessionId);
+
+    pushToast({ kind: "ok", message: "Copie entrée → sortie ✅" });
+  } catch (e: any) {
+    console.error(e);
+    pushToast({ kind: "err", message: e?.message || "Erreur copie entrée → sortie (EDL)" });
+  } finally {
+    setCopying(false);
   }
+}
 
   async function saveAsUnitReferenceEdl() {
     if (!token || !sessionId) return;
@@ -858,10 +914,10 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
             {viewMode !== "EXIT" && (
               <button
                 onClick={copyEntryToExit}
-                disabled={!sessionId}
-                style={{ ...btnPrimary(blue), opacity: sessionId ? 1 : 0.5 }}
+                disabled={!sessionId || copying}
+                style={{ ...btnPrimary(blue), opacity: !sessionId || copying ? 0.5 : 1 }}
               >
-                Copier entrée → sortie
+                {copying ? "Copie…" : "Copier entrée → sortie"}
               </button>
             )}
 

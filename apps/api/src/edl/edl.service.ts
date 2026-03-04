@@ -147,28 +147,121 @@ export class EdlService {
     return { ok: true, id: edlItemId };
   }
 
-  // Safe copy entry -> exit inside latest session of a lease
-  async copyEntryToExit(leaseId: string) {
-    if (!leaseId) throw new BadRequestException('Missing leaseId');
+  async copyEntryToExitForSession(args: { exitSessionId: string; fromSessionId?: string }) {
+    const { exitSessionId, fromSessionId } = args;
 
-    const sQ = await this.pool.query(
-      `SELECT id FROM edl_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`,
-      [leaseId],
+    if (!exitSessionId) throw new BadRequestException('Missing exitSessionId');
+
+    const exitQ = await this.pool.query(
+      `SELECT id, lease_id, status, created_at FROM edl_sessions WHERE id=$1`,
+      [exitSessionId],
     );
-    if (!sQ.rowCount) throw new BadRequestException('No EDL session for this lease');
+    if (!exitQ.rowCount) throw new BadRequestException('Unknown exitSessionId');
 
-    const edlSessionId = sQ.rows[0].id;
+    const exitSession = exitQ.rows[0];
+    if (String(exitSession.status) !== 'exit') {
+      throw new BadRequestException(`Target session must be status='exit' (got ${exitSession.status})`);
+    }
+
+    const leaseId = exitSession.lease_id;
+
+    let entrySessionId = fromSessionId;
+
+    if (entrySessionId) {
+      const entryQ = await this.pool.query(
+        `SELECT id FROM edl_sessions WHERE id=$1 AND lease_id=$2 AND status='entry' LIMIT 1`,
+        [entrySessionId, leaseId],
+      );
+      if (!entryQ.rowCount) {
+        throw new BadRequestException('fromSessionId must be an entry session of the same lease');
+      }
+    } else {
+      const entryQ = await this.pool.query(
+        `SELECT id FROM edl_sessions
+        WHERE lease_id=$1 AND status='entry' AND created_at <= $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+        [leaseId, exitSession.created_at],
+      );
+      if (!entryQ.rowCount) throw new BadRequestException('No entry session found before this exit session');
+      entrySessionId = entryQ.rows[0].id;
+    }
+
+    // 2bis) Si la session EXIT est vide, cloner les items depuis la session ENTRY
+    const exitCountQ = await this.pool.query(
+      `SELECT COUNT(*)::int AS n FROM edl_items WHERE edl_session_id=$1`,
+      [exitSessionId],
+    );
+    const exitItemsCount = exitCountQ.rows?.[0]?.n ?? 0;
+
+    let insertedCount = 0;
+
+    if (exitItemsCount === 0) {
+      const srcQ = await this.pool.query(
+        `SELECT section, label, entry_condition, entry_notes
+         FROM edl_items
+         WHERE edl_session_id=$1
+         ORDER BY section, label`,
+        [entrySessionId],
+      );
+
+      for (const it of srcQ.rows) {
+        await this.pool.query(
+          `INSERT INTO edl_items (
+             id, edl_session_id, section, label,
+             entry_condition, entry_notes,
+             exit_condition, exit_notes
+           )
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [
+            crypto.randomUUID(),
+            exitSessionId,
+            it.section,
+            it.label,
+            it.entry_condition ?? null,
+            it.entry_notes ?? null,
+            // préremplissage sortie = entrée
+            it.entry_condition ?? null,
+            it.entry_notes ?? null,
+          ],
+        );
+        insertedCount++;
+      }
+    }
 
     const r = await this.pool.query(
       `UPDATE edl_items
-       SET
-         exit_condition = COALESCE(entry_condition, exit_condition),
-         exit_notes = COALESCE(entry_notes, exit_notes)
-       WHERE edl_session_id=$1`,
-      [edlSessionId],
+      SET
+        exit_condition = CASE
+          WHEN exit_condition IS NULL OR btrim(exit_condition)='' THEN entry_condition
+          ELSE exit_condition
+        END,
+        exit_notes = CASE
+          WHEN exit_notes IS NULL OR btrim(exit_notes)='' THEN entry_notes
+          ELSE exit_notes
+        END
+      WHERE edl_session_id=$1`,
+      [exitSessionId],
     );
 
-    return { ok: true, edlSessionId, updatedCount: r.rowCount };
+    return { ok: true, exitSessionId, entrySessionId, insertedCount, updatedCount: r.rowCount };
+  }
+
+
+  // Legacy endpoint: copy entry -> exit for "latest exit session" of a lease
+  async copyEntryToExit(leaseId: string) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const exitQ = await this.pool.query(
+      `SELECT id FROM edl_sessions WHERE lease_id=$1 AND status='exit' ORDER BY created_at DESC LIMIT 1`,
+      [leaseId],
+    );
+
+    if (!exitQ.rowCount) {
+      throw new BadRequestException('No exit EDL session for this lease (create an exit session first)');
+    }
+
+    return this.copyEntryToExitForSession({ exitSessionId: exitQ.rows[0].id });
   }
 
   // ------------------------------------------------------------
