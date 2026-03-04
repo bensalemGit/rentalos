@@ -12,6 +12,7 @@ import {
   UploadedFile,
   UseGuards,
   UseInterceptors,
+  ParseUUIDPipe, // ✅ AJOUT
 } from '@nestjs/common';
 import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -23,9 +24,12 @@ import { EdlService } from './edl.service';
 @UseGuards(JwtGuard)
 export class EdlController {
   constructor(private readonly edl: EdlService) {}
+  private uuidPipe = new ParseUUIDPipe({ version: '4' });
 
   @Get('sessions')
   sessions(@Query('leaseId') leaseId?: string) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.edl.listSessions(leaseId);
   }
 
@@ -40,6 +44,7 @@ export class EdlController {
     const status = statusQ || statusB;
 
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.edl.createSession(leaseId, status || 'entry');
   }
 
@@ -47,6 +52,7 @@ export class EdlController {
   @Get('reference')
   async getReference(@Query('leaseId') leaseId?: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.edl.getEdlReferenceForLease(leaseId);
   }
 
@@ -86,9 +92,23 @@ export class EdlController {
   }
 
   @Post('copy-entry-to-exit')
-  copyEntryToExit(@Query('leaseId') leaseId: string) {
+  copyEntryToExit(@Query('leaseId') leaseId?: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.edl.copyEntryToExit(leaseId);
+  }
+
+  // ✅ Nouveau endpoint stable: on cible la session EXIT explicitement
+  @Post('sessions/:id/copy-from-entry')
+  copyFromEntry(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body('fromSessionId') fromSessionId?: string,
+  ) {
+    if (fromSessionId) {
+      this.uuidPipe.transform(fromSessionId, { type: 'body', metatype: String, data: 'fromSessionId' });
+    }
+
+    return this.edl.copyEntryToExitForSession({ exitSessionId: id, fromSessionId });
   }
 
   // POST /edl/reference?leaseId=...&edlSessionId=...
@@ -98,6 +118,7 @@ export class EdlController {
     @Query('edlSessionId') edlSessionId?: string,
   ) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.edl.setEdlReferenceFromLease(leaseId, edlSessionId);
   }
 
@@ -108,6 +129,7 @@ export class EdlController {
     @Query('status') status?: string,
   ) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.edl.applyEdlReferenceToLease(leaseId, status || 'entry');
   }
 

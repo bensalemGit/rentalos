@@ -9,6 +9,7 @@ import {
   Param,
   BadRequestException,
   UseGuards,
+  ParseUUIDPipe, // ✅ AJOUT
 } from '@nestjs/common';
 import { InventoryService } from './inventory.service';
 import { JwtGuard } from '../auth/jwt.guard';
@@ -17,10 +18,16 @@ import { JwtGuard } from '../auth/jwt.guard';
 @UseGuards(JwtGuard)
 export class InventoryController {
   constructor(private readonly inventory: InventoryService) {}
+  private uuidPipe = new ParseUUIDPipe({ version: '4' });
 
   @Get('sessions')
   async listSessions(@Query('leaseId') leaseId?: string, @Query('lease_id') lease_id?: string) {
     const id = leaseId || lease_id;
+    if (!id) throw new BadRequestException('Missing leaseId');
+
+    // ✅ validate uuid v4
+    this.uuidPipe.transform(id, { type: 'query', metatype: String, data: 'leaseId' });
+
     return this.inventory.listSessions(id);
   }
 
@@ -35,6 +42,7 @@ export class InventoryController {
   ) {
     const id = leaseIdQ || leaseIdQ2 || leaseId || lease_id;
     if (!id) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(id, { type: 'query', metatype: String, data: 'leaseId' });
 
     const normalized = String(statusQ || statusB || 'entry').trim().toLowerCase();
     const finalStatus = normalized === 'draft' ? 'entry' : normalized;
@@ -92,6 +100,7 @@ export class InventoryController {
   async copyEntryToExit(@Query('leaseId') leaseId?: string, @Query('lease_id') lease_id?: string) {
     const id = leaseId || lease_id;
     if (!id) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(id, { type: 'query', metatype: String, data: 'leaseId' });
     return this.inventory.copyEntryToExit(id);
   }
 
@@ -101,6 +110,7 @@ export class InventoryController {
     @Query('inventorySessionId') inventorySessionId?: string,
   ) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.inventory.setInventoryReferenceFromLease(leaseId, inventorySessionId);
   }
 
@@ -110,6 +120,21 @@ export class InventoryController {
     @Query('status') status?: string,
   ) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+    this.uuidPipe.transform(leaseId, { type: 'query', metatype: String, data: 'leaseId' });
     return this.inventory.applyInventoryReferenceToLease(leaseId, status || 'entry');
+  }
+
+  // ✅ Nouveau endpoint stable: on cible la session EXIT explicitement
+  @Post('sessions/:id/copy-from-entry')
+  async copyFromEntry(
+    @Param('id', new ParseUUIDPipe({ version: '4' })) id: string,
+    @Body('fromSessionId') fromSessionId?: string,
+  ) {
+    // fromSessionId optionnel: si présent, doit être uuid
+    if (fromSessionId) {
+      this.uuidPipe.transform(fromSessionId, { type: 'body', metatype: String, data: 'fromSessionId' });
+    }
+
+    return this.inventory.copyEntryToExitForSession({ exitSessionId: id, fromSessionId });
   }
 }

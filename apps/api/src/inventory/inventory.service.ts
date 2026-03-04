@@ -175,41 +175,136 @@ export class InventoryService {
     return { ok: true, id: lineId };
   }
 
-  // ✅ Copy entry -> exit for latest session of a lease (exit is considered "unset" when NULL/blank)
+  async copyEntryToExitForSession(args: {
+    exitSessionId: string;
+    fromSessionId?: string;
+  }) {
+    const { exitSessionId, fromSessionId } = args;
+
+    if (!exitSessionId) throw new BadRequestException('Missing exitSessionId');
+
+    // 1) Vérifier la session exit + récupérer lease_id + created_at
+    const exitQ = await this.pool.query(
+      `SELECT id, lease_id, status, created_at FROM inventory_sessions WHERE id=$1`,
+      [exitSessionId],
+    );
+    if (!exitQ.rowCount) throw new BadRequestException('Unknown exitSessionId');
+
+    const exitSession = exitQ.rows[0];
+    if (String(exitSession.status) !== 'exit') {
+      throw new BadRequestException(`Target session must be status='exit' (got ${exitSession.status})`);
+    }
+
+    const leaseId = exitSession.lease_id;
+
+    // 2) Choisir la source entry
+    let entrySessionId = fromSessionId;
+
+    if (entrySessionId) {
+      const entryQ = await this.pool.query(
+        `SELECT id FROM inventory_sessions WHERE id=$1 AND lease_id=$2 AND status='entry' LIMIT 1`,
+        [entrySessionId, leaseId],
+      );
+      if (!entryQ.rowCount) {
+        throw new BadRequestException('fromSessionId must be an entry session of the same lease');
+      }
+    } else {
+      const entryQ = await this.pool.query(
+        `SELECT id FROM inventory_sessions
+        WHERE lease_id=$1 AND status='entry' AND created_at <= $2
+        ORDER BY created_at DESC
+        LIMIT 1`,
+        [leaseId, exitSession.created_at],
+      );
+      if (!entryQ.rowCount) {
+        throw new BadRequestException('No entry session found before this exit session');
+      }
+      entrySessionId = entryQ.rows[0].id;
+    }
+
+    // 2bis) Si la session EXIT est vide, cloner les lignes depuis la session ENTRY
+    const exitCountQ = await this.pool.query(
+      `SELECT COUNT(*)::int AS n FROM inventory_lines WHERE inventory_session_id=$1`,
+      [exitSessionId],
+    );
+    const exitLinesCount = exitCountQ.rows?.[0]?.n ?? 0;
+
+    let insertedCount = 0;
+
+    if (exitLinesCount === 0) {
+      const srcQ = await this.pool.query(
+        `SELECT catalog_item_id, entry_qty, entry_state, entry_notes
+         FROM inventory_lines
+         WHERE inventory_session_id=$1`,
+        [entrySessionId],
+      );
+
+      for (const ln of srcQ.rows) {
+        await this.pool.query(
+          `INSERT INTO inventory_lines (
+             id, inventory_session_id, catalog_item_id,
+             entry_qty, entry_state, entry_notes,
+             exit_qty, exit_state, exit_notes
+           )
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+          [
+            crypto.randomUUID(),
+            exitSessionId,
+            ln.catalog_item_id,
+            ln.entry_qty ?? 0,
+            ln.entry_state ?? 'OK',
+            ln.entry_notes ?? null,
+            // préremplissage sortie = entrée
+            ln.entry_qty ?? 0,
+            ln.entry_state ?? 'OK',
+            ln.entry_notes ?? null,
+          ],
+        );
+        insertedCount++;
+      }
+    }       
+
+    // 3) Copier entry_* -> exit_* SUR LA SESSION EXIT (idempotent: on ne remplit que si vide)
+    const r = await this.pool.query(
+      `UPDATE inventory_lines
+      SET
+        exit_qty = CASE
+          WHEN COALESCE(exit_qty, 0) = 0 THEN COALESCE(entry_qty, 0)
+          ELSE exit_qty
+        END,
+        exit_state = CASE
+          WHEN exit_state IS NULL OR btrim(exit_state) = '' OR lower(btrim(exit_state)) IN ('ok','--','-')
+            THEN entry_state
+          ELSE exit_state
+        END,
+        exit_notes = CASE
+          WHEN exit_notes IS NULL OR btrim(exit_notes) = ''
+            THEN entry_notes
+          ELSE exit_notes
+        END
+      WHERE inventory_session_id = $1`,
+      [exitSessionId],
+    );
+
+    return { ok: true, exitSessionId, entrySessionId, insertedCount, updatedCount: r.rowCount };
+  }
+
+
+  // Legacy endpoint: copy entry -> exit for "latest exit session" of a lease
   async copyEntryToExit(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const sQ = await this.pool.query(
-      `SELECT id FROM inventory_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`,
+    // Prendre la dernière session EXIT (pas latest global)
+    const exitQ = await this.pool.query(
+      `SELECT id FROM inventory_sessions WHERE lease_id=$1 AND status='exit' ORDER BY created_at DESC LIMIT 1`,
       [leaseId],
     );
-    if (!sQ.rowCount) throw new BadRequestException('No inventory session for this lease');
 
-    const inventorySessionId = sQ.rows[0].id;
+    if (!exitQ.rowCount) {
+      throw new BadRequestException('No exit inventory session for this lease (create an exit session first)');
+    }
 
-    const r = await this.pool.query(
-      `UPDATE inventory_lines
-       SET
-         exit_qty   = CASE
-           WHEN COALESCE(exit_qty, 0) = 0 THEN COALESCE(entry_qty, 0)
-           ELSE exit_qty
-         END,
-         exit_state = CASE
-           WHEN exit_state IS NULL 
-             OR btrim(exit_state) = ''
-             OR lower(btrim(exit_state)) IN ('ok','--','-') 
-           THEN entry_state
-           ELSE exit_state
-         END,
-         exit_notes = CASE
-           WHEN exit_notes IS NULL OR exit_notes = '' THEN entry_notes
-           ELSE exit_notes
-         END
-       WHERE inventory_session_id=$1`,
-      [inventorySessionId],
-    );
-
-    return { ok: true, inventorySessionId, updatedCount: r.rowCount };
+    return this.copyEntryToExitForSession({ exitSessionId: exitQ.rows[0].id });
   }
 
   // ------------------------------------------------------------
