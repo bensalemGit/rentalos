@@ -151,4 +151,10 @@ export class EdlController {
     const f = await this.edl.getPhotoFile(id);
     return res.download(f.absPath, f.filename);
   }
+
+  // GET /edl/sessions/:id/diff
+  @Get('sessions/:id/diff')
+  diff(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.edl.diffForLease(id);
+  }
 }

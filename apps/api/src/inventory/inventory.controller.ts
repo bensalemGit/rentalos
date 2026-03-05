@@ -137,4 +137,10 @@ export class InventoryController {
 
     return this.inventory.copyEntryToExitForSession({ exitSessionId: id, fromSessionId });
   }
+
+  // GET /inventory/sessions/:id/diff
+  @Get('sessions/:id/diff')
+  diff(@Param('id', new ParseUUIDPipe({ version: '4' })) id: string) {
+    return this.inventory.diffForLease(id);
+  }
 }

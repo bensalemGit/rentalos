@@ -145,6 +145,24 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   const green = "#16a34a";
   const bg = "#f7f8fb";
 
+  // diff modal
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState("");
+  const [diffRows, setDiffRows] = useState<
+    Array<{
+      key: string;
+      section: string;
+      label: string;
+      kind: "added" | "removed" | "changed" | string;
+      entry_condition: string | null;
+      entry_notes: string | null;
+      exit_condition: string | null;
+      exit_notes: string | null;
+    }>
+  >([]);
+
+
   useEffect(() => {
     sessionIdRef.current = sessionId || "";
   }, [sessionId]);
@@ -164,7 +182,10 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   // close modal on ESC
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setAddOpen(false);
+      if (e.key === "Escape") {
+        setAddOpen(false);
+        setDiffOpen(false);
+      }
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -309,6 +330,35 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
       setStatus("");
       setError(String(e?.message || e));
       pushToast({ kind: "err", message: "Erreur chargement items" });
+    }
+  }
+
+    async function openDiffModal() {
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) return;
+
+    setDiffOpen(true);
+    setDiffLoading(true);
+    setDiffError("");
+    setDiffRows([]);
+
+    try {
+      const r = await fetch(`${API}/edl/sessions/${sid}/diff`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+
+      const j = await r.json().catch(() => ({} as any));
+      if (!r.ok) {
+        throw new Error(j?.message || "Erreur diff EDL");
+      }
+
+      setDiffRows(Array.isArray(j?.rows) ? j.rows : []);
+    } catch (e: any) {
+      setDiffError(String(e?.message || e));
+      pushToast({ kind: "err", message: "Erreur chargement différences" });
+    } finally {
+      setDiffLoading(false);
     }
   }
 
@@ -1024,6 +1074,111 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
         </div>
       )}
 
+            {/* Diff modal */}
+      {diffOpen && (
+        <div
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDiffOpen(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(2,6,23,0.45)",
+            zIndex: 9998,
+            display: "grid",
+            placeItems: "center",
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              width: 980,
+              maxWidth: "100%",
+              borderRadius: 18,
+              background: "#fff",
+              border: `1px solid ${border}`,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+              padding: 14,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+              <div style={{ fontWeight: 950, fontSize: 16 }}>Différences EDL (Entrée ↔ Sortie)</div>
+              <button onClick={() => setDiffOpen(false)} style={btnSecondary(border)}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, color: muted, fontSize: 12 }}>
+              Session sélectionnée :{" "}
+              <b style={{ color: "#111" }}>{(sessionIdRef.current || sessionId).slice(0, 8)}…</b>
+            </div>
+
+            {diffLoading && <div style={{ marginTop: 12, color: muted, fontWeight: 900 }}>Chargement…</div>}
+            {diffError && <div style={{ marginTop: 12, color: "crimson", fontWeight: 900 }}>{diffError}</div>}
+
+            {!diffLoading && !diffError && (
+              <div style={{ marginTop: 12 }}>
+                {!diffRows.length ? (
+                  <div style={{ color: muted, fontWeight: 900 }}>Aucune différence ✅</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8, maxHeight: "65vh", overflow: "auto", paddingRight: 4 }}>
+                    {diffRows.map((r) => (
+                      <div
+                        key={r.key}
+                        style={{
+                          border: `1px solid ${border}`,
+                          borderRadius: 14,
+                          padding: 10,
+                          background: "#fbfbfd",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>
+                              {r.section} • {r.label}
+                            </div>
+                            <div style={{ color: muted, fontSize: 12 }}>{r.key}</div>
+                          </div>
+                          <span style={diffPill(r.kind as any)}>{String(r.kind).toUpperCase()}</span>
+                        </div>
+
+                        <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+                          <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fff" }}>
+                            <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Entrée</div>
+                            <div style={{ fontSize: 12, color: muted }}>
+                              <b style={{ color: "#111" }}>État:</b> {r.entry_condition ?? "—"}
+                            </div>
+                            <div style={{ fontSize: 12, color: muted, marginTop: 6, whiteSpace: "pre-wrap" }}>
+                              <b style={{ color: "#111" }}>Notes:</b> {r.entry_notes ?? "—"}
+                            </div>
+                          </div>
+
+                          <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fff" }}>
+                            <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Sortie</div>
+                            <div style={{ fontSize: 12, color: muted }}>
+                              <b style={{ color: "#111" }}>État:</b> {r.exit_condition ?? "—"}
+                            </div>
+                            <div style={{ fontSize: 12, color: muted, marginTop: 6, whiteSpace: "pre-wrap" }}>
+                              <b style={{ color: "#111" }}>Notes:</b> {r.exit_notes ?? "—"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setDiffOpen(false)} style={btnSecondary(border)}>
+                Fermer
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={card(border, "#fff")}>
         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div>
@@ -1119,6 +1274,15 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
               title={!hasReference ? "Aucune référence logement définie" : ""}
             >
               {applyingReference ? "Application…" : "Réinitialiser depuis référence"}
+            </button>
+
+            <button
+              onClick={openDiffModal}
+              disabled={!sessionId}
+              style={{ ...btnSecondary(border), opacity: sessionId ? 1 : 0.6, fontWeight: 900 }}
+              title="Voir les différences Entrée ↔ Sortie pour cette paire de sessions"
+            >
+              Différences
             </button>
 
             <button onClick={toggleFullscreen} style={btnSecondary(border)}>
@@ -1395,6 +1559,27 @@ function toastPill(kind: ToastKind) {
     background: s.bg,
     color: s.c,
     letterSpacing: 0.4,
+  } as const;
+}
+
+function diffPill(kind: "added" | "removed" | "changed" | string) {
+  const k = String(kind || "").toLowerCase();
+  const map: Record<string, { b: string; bg: string; c: string }> = {
+    added: { b: "rgba(22,163,74,0.25)", bg: "rgba(22,163,74,0.10)", c: "#14532d" },
+    removed: { b: "rgba(220,38,38,0.28)", bg: "rgba(220,38,38,0.10)", c: "#7f1d1d" },
+    changed: { b: "rgba(245,158,11,0.30)", bg: "rgba(245,158,11,0.12)", c: "#78350f" },
+  };
+  const s = map[k] || map.changed;
+  return {
+    fontSize: 11,
+    fontWeight: 950,
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: `1px solid ${s.b}`,
+    background: s.bg,
+    color: s.c,
+    letterSpacing: 0.4,
+    whiteSpace: "nowrap",
   } as const;
 }
 function card(border: string, bg: string) {

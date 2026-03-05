@@ -577,4 +577,170 @@ export class EdlService {
       preview: previewQ.rows,
     };
   }
+
+  // ------------------------------------------------------------
+  // ✅ Diff entry vs exit (par ref_key si possible)
+  // GET /edl/sessions/:id/diff
+  // ------------------------------------------------------------
+  async diffForLease(sessionId: string) {
+    if (!sessionId) throw new BadRequestException('Missing sessionId');
+
+    const sQ = await this.pool.query(
+      `SELECT id, lease_id, status, created_at
+       FROM edl_sessions
+       WHERE id=$1`,
+      [sessionId],
+    );
+    if (!sQ.rowCount) throw new BadRequestException('Unknown edl session');
+
+    const base = sQ.rows[0] as { id: string; lease_id: string; status: string; created_at: string };
+    const leaseId = base.lease_id;
+    const baseStatus = String(base.status || '').toLowerCase();
+
+    // Pairing:
+    // - si base=exit => entry la plus récente avant
+    // - si base=entry => exit la plus proche après (fallback dernière exit)
+    let entrySessionId: string | null = null;
+    let exitSessionId: string | null = null;
+
+    if (baseStatus === 'exit') {
+      exitSessionId = base.id;
+
+      const entryQ = await this.pool.query(
+        `SELECT id
+         FROM edl_sessions
+         WHERE lease_id=$1 AND status='entry' AND created_at <= $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [leaseId, base.created_at],
+      );
+      entrySessionId = entryQ.rows?.[0]?.id ?? null;
+    } else {
+      entrySessionId = base.id;
+
+      const exitAfterQ = await this.pool.query(
+        `SELECT id
+         FROM edl_sessions
+         WHERE lease_id=$1 AND status='exit' AND created_at >= $2
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [leaseId, base.created_at],
+      );
+      exitSessionId = exitAfterQ.rows?.[0]?.id ?? null;
+
+      if (!exitSessionId) {
+        const exitLastQ = await this.pool.query(
+          `SELECT id
+           FROM edl_sessions
+           WHERE lease_id=$1 AND status='exit'
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [leaseId],
+        );
+        exitSessionId = exitLastQ.rows?.[0]?.id ?? null;
+      }
+    }
+
+    const entryItems = entrySessionId
+      ? (
+          await this.pool.query(
+            `SELECT id, edl_session_id, section, label, ref_key,
+                    entry_condition, entry_notes,
+                    exit_condition, exit_notes
+             FROM edl_items
+             WHERE edl_session_id=$1`,
+            [entrySessionId],
+          )
+        ).rows
+      : [];
+
+    const exitItems = exitSessionId
+      ? (
+          await this.pool.query(
+            `SELECT id, edl_session_id, section, label, ref_key,
+                    entry_condition, entry_notes,
+                    exit_condition, exit_notes
+             FROM edl_items
+             WHERE edl_session_id=$1`,
+            [exitSessionId],
+          )
+        ).rows
+      : [];
+
+    const rows = buildEdlDiff(entryItems, exitItems);
+
+    return {
+      ok: true,
+      leaseId,
+      baseSessionId: base.id,
+      entrySessionId,
+      exitSessionId,
+      rows,
+      counts: {
+        entryItems: entryItems.length,
+        exitItems: exitItems.length,
+        diffs: rows.length,
+      },
+    };
+  }  
+}
+
+function normStr(x: any): string | null {
+  const s = x === undefined || x === null ? null : String(x);
+  const t = s?.trim();
+  return t ? t : null;
+}
+
+function edlKey(it: any): string {
+  const rk = normStr(it?.ref_key);
+  if (rk) return `ref:${rk}`;
+
+  const sec = (normStr(it?.section) ?? 'Divers').toLowerCase();
+  const lab = (normStr(it?.label) ?? '').toLowerCase();
+  return `sl:${sec}__${lab}`;
+}
+
+function buildEdlDiff(entryItems: any[], exitItems: any[]) {
+  const emap = new Map<string, any>();
+  const xmap = new Map<string, any>();
+
+  for (const it of entryItems || []) emap.set(edlKey(it), it);
+  for (const it of exitItems || []) xmap.set(edlKey(it), it);
+
+  const keys = new Set<string>([...emap.keys(), ...xmap.keys()]);
+  const out: any[] = [];
+
+  for (const k of Array.from(keys).sort()) {
+    const e = emap.get(k);
+    const x = xmap.get(k);
+
+    const section = normStr(e?.section ?? x?.section) ?? 'Divers';
+    const label = normStr(e?.label ?? x?.label) ?? '';
+
+    const entry_condition = normStr(e?.entry_condition);
+    const entry_notes = normStr(e?.entry_notes);
+
+    const exit_condition = normStr(x?.exit_condition);
+    const exit_notes = normStr(x?.exit_notes);
+
+    const kind = e && !x ? 'removed' : !e && x ? 'added' : 'changed';
+
+    if (kind === 'changed') {
+      const same = entry_condition === exit_condition && entry_notes === exit_notes;
+      if (same) continue;
+    }
+
+    out.push({
+      key: k,
+      section,
+      label,
+      kind, // added | removed | changed
+      entry_condition,
+      entry_notes,
+      exit_condition,
+      exit_notes,
+    });
+  }
+
+  return out;
 }
