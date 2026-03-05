@@ -70,6 +70,8 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
   const [sessions, setSessions] = useState<InvSession[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
+  const sessionIdRef = useRef<string>("");
+  const userPickedSessionRef = useRef(false);
 
   const [lines, setLines] = useState<InvLine[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -82,6 +84,13 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     unitId?: string;
     referenceInventorySessionId?: string;
   } | null>(null);
+
+  const [referenceInfo, setReferenceInfo] = useState<{
+    referenceInventorySessionId: string | null;
+    updated_at?: string | null;
+  } | null>(null);
+
+  const hasReference = Boolean(referenceInfo?.referenceInventorySessionId);
 
   const [createStatus, setCreateStatus] = useState<"entry" | "exit">("entry");
   const [q, setQ] = useState("");
@@ -124,6 +133,10 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   const muted = "#6b7280";
   const green = "#16a34a";
   const bg = "#f7f8fb";
+
+  useEffect(() => {
+    sessionIdRef.current = sessionId || "";
+  }, [sessionId]);
 
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
@@ -195,11 +208,31 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
       setSessions(arr);
 
       if (!arr.length) {
+        sessionIdRef.current = "";
+        userPickedSessionRef.current = false;
         setSessionId("");
         setLines([]);
       } else {
-        const target = pickSessionId || sessionId || arr[0]?.id;
-        if (target) setSessionId(target);
+        let target = pickSessionId ? String(pickSessionId) : "";
+
+        if (!target) {
+          const preferred = sessionIdRef.current || sessionId;
+          const stillExists = preferred && arr.some((s) => s.id === preferred);
+          if (userPickedSessionRef.current && stillExists) target = preferred;
+        }
+
+        if (!target) {
+          const preferred = sessionIdRef.current || sessionId;
+          const stillExists = preferred && arr.some((s) => s.id === preferred);
+          if (stillExists) target = preferred;
+        }
+
+        if (!target) target = arr[0]?.id;
+
+        if (target) {
+          sessionIdRef.current = target;
+          setSessionId(target);
+        }
       }
 
       setStatus("");
@@ -210,6 +243,29 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
       setSessionId("");
       setLines([]);
       pushToast({ kind: "err", message: "Erreur réseau (sessions)" });
+    }
+  }
+
+  async function loadReference() {
+    try {
+      const r = await fetch(`${API}/inventory/reference?leaseId=${leaseId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (!r.ok) {
+        setReferenceInfo(null);
+        return;
+      }
+
+      const j = await r.json().catch(() => ({} as any));
+      setReferenceInfo({
+        referenceInventorySessionId: j?.referenceInventorySessionId ?? null,
+        updated_at: j?.updated_at ?? null,
+      });
+    } catch {
+      setReferenceInfo(null);
     }
   }
 
@@ -303,6 +359,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
     setError("");
     loadSessions();
+    loadReference();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, leaseId]);
@@ -341,13 +398,15 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   }
 
   async function createInventoryLine(payload: { category: string; label: string; unit: string; qty: number }) {
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) throw new Error("Session inventaire manquante");
     const r = await fetch(`${API}/inventory/lines`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       credentials: "include",
       body: JSON.stringify({
-        inventorySessionId: sessionId,
-        inventory_session_id: sessionId,
+        inventorySessionId: sid,
+        inventory_session_id: sid,
         category: payload.category,
         name: payload.label,
         label: payload.label,
@@ -371,6 +430,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     let undone = false;
     const undoId = "undo-" + line.id;
 
+    const sidAtDelete = sessionIdRef.current || sessionId;
     const timer = setTimeout(async () => {
       if (undone) return;
       try {
@@ -380,11 +440,11 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
           credentials: "include",
         });
         if (!r.ok) {
-          await loadLines(sessionId);
+          await loadLines(sidAtDelete);
           pushToast({ kind: "err", message: "Suppression: erreur serveur, rechargé." });
         }
       } catch {
-        await loadLines(sessionId);
+        await loadLines(sidAtDelete);
       } finally {
         delete undoTimers.current[undoId];
       }
@@ -423,10 +483,10 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
             } catch {}
           }
 
-          await loadLines(sessionId);
+          await loadLines(sidAtDelete);
           pushToast({ kind: "ok", message: "Restauration ✅" });
         } catch {
-          await loadLines(sessionId);
+          await loadLines(sidAtDelete);
           pushToast({ kind: "err", message: "Restauration: erreur, rechargé." });
         }
       },
@@ -528,6 +588,8 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
       if (!exitSessionId) throw new Error("Aucune session sortie disponible (inventory).");
 
       // 4) bascule UI
+      sessionIdRef.current = exitSessionId;
+      userPickedSessionRef.current = true;
       setSessionId(exitSessionId);
       setViewMode("EXIT");
 
@@ -557,12 +619,15 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   }
 
   async function saveAsUnitReferenceInventory() {
-    if (!token || !sessionId) return;
+    if (!token) return;
+
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) return;
     setError("");
     setStatus("Enregistrement référence logement (Inventaire)…");
     setSavingReference(true);
     try {
-      const r = await fetch(`${API}/inventory/reference?leaseId=${leaseId}&inventorySessionId=${sessionId}`, {
+      const r = await fetch(`${API}/inventory/reference?leaseId=${leaseId}&inventorySessionId=${sid}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -575,14 +640,75 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
         return;
       }
       setLastReferenceInfo({ unitId: j?.unitId, referenceInventorySessionId: j?.referenceInventorySessionId });
-      setStatus("Référence logement (Inventaire) enregistrée ✅");
-      pushToast({ kind: "ok", message: "Référence inventaire ✅" });
+      await loadReference();
+      const msg =
+        j?.mode === "update_reference"
+          ? "Référence logement mise à jour depuis la sortie ✅"
+          : "Référence logement définie ✅";
+
+      setStatus(msg);
+      pushToast({ kind: "ok", message: msg });
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
       pushToast({ kind: "err", message: "Erreur réseau (référence)" });
     } finally {
       setSavingReference(false);
+    }
+  }
+
+  async function bootstrapEntryFromReferenceInventory() {
+    if (!token) return;
+
+    setError("");
+    setStatus("Création de l'entrée depuis la référence logement…");
+    setApplyingReference(true);
+
+    try {
+      const r = await fetch(`${API}/inventory/apply-reference?leaseId=${leaseId}&status=entry`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        pushToast({ kind: "err", message: "Impossible de créer l'entrée depuis la référence" });
+        return;
+      }
+
+      const newSessionId =
+        j?.id ||
+        j?.inventorySessionId ||
+        j?.sessionId ||
+        j?.inventory_session_id ||
+        j?.session?.id ||
+        j?.inventorySession?.id ||
+        null;
+
+      pushToast({ kind: "ok", message: "Entrée créée depuis la référence ✅" });
+
+      await loadSessions(newSessionId ? String(newSessionId) : undefined);
+      await loadReference();
+
+      const targetId = newSessionId ? String(newSessionId) : sessionIdRef.current || "";
+
+      if (targetId) {
+        sessionIdRef.current = targetId;
+        userPickedSessionRef.current = true;
+        setSessionId(targetId);
+        setViewMode("ENTRY");
+        await loadLines(targetId);
+      }
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+      pushToast({ kind: "err", message: "Erreur réseau (bootstrap référence)" });
+    } finally {
+      setApplyingReference(false);
+      setStatus("");
     }
   }
 
@@ -594,11 +720,13 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     setStatus("Application référence logement (Inventaire)…");
     setApplyingReference(true);
     try {
-      const r = await fetch(`${API}/inventory/apply-reference?leaseId=${leaseId}&status=${createStatus}`, {
-        method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-      });
+        const status = viewMode === "EXIT" ? "exit" : "entry";
+
+        const r = await fetch(`${API}/inventory/apply-reference?leaseId=${leaseId}&status=${status}`, {
+          method: "POST",
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
         setStatus("");
@@ -607,12 +735,48 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
         return;
       }
 
-      const newSessionId = j?.inventorySessionId || j?.sessionId || j?.inventory_session_id || j?.session?.id || null;
+      const newSessionId =
+        j?.id ||
+        j?.inventorySessionId ||
+        j?.sessionId ||
+        j?.inventory_session_id ||
+        j?.session?.id ||
+        j?.inventorySession?.id ||
+        null;
 
-      setStatus(`Inventaire réinitialisé ✅ (${j?.createdLines ?? "?"} lignes)`);
-      pushToast({ kind: "ok", message: "Inventaire réinitialisé ✅" });
       await loadSessions(newSessionId ? String(newSessionId) : undefined);
-      if (newSessionId) await loadLines(String(newSessionId));
+
+      // reload reference badge state (if any)
+      await loadReference();
+
+      const targetId = newSessionId ? String(newSessionId) : "";
+
+      if (targetId) {
+        sessionIdRef.current = targetId;
+        userPickedSessionRef.current = true;
+        setSessionId(targetId);
+        setViewMode(status === "exit" ? "EXIT" : "ENTRY");
+        await loadLines(targetId);
+      } else {
+        // fallback: si l'API ne renvoie pas d'id
+        const rSess = await fetch(`${API}/inventory/sessions?leaseId=${leaseId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
+        const jSess = await rSess.json().catch(() => []);
+        const fresh: InvSession[] = Array.isArray(jSess) ? jSess : [];
+        fresh.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+
+        const picked = fresh.find((s) => s.status === status)?.id;
+        if (picked) {
+          sessionIdRef.current = picked;
+          userPickedSessionRef.current = true;
+          setSessionId(picked);
+          setViewMode(status === "exit" ? "EXIT" : "ENTRY");
+          await loadLines(picked);
+        }
+      }
+      
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -822,7 +986,12 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
             <select
               value={sessionId}
-              onChange={(e) => setSessionId(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                userPickedSessionRef.current = true;
+                sessionIdRef.current = v;
+                setSessionId(v);
+              }}
               style={{ ...inputStyle(border), width: 280, background: "#fbfbfd" }}
               title="Session"
             >
@@ -873,8 +1042,13 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
             <button
               onClick={applyUnitReferenceToLeaseInventory}
-              disabled={applyingReference}
-              style={{ ...btnSecondary(border), opacity: applyingReference ? 0.6 : 1, fontWeight: 900 }}
+              disabled={applyingReference || !hasReference}
+              style={{
+                ...btnSecondary(border),
+                opacity: applyingReference || !hasReference ? 0.6 : 1,
+                fontWeight: 900,
+              }}
+              title={!hasReference ? "Aucune référence logement définie" : ""}
             >
               {applyingReference ? "Application…" : "Réinitialiser depuis référence"}
             </button>
@@ -899,6 +1073,33 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
                 • Unit <b style={{ color: "#111" }}>{String(lastReferenceInfo.unitId).slice(0, 8)}…</b>
               </>
             ) : null}
+          </div>
+        )}
+
+        <div style={{ marginTop: 6, color: muted, fontSize: 12 }}>
+          Référence (état) :{" "}
+          {hasReference ? (
+            <b style={{ color: "#111" }}>
+              OK ({String(referenceInfo?.referenceInventorySessionId || "").slice(0, 8)}…)
+            </b>
+          ) : (
+            <b style={{ color: "crimson" }}>Aucune</b>
+          )}
+        </div>
+
+        {sessions.length === 0 && hasReference && (
+          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ color: muted, fontSize: 12, fontWeight: 900 }}>
+              Ce bail n'a aucune session inventaire.
+            </div>
+            <button
+              onClick={bootstrapEntryFromReferenceInventory}
+              disabled={applyingReference}
+              style={{ ...btnPrimary(blue), opacity: applyingReference ? 0.6 : 1 }}
+              title="Crée automatiquement une session entrée clonée depuis la référence logement"
+            >
+              {applyingReference ? "Création…" : "Créer entrée depuis référence logement"}
+            </button>
           </div>
         )}
 
