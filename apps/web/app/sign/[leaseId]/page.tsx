@@ -62,16 +62,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   // ✅ NEW: pack final v2
   const [packFinalV2Doc, setPackFinalV2Doc] = useState<Doc | null>(null);
 
-  const guarantorCanvasRef = useRef<HTMLCanvasElement | null>(null);
-
-  const drawingGuarantor = useRef(false);
-
-  // ✅ NEW: prevent empty signatures
-  const tenantDirty = useRef(false);
-  const landlordDirty = useRef(false);
-  const guarantorDirty = useRef(false);
-
-
   // lease kind
   const [leaseKind, setLeaseKind] = useState("");
 
@@ -82,17 +72,20 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
 
+  // ✅ NEW: panneau signature unique (droite)
+  const [role, setRole] = useState<"LOCATAIRE" | "BAILLEUR" | "GARANT">("LOCATAIRE");
+
+  // canvas unique
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const drawing = useRef(false);
+  const signatureDirty = useRef(false);
+
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
 
   // confirmations
   const [tenantSigned, setTenantSigned] = useState(false);
   const [landlordSigned, setLandlordSigned] = useState(false);
-
-  const tenantCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const landlordCanvasRef = useRef<HTMLCanvasElement | null>(null);
-  const drawingTenant = useRef(false);
-  const drawingLandlord = useRef(false);
 
   const [sigStatus, setSigStatus] = useState<SignatureStatusPayload | null>(null);
   // ✅ Local override: permet d'utiliser immédiatement l'id d'acte renvoyé par /documents/guarantor-act
@@ -109,26 +102,21 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     setToken(localStorage.getItem("token") || "");
   }, []);
 
-  function setupCanvas(c: HTMLCanvasElement) {
-    const w = Math.min(520, window.innerWidth - 48);
-    c.width = w;
-    c.height = 160;
-    const ctx = c.getContext("2d")!;
-    ctx.lineWidth = 2.2;
-    ctx.lineCap = "round";
-  }
+function setupCanvas(c: HTMLCanvasElement) {
+  // Canvas "interne" en haute résolution, affiché en 180px de haut via CSS
+  c.width = 900;
+  c.height = 360;
+
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+  ctx.lineWidth = 2.2;
+  ctx.lineCap = "round";
+}
 
   useEffect(() => {
-    if (tenantCanvasRef.current) setupCanvas(tenantCanvasRef.current);
-    if (landlordCanvasRef.current) setupCanvas(landlordCanvasRef.current);
-    // ✅ NEW
-    if (guarantorCanvasRef.current) setupCanvas(guarantorCanvasRef.current);
-  
-  }, [
-    tenantCanvasRef.current,
-    landlordCanvasRef.current,
-    guarantorCanvasRef.current,
-  ]);
+    if (!canvasRef.current) return;
+    setupCanvas(canvasRef.current);
+  }, []);
 
   function normalizeTenantId(t: LeaseTenant): string {
     return String(t.tenant_id || t.id || "").trim();
@@ -605,14 +593,13 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     await fetchSignatureStatus(leaseId);
   }
 
-  function clearCanvas(c: HTMLCanvasElement | null) {
+  function clearCanvas() {
+    const c = canvasRef.current;
     if (!c) return;
-    const ctx = c.getContext("2d")!;
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
     ctx.clearRect(0, 0, c.width, c.height);
-    // ✅ NEW: reset dirty flags
-    if (c === tenantCanvasRef.current) tenantDirty.current = false;
-    if (c === landlordCanvasRef.current) landlordDirty.current = false;
-    if (c === guarantorCanvasRef.current) guarantorDirty.current = false;
+    signatureDirty.current = false;
   }
 
   function dataUrl(c: HTMLCanvasElement | null) {
@@ -620,77 +607,52 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     return c.toDataURL("image/png");
   }
 
-  function pos(e: any, c: HTMLCanvasElement) {
-    const rect = c.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
-    return { x, y };
-  }
+ function posPointer(e: any, c: HTMLCanvasElement) {
+  const rect = c.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  return { x, y };
+}
 
-  function startTenant(e: any) {
-    const c = tenantCanvasRef.current!;
-    drawingTenant.current = true;
-    const ctx = c.getContext("2d")!;
-    const p = pos(e, c);
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-  }
-  function moveTenant(e: any) {
-    if (!drawingTenant.current) return;
-    tenantDirty.current = true; // ✅ NEW
-    const c = tenantCanvasRef.current!;
-    const ctx = c.getContext("2d")!;
-    const p = pos(e, c);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-  }
-  function endTenant() {
-    drawingTenant.current = false;
-  }
+function onPointerDown(e: any) {
+  const c = canvasRef.current;
+  if (!c) return;
+  drawing.current = true;
+  try {
+    (e.currentTarget as HTMLCanvasElement)?.setPointerCapture?.(e.pointerId);
+  } catch {}
 
-  function startLandlord(e: any) {
-    const c = landlordCanvasRef.current!;
-    drawingLandlord.current = true;
-    const ctx = c.getContext("2d")!;
-    const p = pos(e, c);
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-  }
-  function moveLandlord(e: any) {
-    if (!drawingLandlord.current) return;
-    landlordDirty.current = true; // ✅ NEW
-    const c = landlordCanvasRef.current!;
-    const ctx = c.getContext("2d")!;
-    const p = pos(e, c);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-  }
-  function endLandlord() {
-    drawingLandlord.current = false;
-  }
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
 
-    // ✅ NEW: guarantor act canvas handlers
-  function startGuarantor(e: any) {
-    const c = guarantorCanvasRef.current!;
-    drawingGuarantor.current = true;
-    const ctx = c.getContext("2d")!;
-    const p = pos(e, c);
-    ctx.beginPath();
-    ctx.moveTo(p.x, p.y);
-  }
-  function moveGuarantor(e: any) {
-    if (!drawingGuarantor.current) return;
-    guarantorDirty.current = true; // ✅ NEW
-    const c = guarantorCanvasRef.current!;
-    const ctx = c.getContext("2d")!;
-    const p = pos(e, c);
-    ctx.lineTo(p.x, p.y);
-    ctx.stroke();
-  }
-  function endGuarantor() {
-    drawingGuarantor.current = false;
-  }
+  const p = posPointer(e, c);
+  ctx.beginPath();
+  ctx.moveTo(p.x, p.y);
+}
 
+function onPointerMove(e: any) {
+  if (!drawing.current) return;
+  const c = canvasRef.current;
+  if (!c) return;
+
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+
+  signatureDirty.current = true;
+
+  const p = posPointer(e, c);
+  ctx.lineTo(p.x, p.y);
+  ctx.stroke();
+}
+
+function onPointerUp(e: any) {
+  const c = canvasRef.current;
+  if (!c) return;
+  try {
+    (e.currentTarget as HTMLCanvasElement)?.releasePointerCapture?.(e.pointerId);
+  } catch {}
+  drawing.current = false;
+}
 
   const hasFinal = useMemo(() => !!finalSignedDoc?.id, [finalSignedDoc]);
 
@@ -861,154 +823,131 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     return landlordSignables.find((x) => x.key === selectedTenantDocKey) || null;
   }, [landlordSignables, selectedTenantDocKey]);
 
-  async function sign(role: "LOCATAIRE" | "BAILLEUR") {
-    const documentIdToSign =
-      role === "LOCATAIRE" ? selectedTenantDoc?.documentId : selectedLandlordDoc?.documentId;
+async function signDocOnPlace(args: {
+  documentId: string;
+  signerRole: "LOCATAIRE" | "BAILLEUR" | "GARANT";
+  signerName: string;
+  signerTenantId?: string;
+  optimisticGuaranteeId?: string; // pour l'UI garant
+}) {
+  const { documentId, signerRole, signerName, signerTenantId, optimisticGuaranteeId } = args;
 
-    if (!documentIdToSign) {
-      setError(
-        role === "LOCATAIRE"
-          ? "Aucun document sélectionné à signer (locataire)."
-          : "Aucun document sélectionné à signer (bailleur)."
-      );
-      return;
-    }
+  setError("");
+  setStatus(
+    signerRole === "LOCATAIRE"
+      ? "Signature locataire…"
+      : signerRole === "BAILLEUR"
+        ? "Signature bailleur…"
+        : "Signature garant…"
+  );
 
-    setError("");
-    setStatus(role === "LOCATAIRE" ? "Signature locataire…" : "Signature bailleur…");
-
-    const signerName = role === "LOCATAIRE" ? tenantName : landlordName;
-    const signatureDataUrl =
-      role === "LOCATAIRE" ? dataUrl(tenantCanvasRef.current) : dataUrl(landlordCanvasRef.current);
-
-    const isDirty = role === "LOCATAIRE" ? tenantDirty.current : landlordDirty.current;
-    if (!isDirty) {
-      setStatus("");
-      setError("Signature vide.");
-      return;
-    }
-
-    // ✅ NEW: signerTenantId required when multiple tenants
-    let signerTenantId: string | undefined = undefined;
-    if (role === "LOCATAIRE") {
-      if (hasMultipleTenants) {
-        signerTenantId = String(selectedTenantId || "").trim();
-        if (!signerTenantId) {
-          setStatus("");
-          setError("Sélectionne le locataire signataire (multi-locataires).");
-          return;
-        }
-      } else {
-        // single tenant: try infer from lease bundle
-        const only = tenants?.[0];
-        const id = only ? normalizeTenantId(only) : "";
-        if (id) signerTenantId = id;
-      }
-    }
-
-    try {
-      const payload: any = { signerName, signerRole: role, signatureDataUrl };
-      if (role === "LOCATAIRE" && signerTenantId) payload.signerTenantId = signerTenantId;
-
-      const r = await fetch(`${API}/documents/${documentIdToSign}/sign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        return;
-      }
-
-      if (role === "LOCATAIRE") {
-        clearCanvas(tenantCanvasRef.current);
-        setTenantSigned(true);
-        setStatus("✅ Signature locataire enregistrée");
-      } else {
-        clearCanvas(landlordCanvasRef.current);
-        setLandlordSigned(true);
-        setStatus("✅ Signature bailleur enregistrée");
-      }
-
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
-    } catch (e: any) {
-      setStatus("");
-      setError(String(e?.message || e));
-    }
+  if (!signatureDirty.current) {
+    setStatus("");
+    setError("Signature vide.");
+    return;
   }
 
-  async function signGuarantor() {
-    const docId = selectedGuarantor?.documentId;
-    if (!docId) {
-      setError("Acte non généré : génère l’acte pour permettre la signature sur place.");
-      return;
-    }
+  const signatureDataUrl = dataUrl(canvasRef.current);
 
-    setError("");
-    setStatus("Signature garant…");
+  try {
+    const payload: any = { signerName, signerRole, signatureDataUrl };
+    if (signerTenantId) payload.signerTenantId = signerTenantId;
 
-    const signatureDataUrl = dataUrl(guarantorCanvasRef.current);
-    if (!guarantorDirty.current) {
+    const r = await fetch(`${API}/documents/${documentId}/sign`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      credentials: "include",
+      body: JSON.stringify(payload),
+    });
+
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) {
       setStatus("");
-      setError("Signature vide.");
+      setError(j?.message || JSON.stringify(j));
       return;
     }
 
-    try {
-      const payload = {
-        signerName: guarantorName || selectedGuarantor?.defaultName || "Garant",
-        signerRole: "GARANT",
-        signatureDataUrl,
-      };
-
-      const r = await fetch(`${API}/documents/${docId}/sign`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        credentials: "include",
-        body: JSON.stringify(payload),
-      });
-
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        return;
-      }
-
-      // ✅ optimistic UI : le garant a signé, on passe la garantie en IN_PROGRESS
+    // ✅ optimistic UI garant
+    if (signerRole === "GARANT" && optimisticGuaranteeId) {
       setSigStatus((prev) => {
         if (!prev) return prev;
         return {
           ...prev,
           guarantees: prev.guarantees.map((g) =>
-            g.guaranteeId === selectedGuarantor.guaranteeId
-              ? {
-                  ...g,
-                  signatureStatus: "IN_PROGRESS",
-                }
-              : g
+            g.guaranteeId === optimisticGuaranteeId ? { ...g, signatureStatus: "IN_PROGRESS" } : g
           ),
         };
       });
-
-      clearCanvas(guarantorCanvasRef.current);
-      guarantorDirty.current = false;
-
-      setStatus("✅ Signature garant enregistrée");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
-    } catch (e: any) {
-      setStatus("");
-      setError(String(e?.message || e));
     }
+
+    clearCanvas();
+    setStatus("✅ Signature enregistrée");
+
+    await loadDocs();
+    await fetchSignatureStatus(leaseId);
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
+  }
+}
+
+async function signTenantOnPlace() {
+  const docId = selectedTenantDoc?.documentId;
+  if (!docId) {
+    setError("Aucun document sélectionné à signer (locataire).");
+    return;
   }
 
+  // ✅ signerTenantId si multi-locataires
+  let signerTenantId: string | undefined = undefined;
+  if (hasMultipleTenants) {
+    signerTenantId = String(selectedTenantId || "").trim();
+    if (!signerTenantId) {
+      setError("Sélectionne le locataire signataire (multi-locataires).");
+      return;
+    }
+  } else {
+    const only = tenants?.[0];
+    const id = only ? normalizeTenantId(only) : "";
+    if (id) signerTenantId = id;
+  }
 
+  return signDocOnPlace({
+    documentId: docId,
+    signerRole: "LOCATAIRE",
+    signerName: tenantName || "Locataire",
+    signerTenantId,
+  });
+}
+
+async function signLandlordOnPlace() {
+  const docId = selectedLandlordDoc?.documentId;
+  if (!docId) {
+    setError("Aucun document sélectionné à signer (bailleur).");
+    return;
+  }
+
+  return signDocOnPlace({
+    documentId: docId,
+    signerRole: "BAILLEUR",
+    signerName: landlordName || "Bailleur",
+  });
+}
+
+async function signGuarantorOnPlace() {
+  const docId = selectedGuarantor?.documentId;
+  if (!docId || !selectedGuarantor) {
+    setError("Acte non généré : génère l’acte pour permettre la signature sur place.");
+    return;
+  }
+
+  return signDocOnPlace({
+    documentId: docId,
+    signerRole: "GARANT",
+    signerName: guarantorName || selectedGuarantor.defaultName || "Garant",
+    optimisticGuaranteeId: selectedGuarantor.guaranteeId,
+  });
+}
   async function sendPublicLink(force = false) {
     setError("");
     setStatus(force ? "Renvoi (force) des liens locataires…" : "Envoi des liens locataires…");
@@ -1052,7 +991,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   }
 
   return (
-    <div style={{ padding: 18, maxWidth: 980, margin: "0 auto", display: "grid", gap: 14 }}>
+    <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
         <div>
           <h1 style={{ margin: 0 }}>Contrat & signatures</h1>
@@ -1066,6 +1005,10 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           Rafraîchir
         </button>
       </div>
+
+      <div className="sign-grid" style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16, alignItems: "start" }}>
+        <div style={{ display: "grid", gap: 14 }}>
+          {/* LEFT COLUMN START */}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         <button onClick={generateContract} style={btnAction(border)}>
@@ -1134,8 +1077,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         </button>
 
       </div>
-
-      <div style={card(border)}>
+            <div style={card(border)}>
         <h2 style={{ marginTop: 0 }}>Contrat</h2>
 
         {!sigStatus && loadingSigStatus && (
@@ -1205,25 +1147,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
           />
         ) : null}
       </div>
-
-
-
-
-
-
-
-
-
-      {status && (
-        <div style={{ ...card(border), background: "rgba(31,111,235,0.05)", borderColor: "rgba(31,111,235,0.25)" }}>
-          <b>{status}</b>
-        </div>
-      )}
-      {error && (
-        <div style={{ ...card(border), background: "rgba(220,38,38,0.05)", borderColor: "rgba(220,38,38,0.25)" }}>
-          <b style={{ color: "#b91c1c" }}>{error}</b>
-        </div>
-      )}
 
       {finalSignedDoc?.id && (
         <div style={card(border)}>
@@ -1545,237 +1468,316 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
         </div>
       )}
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, alignItems: "start" }}>
-        <div style={card(border)}>
-          <h2 style={{ marginTop: 0 }}>Signature locataire</h2>
-
-          {hasMultipleTenants && (
-            <div style={{ marginBottom: 10, display: "grid", gap: 6 }}>
-              <div style={{ fontSize: 12, color: muted, fontWeight: 700 }}>Locataire signataire (obligatoire)</div>
-              <select
-                value={selectedTenantId}
-                onChange={(e) => setSelectedTenantId(e.target.value)}
-                style={{ ...inputStyle(border), cursor: "pointer" }}
-              >
-                <option value="">— Sélectionner —</option>
-                {tenants.map((t) => {
-                  const id = normalizeTenantId(t);
-                  const label = `${normalizeTenantName(t)}${t.role ? ` (${t.role})` : ""}`;
-                  return (
-                    <option key={id || label} value={id}>
-                      {label}
-                    </option>
-                  );
-                })}
-              </select>
-              <div style={{ fontSize: 12, color: muted }}>
-                L’API a besoin de l’UUID du locataire pour gérer la signature multi-locataires.
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12, color: muted, fontWeight: 700, marginBottom: 6 }}>
-              Document à signer (locataire)
-            </div>
-
-            <select
-              value={selectedTenantDocKey}
-              onChange={(e) => setSelectedTenantDocKey(e.target.value)}
-              disabled={!landlordSignables.length}
-              style={{ ...inputStyle(border), cursor: landlordSignables.length ? "pointer" : "not-allowed" }}
-            >
-              {landlordSignables.length === 0 ? <option value="">— Aucun document —</option> : null}
-
-              {landlordSignables.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-
-            <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>
-              Le pad ci-dessous signera le document sélectionné.
-            </div>
-          </div>
-
-          <div style={labelStyle(muted)}>
-            <div>Nom signataire</div>
-            <input value={tenantName} onChange={(e) => setTenantName(e.target.value)} style={inputStyle(border)} />
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <canvas
-              ref={tenantCanvasRef}
-              style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
-              onMouseDown={startTenant}
-              onMouseMove={moveTenant}
-              onMouseUp={endTenant}
-              onMouseLeave={endTenant}
-              onTouchStart={startTenant}
-              onTouchMove={moveTenant}
-              onTouchEnd={endTenant}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-            <button onClick={() => clearCanvas(tenantCanvasRef.current)} style={btnAction(border)}>
-              Effacer
-            </button>
-            <button onClick={() => sign("LOCATAIRE")} style={btnPrimarySmall(blue)}>
-              Signer
-            </button>
-          </div>
-        </div>
-
-        <div style={card(border)}>
-          <h2 style={{ marginTop: 0 }}>Signature garant</h2>
-
-          <label style={labelStyle(muted)}>
-            Garant signataire (obligatoire)
-            <select
-              value={selectedGuaranteeId}
-              onChange={(e) => setSelectedGuaranteeId(e.target.value)}
-              disabled={guarantorSignables.length === 0}
-              style={{ ...inputStyle(border), cursor: guarantorSignables.length ? "pointer" : "not-allowed" }}
-            >
-              {guarantorSignables.length === 0 ? <option value="">— Aucun garant —</option> : null}
-
-              {guarantorSignables.map((g) => (
-                <option key={g.key} value={g.guaranteeId}>
-                  {g.label}{g.hasAct ? "" : " — (acte non généré)"}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {selectedGuarantor && !selectedGuarantor.documentId && (
-            <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-              <div style={{ fontSize: 12, color: muted }}>
-                Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
-              </div>
-
-              <button
-                type="button"
-                style={{ ...btnAction(border), minWidth: "auto" }}
-                onClick={() => {
-                  document.getElementById("guarantees-block")?.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              >
-                Aller aux garanties
-              </button>
-            </div>
-          )}
-
-          <div style={labelStyle(muted)}>
-            <div>Nom signataire</div>
-            <input value={guarantorName} onChange={(e) => setGuarantorName(e.target.value)} style={inputStyle(border)} />
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <canvas
-              ref={guarantorCanvasRef}
-              style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
-              onMouseDown={startGuarantor}
-              onMouseMove={moveGuarantor}
-              onMouseUp={endGuarantor}
-              onMouseLeave={endGuarantor}
-              onTouchStart={startGuarantor}
-              onTouchMove={moveGuarantor}
-              onTouchEnd={endGuarantor}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => {
-                clearCanvas(guarantorCanvasRef.current);
-                guarantorDirty.current = false;
-              }}
-              style={btnAction(border)}
-            >
-              Effacer
-            </button>
-
-            <button
-              onClick={signGuarantor}
-              style={btnPrimarySmall(blue)}
-              disabled={!selectedGuarantor || !selectedGuarantor.documentId}
-            >
-              Signer
-            </button>
-          </div>
-        </div>
-
-        <div style={card(border)}>
-          <h2 style={{ marginTop: 0 }}>Signature bailleur</h2>
-
-          <div style={{ marginBottom: 10 }}>
-            <div style={{ fontSize: 12, color: muted, fontWeight: 700, marginBottom: 6 }}>
-              Document à signer
-            </div>
-
-            <select
-              value={selectedLandlordDocKey}
-              onChange={(e) => setSelectedLandlordDocKey(e.target.value)}
-              disabled={!landlordSignables.length}
-              style={{ ...inputStyle(border), cursor: landlordSignables.length ? "pointer" : "not-allowed" }}
-            >
-              {landlordSignables.length === 0 ? (
-                <option value="">— Aucun document —</option>
-              ) : null}
-
-              {landlordSignables.map((d) => (
-                <option key={d.key} value={d.key}>
-                  {d.label}
-                </option>
-              ))}
-            </select>
-
-            <div style={{ fontSize: 12, color: muted, marginTop: 6 }}>
-              Le pad ci-dessous signera le document sélectionné.
-            </div>
-          </div>
-
-          <div style={labelStyle(muted)}>
-            <div>Nom signataire</div>
-            <input value={landlordName} onChange={(e) => setLandlordName(e.target.value)} style={inputStyle(border)} />
-          </div>
-
-          <div style={{ marginTop: 10 }}>
-            <canvas
-              ref={landlordCanvasRef}
-              style={{ width: "100%", border: `1px solid ${border}`, borderRadius: 12, touchAction: "none" }}
-              onMouseDown={startLandlord}
-              onMouseMove={moveLandlord}
-              onMouseUp={endLandlord}
-              onMouseLeave={endLandlord}
-              onTouchStart={startLandlord}
-              onTouchMove={moveLandlord}
-              onTouchEnd={endLandlord}
-            />
-          </div>
-
-          <div style={{ display: "flex", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
-            <button onClick={() => clearCanvas(landlordCanvasRef.current)} style={btnAction(border)}>
-              Effacer
-            </button>
-            <button
-              onClick={() => sign("BAILLEUR")}
-              style={btnPrimarySmall(blue)}
-              disabled={!selectedLandlordDoc}
-            >
-              Signer
-            </button>
-          </div>
-        </div>
-      </div>
-
       <div>
         <Link href="/dashboard/leases" style={{ color: blue, fontWeight: 800 }}>
           Retour aux baux
         </Link>
       </div>
+      {/* LEFT COLUMN END */}
+      </div>
+
+      {/* RIGHT COLUMN START */}
+        <div className="sign-sticky" style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div
+            style={{
+              background: "var(--card)",
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              padding: 16,
+              boxShadow: "var(--shadow)",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+              <div>
+                <div style={{ fontWeight: 950, fontSize: 14 }}>Signature</div>
+                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
+                  Sélectionne un rôle, un document, puis signe.
+                </div>
+              </div>
+              <span
+                style={{
+                  display: "inline-flex",
+                  padding: "4px 10px",
+                  borderRadius: 999,
+                  border: "1px solid rgba(37,99,235,0.25)",
+                  background: "rgba(37,99,235,0.10)",
+                  color: "var(--primary)",
+                  fontWeight: 900,
+                  fontSize: 12,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Sur place
+              </span>
+            </div>
+
+            <div style={{ height: 12 }} />
+
+            {/* Role */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>Signer en tant que</div>
+              <select
+                value={role}
+                onChange={(e) => {
+                  setRole(e.target.value as any);
+                  clearCanvas();
+                }}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background: "white",
+                  fontWeight: 900,
+                }}
+              >
+                <option value="LOCATAIRE">Locataire</option>
+                <option value="BAILLEUR">Bailleur</option>
+                <option value="GARANT">Garant</option>
+              </select>
+            </div>
+
+            <div style={{ height: 10 }} />
+
+            {/* Locataire multi */}
+            {role === "LOCATAIRE" && hasMultipleTenants ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>
+                  Locataire signataire (obligatoire)
+                </div>
+                <select
+                  value={selectedTenantId}
+                  onChange={(e) => setSelectedTenantId(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "white",
+                    fontWeight: 900,
+                  }}
+                >
+                  <option value="">— Sélectionner —</option>
+                  {tenants.map((t) => {
+                    const id = normalizeTenantId(t);
+                    const label = `${normalizeTenantName(t)}${t.role ? ` (${t.role})` : ""}`;
+                    return (
+                      <option key={id || label} value={id}>
+                        {label}
+                      </option>
+                    );
+                  })}
+                </select>
+              </div>
+            ) : null}
+
+            <div style={{ height: 10 }} />
+
+            {/* Document */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>Document à signer</div>
+
+              {role === "GARANT" ? (
+                <select
+                  value={selectedGuaranteeId}
+                  onChange={(e) => setSelectedGuaranteeId(e.target.value)}
+                  disabled={guarantorSignables.length === 0}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "white",
+                    fontWeight: 900,
+                    cursor: guarantorSignables.length ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {guarantorSignables.length === 0 ? <option value="">— Aucun garant —</option> : null}
+                  {guarantorSignables.map((g) => (
+                    <option key={g.key} value={g.guaranteeId}>
+                      {g.label}
+                      {g.hasAct ? "" : " — (acte non généré)"}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  value={role === "LOCATAIRE" ? selectedTenantDocKey : selectedLandlordDocKey}
+                  onChange={(e) => {
+                    if (role === "LOCATAIRE") setSelectedTenantDocKey(e.target.value);
+                    else setSelectedLandlordDocKey(e.target.value);
+                    clearCanvas();
+                  }}
+                  disabled={!landlordSignables.length}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: 12,
+                    border: "1px solid var(--border)",
+                    background: "white",
+                    fontWeight: 900,
+                    cursor: landlordSignables.length ? "pointer" : "not-allowed",
+                  }}
+                >
+                  {landlordSignables.length === 0 ? <option value="">— Aucun document —</option> : null}
+                  {landlordSignables.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+
+              {role === "GARANT" && selectedGuarantor && !selectedGuarantor.documentId ? (
+                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+                  Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
+                </div>
+              ) : null}
+            </div>
+
+            <div style={{ height: 10 }} />
+
+            {/* Nom */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>Nom signataire</div>
+              <input
+                value={role === "LOCATAIRE" ? tenantName : role === "BAILLEUR" ? landlordName : guarantorName}
+                onChange={(e) => {
+                  if (role === "LOCATAIRE") setTenantName(e.target.value);
+                  else if (role === "BAILLEUR") setLandlordName(e.target.value);
+                  else setGuarantorName(e.target.value);
+                }}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background: "white",
+                  fontWeight: 900,
+                  boxSizing: "border-box",
+                }}
+              />
+            </div>
+
+            <div style={{ height: 12 }} />
+
+            {/* Pad */}
+            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900, marginBottom: 6 }}>Signature</div>
+
+            <div
+              style={{
+                width: "100%",
+                height: 180,
+                borderRadius: 12,
+                border: "1px solid var(--border)",
+                background: "white",
+                overflow: "hidden",
+              }}
+            >
+              <canvas
+                ref={canvasRef}
+                width={900}
+                height={360}
+                style={{
+                  width: "100%",
+                  height: "100%",
+                  display: "block",
+                  touchAction: "none",
+                }}
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onPointerCancel={onPointerUp}
+                onPointerLeave={onPointerUp}
+              />
+            </div>
+
+            <div style={{ height: 12 }} />
+
+            {/* Actions */}
+            <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+              <button
+                onClick={clearCanvas}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background: "white",
+                  cursor: "pointer",
+                  fontWeight: 900,
+                }}
+              >
+                Effacer
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (role === "LOCATAIRE") await signTenantOnPlace();
+                  else if (role === "BAILLEUR") await signLandlordOnPlace();
+                  else await signGuarantorOnPlace();
+                }}
+                disabled={role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId}
+                style={{
+                  flex: 1,
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid rgba(37,99,235,0.25)",
+                  background: "var(--primary)",
+                  color: "white",
+                  cursor: "pointer",
+                  fontWeight: 950,
+                  opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
+                }}
+              >
+                Signer
+              </button>
+            </div>
+
+            {/* Feedback */}
+            {status ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 10,
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background: "rgba(100,116,139,0.06)",
+                }}
+              >
+                <div style={{ fontWeight: 900, fontSize: 12, color: "var(--muted)" }}>Statut</div>
+                <div style={{ marginTop: 4, fontWeight: 800 }}>{status}</div>
+              </div>
+            ) : null}
+
+            {error ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  padding: 10,
+                  borderRadius: 12,
+                  border: "1px solid rgba(239,68,68,0.25)",
+                  background: "rgba(239,68,68,0.08)",
+                  color: "var(--danger)",
+                  fontWeight: 900,
+                }}
+              >
+                {error}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media (max-width: 1100px){
+              .sign-grid { grid-template-columns: 1fr !important; }
+              .sign-sticky { position: static !important; top:auto !important; }
+            }
+          `,
+        }}
+/>
     </div>
   );
 }
