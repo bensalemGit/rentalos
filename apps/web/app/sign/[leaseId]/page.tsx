@@ -52,13 +52,12 @@ function Badge({
   );
 }
 
-function Btn({
-  variant,
-  children,
-  ...rest
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant: "primary" | "secondary" | "ghost";
-}) {
+const Btn = React.forwardRef<
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement> & {
+    variant: "primary" | "secondary" | "ghost";
+  }
+>(function Btn({ variant, children, ...rest }, ref) {
   const base: React.CSSProperties = {
     padding: "10px 12px",
     borderRadius: 12,
@@ -74,11 +73,11 @@ function Btn({
   };
 
   return (
-    <button {...rest} style={{ ...(styles[variant] || styles.secondary), ...(rest.style || {}) }}>
+    <button ref={ref} {...rest} style={{ ...(styles[variant] || styles.secondary), ...(rest.style || {}) }}>
       {children}
     </button>
   );
-}
+});
 
 function Card({
   id,
@@ -217,6 +216,7 @@ type GuarantorSignable = {
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
   const [token, setToken] = useState("");
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
 
   const [docs, setDocs] = useState<Doc[]>([]);
   const [contractDoc, setContractDoc] = useState<Doc | null>(null);
@@ -249,6 +249,9 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const signatureDirty = useRef(false);
+  const actionsPanelRef = useRef<HTMLDivElement | null>(null);
+  const actionsWrapRef = useRef<HTMLDivElement | null>(null);
+  const [menuPlacement, setMenuPlacement] = useState<"down" | "up">("down");
 
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
@@ -266,6 +269,86 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
   }, []);
+
+  useEffect(() => {
+    const onPointerDown = (e: MouseEvent) => {
+      const el = actionsWrapRef.current;
+      if (!el) return;
+      if (el.contains(e.target as Node)) return; // click inside => ne ferme pas
+      setShowActionsMenu(false); // click outside => ferme
+    };
+
+    document.addEventListener("mousedown", onPointerDown);
+    return () => document.removeEventListener("mousedown", onPointerDown);
+  }, []);
+
+
+  useEffect(() => {
+    if (!showActionsMenu) return;
+
+    const getScrollParent = (node: HTMLElement | null): HTMLElement | null => {
+      let p = node?.parentElement || null;
+      while (p) {
+        const s = window.getComputedStyle(p);
+        const overflowY = s.overflowY;
+        const isScrollable = (overflowY === "auto" || overflowY === "scroll") && p.scrollHeight > p.clientHeight;
+        if (isScrollable) return p;
+        p = p.parentElement;
+      }
+      return null; // => window
+    };
+
+    const wrap = actionsWrapRef.current;
+    const panel = actionsPanelRef.current;
+    if (!wrap || !panel) return;
+
+    const scrollParent = getScrollParent(wrap);
+
+    const computePlacement = () => {
+      const wrapEl = actionsWrapRef.current;
+      const panelEl = actionsPanelRef.current;
+      if (!wrapEl || !panelEl) return;
+
+      const wrapRect = wrapEl.getBoundingClientRect();
+
+      // hauteur visible réelle du panel (déjà limitée par maxHeight)
+      const panelHeight = panelEl.getBoundingClientRect().height;
+
+      const gap = 8;
+
+      // viewport = window OU conteneur scrollable
+      let viewportTop = 0;
+      let viewportBottom = window.innerHeight;
+
+      if (scrollParent) {
+        const vp = scrollParent.getBoundingClientRect();
+        viewportTop = vp.top;
+        viewportBottom = vp.bottom;
+      }
+
+      const spaceBelow = viewportBottom - wrapRect.bottom;
+      const spaceAbove = wrapRect.top - viewportTop;
+
+      const shouldOpenUp = spaceBelow < panelHeight + gap && spaceAbove > spaceBelow;
+
+      setMenuPlacement((prev) => (prev === (shouldOpenUp ? "up" : "down") ? prev : shouldOpenUp ? "up" : "down"));
+    };
+
+    const raf = requestAnimationFrame(computePlacement);
+
+    const onResize = () => computePlacement();
+    window.addEventListener("resize", onResize);
+
+    // écoute le bon scroll : conteneur si présent, sinon window
+    const scrollTarget: any = scrollParent || window;
+    scrollTarget.addEventListener("scroll", computePlacement, { passive: true });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onResize);
+      scrollTarget.removeEventListener("scroll", computePlacement);
+    };
+  }, [showActionsMenu]);
 
 function setupCanvasHiDpi(canvas: HTMLCanvasElement) {
   const dpr = window.devicePixelRatio || 1;
@@ -1179,6 +1262,91 @@ async function signGuarantorOnPlace() {
     await fetchSignatureStatus(leaseId); // recharge les statuts contrat + garanties
   }
 
+  function openGuarantees() {
+    window.location.href = `/guarantees/${leaseId}`;
+  }
+
+  const menuStyles = {
+    panel: {
+      position: "absolute" as const,
+      right: 0,
+      zIndex: 50,
+      width: 260,
+      padding: 6,
+      maxHeight: 380,
+      overflowY: "auto" as const,
+      background: "var(--card)",
+      border: "1px solid var(--border)",
+      borderRadius: 14,
+      boxShadow: "var(--shadow)",
+    },
+    sectionTitle: {
+      fontWeight: 950,
+      fontSize: 11,
+      color: "var(--muted)",
+      padding: "6px 8px",
+      textTransform: "uppercase" as const,
+      letterSpacing: 0.4,
+    },
+    divider: {
+      height: 1,
+      background: "var(--border)",
+      margin: "6px 4px",
+    },
+    item: {
+      width: "100%",
+      textAlign: "left" as const,
+      padding: "8px 10px",
+      borderRadius: 10,
+      border: "none",
+      background: "transparent",
+      cursor: "pointer",
+      fontWeight: 800,
+      fontSize: 13,
+      color: "var(--text)",
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+    },
+    itemDisabled: {
+      opacity: 0.45,
+      cursor: "not-allowed",
+    },
+    itemHoverBg: "rgba(100,116,139,0.10)",
+  };
+
+function MenuItem(props: {
+  label: string;
+  icon?: string;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={props.disabled}
+      onClick={props.onClick}
+      style={{
+        ...menuStyles.item,
+        ...(props.disabled ? menuStyles.itemDisabled : null),
+      }}
+      onMouseEnter={(e) => {
+        if (props.disabled) return;
+        (e.currentTarget as HTMLButtonElement).style.background = menuStyles.itemHoverBg;
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+      }}
+    >
+      <span style={{ width: 18, textAlign: "center", opacity: 0.85 }}>
+        {props.icon || "•"}
+      </span>
+      <span style={{ flex: 1 }}>{props.label}</span>
+    </button>
+  );
+}
+
+
   const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
@@ -1241,74 +1409,140 @@ async function signGuarantorOnPlace() {
         <div style={{ display: "grid", gap: 14 }}>
           {/* LEFT COLUMN START */}
 
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <Btn variant="primary" onClick={generateContract} style={{ minWidth: 160 }}>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <Btn variant="primary" onClick={generateContract}>
           Générer contrat
         </Btn>
 
-        <Btn
-          variant="secondary"
-          onClick={() => contractDoc?.id && downloadDoc(contractDoc.id, contractDoc.filename)}
-          disabled={!contractDoc?.id}
-          style={{ minWidth: 160 }}
-        >
-          Télécharger contrat
+        <Btn variant="secondary" onClick={() => sendPublicLink(false)} disabled={!contractDoc?.id}>
+          Envoyer liens locataires
         </Btn>
 
-        {isRP && (
-          <>
-            <button onClick={generateNotice} style={btnAction(border)}>
-              Générer notice
-            </button>
-            <button
-              onClick={() => noticeDoc?.id && downloadDoc(noticeDoc.id, noticeDoc.filename)}
-              style={btnAction(border)}
-              disabled={!noticeDoc?.id}
+        <div
+          ref={actionsWrapRef}
+          style={{ position: "relative" }}
+          onMouseDown={(e) => e.stopPropagation()} // important: évite le "mousedown" global
+        >
+          <Btn
+            variant="secondary"
+            onClick={() => setShowActionsMenu((v) => !v)}
+          >
+            ⋯ Plus d’actions
+          </Btn>
+
+          {showActionsMenu ? (
+            <div
+              ref={actionsPanelRef}
+              style={{
+                ...menuStyles.panel,
+                top: menuPlacement === "down" ? "calc(100% + 8px)" : "auto",
+                bottom: menuPlacement === "up" ? "calc(100% + 8px)" : "auto",
+              }}
             >
-              Télécharger notice
-            </button>
-          </>
-        )}
+              <div style={menuStyles.sectionTitle}>Documents</div>
 
-        <button onClick={generatePack} style={btnAction(border)}>
-          Générer pack
-        </button>
-        <button
-          onClick={() => packDoc?.id && downloadDoc(packDoc.id, packDoc.filename)}
-          style={btnAction(border)}
-          disabled={!packDoc?.id}
-        >
-          Télécharger pack
-        </button>
+              <MenuItem
+                icon="📄"
+                label="Télécharger contrat"
+                disabled={!contractDoc?.id}
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  contractDoc?.id && downloadDoc(contractDoc.id, contractDoc.filename);
+                }}
+              />
 
-        <button onClick={generatePackFinalV2} style={btnAction(border)}>
-          Générer PACK_FINAL signé (V2)
-        </button>
+              {isRP ? (
+                <>
+                  <MenuItem
+                    icon="📝"
+                    label="Générer notice"
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      generateNotice();
+                    }}
+                  />
 
-        <button
-          onClick={() => sendPublicLink(false)}
-          style={btnAction(border)}
-          disabled={!contractDoc?.id}
-        >
-          Envoyer lien locataire (tous)
-        </button>
+                  <MenuItem
+                    icon="📄"
+                    label="Télécharger notice"
+                    disabled={!noticeDoc?.id}
+                    onClick={() => {
+                      setShowActionsMenu(false);
+                      noticeDoc?.id && downloadDoc(noticeDoc.id, noticeDoc.filename);
+                    }}
+                  />
+                </>
+              ) : null}
 
-        <button
-          onClick={() => sendPublicLink(true)}
-          style={btnAction(border)}
-          disabled={!contractDoc?.id}
-        >
-          Renvoyer liens locataires (force, tous)
-        </button>
+              <MenuItem
+                icon="📦"
+                label="Générer pack (EDL + Inventaire)"
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  generatePack();
+                }}
+              />
 
-        <button
-          onClick={() => (window.location.href = `/guarantees/${leaseId}`)}
-          style={btnAction(border)}
-        >
-          Gérer garanties
-        </button>
+              <MenuItem
+                icon="📦"
+                label="Télécharger pack"
+                disabled={!packDoc?.id}
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  packDoc?.id && downloadDoc(packDoc.id, packDoc.filename);
+                }}
+              />
 
+              <MenuItem
+                icon="✅"
+                label="Générer PACK_FINAL signé (V2)"
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  generatePackFinalV2();
+                }}
+              />
+
+              <div style={menuStyles.divider} />
+
+              <div style={menuStyles.sectionTitle}>Communication</div>
+
+              <MenuItem
+                icon="📤"
+                label="Renvoyer liens locataires (force)"
+                disabled={!contractDoc?.id}
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  sendPublicLink(true);
+                }}
+              />
+
+              <div style={menuStyles.divider} />
+
+              <div style={menuStyles.sectionTitle}>Gestion</div>
+
+              <MenuItem
+                icon="🔐"
+                label="Gérer garanties"
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  openGuarantees();
+                }}
+              />
+
+              <MenuItem
+                icon="➡️"
+                label="Aller à EDL & Inventaires"
+                onClick={() => {
+                  setShowActionsMenu(false);
+                  scrollToAnchor("edl-inv");
+                }}
+              />
+            </div>
+          ) : null}
+        </div>
       </div>
+
+
       <Card id="contract" title="Contrat" subtitle="Génération, téléchargement, signatures">
         {!sigStatus && loadingSigStatus && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
