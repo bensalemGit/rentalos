@@ -119,15 +119,18 @@ export class EdlService {
     }
 
     const id = crypto.randomUUID();
+    const refKey = crypto.randomUUID();
+
     const r = await this.pool.query(
       `INSERT INTO edl_items (
-         id, edl_session_id, section, label,
-         entry_condition, entry_notes,
-         exit_condition, exit_notes
-       )
-       VALUES ($1,$2,$3,$4,NULL,NULL,NULL,NULL)
-       RETURNING *`,
-      [id, edlSessionId, sec, lab],
+        id, edl_session_id, section, label,
+        ref_key,
+        entry_condition, entry_notes,
+        exit_condition, exit_notes
+      )
+      VALUES ($1,$2,$3,$4,$5,NULL,NULL,NULL,NULL)
+      RETURNING *`,
+      [id, edlSessionId, sec, lab, refKey],
     );
     return r.rows[0];
   }
@@ -198,7 +201,7 @@ export class EdlService {
 
     if (exitItemsCount === 0) {
       const srcQ = await this.pool.query(
-        `SELECT section, label, entry_condition, entry_notes
+        `SELECT section, label, ref_key, entry_condition, entry_notes
          FROM edl_items
          WHERE edl_session_id=$1
          ORDER BY section, label`,
@@ -209,15 +212,17 @@ export class EdlService {
         await this.pool.query(
           `INSERT INTO edl_items (
              id, edl_session_id, section, label,
+             ref_key,
              entry_condition, entry_notes,
              exit_condition, exit_notes
            )
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
           [
             crypto.randomUUID(),
             exitSessionId,
             it.section,
             it.label,
+            it.ref_key ?? crypto.randomUUID(),
             it.entry_condition ?? null,
             it.entry_notes ?? null,
             // préremplissage sortie = entrée
@@ -270,10 +275,6 @@ export class EdlService {
   async setEdlReferenceFromLease(leaseId: string, edlSessionId?: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const u = await this.pool.query(`SELECT unit_id FROM leases WHERE id=$1`, [leaseId]);
-    if (!u.rowCount) throw new BadRequestException(`Unknown leaseId: ${leaseId}`);
-    const unitId = u.rows[0].unit_id;
-
     let sid = edlSessionId;
     if (!sid) {
       const sQ = await this.pool.query(
@@ -284,6 +285,28 @@ export class EdlService {
       sid = sQ.rows[0].id;
     }
 
+    const sessionQ = await this.pool.query(
+      `SELECT id, lease_id, unit_id, status
+      FROM edl_sessions
+      WHERE id=$1`,
+      [sid],
+    );
+
+    if (!sessionQ.rowCount) {
+      throw new BadRequestException("EDL session not found");
+    }
+
+    const session = sessionQ.rows[0];
+
+    // sécurité : éviter de référencer une session d’un autre bail
+    if (String(session.lease_id) !== String(leaseId)) {
+      throw new BadRequestException("EDL session does not belong to this lease");
+    }
+
+    const unitId = session.unit_id;
+    const status = String(session.status || "").toLowerCase();
+    const mode = status === "exit" ? "update_reference" : "set_reference";
+
     await this.pool.query(
       `INSERT INTO unit_reference_state (unit_id, reference_edl_session_id)
        VALUES ($1,$2)
@@ -292,7 +315,12 @@ export class EdlService {
       [unitId, sid],
     );
 
-    return { ok: true, unitId, referenceEdlSessionId: sid };
+    return {
+      ok: true,
+      unitId,
+      referenceEdlSessionId: sid,
+      mode, // set_reference | update_reference
+    };
   }
 
   // ------------------------------------------------------------
@@ -333,10 +361,10 @@ export class EdlService {
       );
 
       const itemsQ = await client.query(
-        `SELECT section, label, entry_condition, entry_notes
-         FROM edl_items
-         WHERE edl_session_id=$1
-         ORDER BY section, label`,
+        `SELECT section, label, ref_key, entry_condition, entry_notes
+        FROM edl_items
+        WHERE edl_session_id=$1
+        ORDER BY section, label`,
         [refId],
       );
 
@@ -344,15 +372,17 @@ export class EdlService {
         await client.query(
           `INSERT INTO edl_items (
              id, edl_session_id, section, label,
+             ref_key,
              entry_condition, entry_notes,
              exit_condition, exit_notes
            )
-           VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,NULL,NULL)`,
           [
             crypto.randomUUID(),
             newSessionId,
             it.section,
             it.label,
+            it.ref_key ?? crypto.randomUUID(),
             it.entry_condition,
             it.entry_notes,
           ],

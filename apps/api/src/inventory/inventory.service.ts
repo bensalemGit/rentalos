@@ -154,15 +154,18 @@ export class InventoryService {
     const entryQty = q || 1;
     const entryState = 'OK';
 
+    const refKey = crypto.randomUUID();
+
     const r = await this.pool.query(
       `INSERT INTO inventory_lines (
-         id, inventory_session_id, catalog_item_id,
-         entry_qty, entry_state, entry_notes,
-         exit_qty
-       )
-       VALUES ($1,$2,$3,$4,$5,NULL,0)
-       RETURNING *`,
-      [lineId, inventorySessionId, catalogId, entryQty, entryState],
+        id, inventory_session_id, catalog_item_id,
+        ref_key,
+        entry_qty, entry_state, entry_notes,
+        exit_qty
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,NULL,0)
+      RETURNING *`,
+      [lineId, inventorySessionId, catalogId, refKey, entryQty, entryState],
     );
 
     return r.rows[0];
@@ -233,9 +236,9 @@ export class InventoryService {
 
     if (exitLinesCount === 0) {
       const srcQ = await this.pool.query(
-        `SELECT catalog_item_id, entry_qty, entry_state, entry_notes
-         FROM inventory_lines
-         WHERE inventory_session_id=$1`,
+        `SELECT catalog_item_id, ref_key, entry_qty, entry_state, entry_notes
+        FROM inventory_lines
+        WHERE inventory_session_id=$1`,
         [entrySessionId],
       );
 
@@ -243,14 +246,16 @@ export class InventoryService {
         await this.pool.query(
           `INSERT INTO inventory_lines (
              id, inventory_session_id, catalog_item_id,
+             ref_key,
              entry_qty, entry_state, entry_notes,
              exit_qty, exit_state, exit_notes
            )
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
           [
             crypto.randomUUID(),
             exitSessionId,
             ln.catalog_item_id,
+            ln.ref_key ?? (ln.catalog_item_id?.toString?.() ?? crypto.randomUUID()),
             ln.entry_qty ?? 0,
             ln.entry_state ?? 'OK',
             ln.entry_notes ?? null,
@@ -313,10 +318,6 @@ export class InventoryService {
   async setInventoryReferenceFromLease(leaseId: string, inventorySessionId?: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const u = await this.pool.query(`SELECT unit_id FROM leases WHERE id=$1`, [leaseId]);
-    if (!u.rowCount) throw new BadRequestException(`Unknown leaseId: ${leaseId}`);
-    const unitId = u.rows[0].unit_id;
-
     let sid = inventorySessionId;
     if (!sid) {
       const sQ = await this.pool.query(
@@ -327,6 +328,27 @@ export class InventoryService {
       sid = sQ.rows[0].id;
     }
 
+    const sessionQ = await this.pool.query(
+      `SELECT id, lease_id, unit_id, status
+      FROM inventory_sessions
+      WHERE id=$1`,
+      [sid],
+    );
+
+    if (!sessionQ.rowCount) {
+      throw new BadRequestException("Inventory session not found");
+    }
+
+    const session = sessionQ.rows[0];
+
+    if (String(session.lease_id) !== String(leaseId)) {
+      throw new BadRequestException("Inventory session does not belong to this lease");
+    }
+
+    const unitId = session.unit_id;
+    const status = String(session.status || "").toLowerCase();
+    const mode = status === "exit" ? "update_reference" : "set_reference";
+
     await this.pool.query(
       `INSERT INTO unit_reference_state (unit_id, reference_inventory_session_id)
        VALUES ($1,$2)
@@ -335,7 +357,12 @@ export class InventoryService {
       [unitId, sid],
     );
 
-    return { ok: true, unitId, referenceInventorySessionId: sid };
+    return {
+      ok: true,
+      unitId,
+      referenceInventorySessionId: sid,
+      mode, // set_reference | update_reference
+    };
   }
 
   // ------------------------------------------------------------
@@ -376,7 +403,7 @@ export class InventoryService {
       );
 
       const linesQ = await client.query(
-        `SELECT catalog_item_id, entry_qty, entry_state, entry_notes
+        `SELECT catalog_item_id, ref_key, entry_qty, entry_state, entry_notes
          FROM inventory_lines
          WHERE inventory_session_id=$1`,
         [refId],
@@ -392,6 +419,7 @@ export class InventoryService {
              id,
              inventory_session_id,
              catalog_item_id,
+             ref_key,
              entry_qty,
              entry_state,
              entry_notes,
@@ -399,11 +427,12 @@ export class InventoryService {
              exit_state,
              exit_notes
            )
-           VALUES ($1,$2,$3,$4,$5,$6,0,NULL,NULL)`,
+           VALUES ($1,$2,$3,$4,$5,$6,$7,0,NULL,NULL)`,
           [
             crypto.randomUUID(),
             newSessionId,
             ln.catalog_item_id,
+            ln.ref_key ?? (ln.catalog_item_id?.toString?.() ?? crypto.randomUUID()),
             entryQty,
             entryState,
             entryNotes,

@@ -58,8 +58,7 @@ type Toast = {
   onAction?: () => void | Promise<void>;
 };
 
-  const UUID_RE =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export default function EdlPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
@@ -70,6 +69,11 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 
   const [sessions, setSessions] = useState<EdlSession[]>([]);
   const [sessionId, setSessionId] = useState<string>("");
+
+  // session id fiable immédiatement (évite stale state au clic)
+  const sessionIdRef = useRef<string>("");
+  // indique si l'utilisateur a déjà choisi une session (pour empêcher loadSessions d'écraser)
+  const userPickedSessionRef = useRef(false);
 
   const [items, setItems] = useState<EdlItem[]>([]);
   const [savingId, setSavingId] = useState<string | null>(null);
@@ -88,6 +92,13 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     unitId?: string;
     referenceEdlSessionId?: string;
   } | null>(null);
+
+  const [referenceInfo, setReferenceInfo] = useState<{
+    referenceEdlSessionId: string | null;
+    updated_at?: string | null;
+  } | null>(null);
+
+  const hasReference = Boolean(referenceInfo?.referenceEdlSessionId);
 
   // create session mode
   const [createStatus, setCreateStatus] = useState<"entry" | "exit">("entry");
@@ -135,6 +146,10 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   const bg = "#f7f8fb";
 
   useEffect(() => {
+    sessionIdRef.current = sessionId || "";
+  }, [sessionId]);
+
+  useEffect(() => {
     setToken(localStorage.getItem("token") || "");
   }, []);
 
@@ -169,19 +184,67 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
       arr.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
       setSessions(arr);
 
-      if (!arr.length) {
-        setSessionId("");
-        setItems([]);
-      } else {
-        const target = pickSessionId || sessionId || arr[0]?.id;
-        if (target) setSessionId(target);
+    if (!arr.length) {
+      sessionIdRef.current = "";
+      userPickedSessionRef.current = false;
+      setSessionId("");
+      setItems([]);
+    } else {
+      // 1) si on force explicitement une session (ex: après création), on la prend
+      let target = pickSessionId ? String(pickSessionId) : "";
+
+      // 2) sinon, si l'utilisateur a déjà choisi: on conserve si elle existe encore
+      if (!target) {
+        const preferred = sessionIdRef.current || sessionId;
+        const stillExists = preferred && arr.some((s) => s.id === preferred);
+        if (userPickedSessionRef.current && stillExists) target = preferred;
       }
+
+      // 3) sinon, on garde l'ancienne si elle est valide
+      if (!target) {
+        const preferred = sessionIdRef.current || sessionId;
+        const stillExists = preferred && arr.some((s) => s.id === preferred);
+        if (stillExists) target = preferred;
+      }
+
+      // 4) fallback: la plus récente
+      if (!target) target = arr[0]?.id;
+  
+      if (target) {
+        if (pickSessionId) userPickedSessionRef.current = true;
+        sessionIdRef.current = target;
+        setSessionId(target);
+      }
+    }
 
       setStatus("");
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
       pushToast({ kind: "err", message: "Erreur chargement sessions" });
+    }
+  }
+
+  async function loadReference() {
+    try {
+      const r = await fetch(`${API}/edl/reference?leaseId=${leaseId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      if (!r.ok) {
+        setReferenceInfo(null);
+        return;
+      }
+
+      const j = await r.json().catch(() => ({} as any));
+      setReferenceInfo({
+        referenceEdlSessionId: j?.referenceEdlSessionId ?? null,
+        updated_at: j?.updated_at ?? null,
+      });
+    } catch {
+      setReferenceInfo(null);
     }
   }
 
@@ -267,6 +330,7 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 
     setError("");
     loadSessions();
+    loadReference();
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, leaseId]);
@@ -353,13 +417,15 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     exit_condition?: any;
     exit_notes?: any;
   }) {
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) throw new Error("Session EDL manquante");
     const r = await fetch(`${API}/edl/items`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       credentials: "include",
       body: JSON.stringify({
-        edlSessionId: sessionId,
-        edl_session_id: sessionId,
+        edlSessionId: sid,
+        edl_session_id: sid,
         section: payload.section,
         label: payload.label,
         entry_condition: payload.entry_condition ?? null,
@@ -374,7 +440,8 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   }
 
   async function onAddSubmit() {
-    if (!sessionId) return;
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) return;
 
     const section = (addSection || "Divers").trim() || "Divers";
     const label = (addLabel || "").trim();
@@ -400,7 +467,7 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 
       if (newId) {
         setItems((prev) => {
-          const next = [...prev, { id: String(newId), edl_session_id: sessionId, section, label }];
+          const next = [...prev, { id: String(newId), edl_session_id: sid, section, label }];
           next.sort(
             (a, b) =>
               (a.section || "").localeCompare(b.section || "") ||
@@ -409,7 +476,7 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
           return next;
         });
       } else {
-        await loadItems(sessionId);
+        await loadItems(sid);
       }
 
       setAddOpen(false);
@@ -432,6 +499,7 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     let undone = false;
     const undoId = "undo-" + it.id;
 
+    const sidAtDelete = sessionIdRef.current || sessionId;
     const timer = setTimeout(async () => {
       if (undone) return;
       try {
@@ -441,11 +509,11 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
           credentials: "include",
         });
         if (!r.ok) {
-          await loadItems(sessionId);
+          await loadItems(sidAtDelete);
           pushToast({ kind: "err", message: "Suppression: erreur serveur, rechargé." });
         }
       } catch {
-        await loadItems(sessionId);
+        await loadItems(sidAtDelete);
       } finally {
         delete undoTimers.current[undoId];
       }
@@ -480,10 +548,10 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
             } catch {}
           }
 
-          await loadItems(sessionId);
+          await loadItems(sidAtDelete);
           pushToast({ kind: "ok", message: "Restauration ✅" });
         } catch {
-          await loadItems(sessionId);
+          await loadItems(sidAtDelete);
           pushToast({ kind: "err", message: "Restauration: erreur, rechargé." });
         }
       },
@@ -548,6 +616,8 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
       if (!exitSessionId) throw new Error("Aucune session sortie disponible (EDL).");
 
       // 4) bascule UI
+      sessionIdRef.current = exitSessionId;
+      userPickedSessionRef.current = true;
       setSessionId(exitSessionId);
       setViewMode("EXIT");
 
@@ -577,12 +647,15 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 }
 
   async function saveAsUnitReferenceEdl() {
-    if (!token || !sessionId) return;
+    if (!token) return;
+
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) return;
     setError("");
     setStatus("Enregistrement référence logement (EDL)…");
     setSavingReference(true);
     try {
-      const r = await fetch(`${API}/edl/reference?leaseId=${leaseId}&edlSessionId=${sessionId}`, {
+      const r = await fetch(`${API}/edl/reference?leaseId=${leaseId}&edlSessionId=${sid}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -595,14 +668,75 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
         return;
       }
       setLastReferenceInfo({ unitId: j?.unitId, referenceEdlSessionId: j?.referenceEdlSessionId });
-      setStatus("Référence logement (EDL) enregistrée ✅");
-      pushToast({ kind: "ok", message: "Référence logement EDL ✅" });
+      await loadReference();      
+      const msg =
+        j?.mode === "update_reference"
+          ? "Référence logement mise à jour depuis la sortie ✅"
+          : "Référence logement définie ✅";
+
+      setStatus(msg);
+      pushToast({ kind: "ok", message: msg });
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
       pushToast({ kind: "err", message: "Erreur réseau (référence)" });
     } finally {
       setSavingReference(false);
+    }
+  }
+
+  async function bootstrapEntryFromReferenceEdl() {
+    if (!token) return;
+
+    setError("");
+    setStatus("Création de l'entrée depuis la référence logement…");
+    setApplyingReference(true);
+
+    try {
+      const r = await fetch(`${API}/edl/apply-reference?leaseId=${leaseId}&status=entry`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        pushToast({ kind: "err", message: "Impossible de créer l'entrée depuis la référence" });
+        return;
+      }
+
+      const newSessionId =
+        j?.id ||
+        j?.edlSessionId ||
+        j?.sessionId ||
+        j?.edl_session_id ||
+        j?.session?.id ||
+        j?.edlSession?.id ||
+        null;
+
+      pushToast({ kind: "ok", message: "Entrée créée depuis la référence ✅" });
+
+      await loadSessions(newSessionId ? String(newSessionId) : undefined);
+      await loadReference();
+
+      const targetId = newSessionId ? String(newSessionId) : sessionIdRef.current || "";
+
+      if (targetId) {
+        sessionIdRef.current = targetId;
+        userPickedSessionRef.current = true;
+        setSessionId(targetId);
+        setViewMode("ENTRY");
+        await loadItems(targetId);
+      }
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+      pushToast({ kind: "err", message: "Erreur réseau (bootstrap référence)" });
+    } finally {
+      setApplyingReference(false);
+      setStatus("");
     }
   }
 
@@ -614,7 +748,9 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     setStatus("Application référence logement (EDL)…");
     setApplyingReference(true);
     try {
-      const r = await fetch(`${API}/edl/apply-reference?leaseId=${leaseId}&status=${createStatus}`, {
+      const status = viewMode === "EXIT" ? "exit" : "entry";
+
+      const r = await fetch(`${API}/edl/apply-reference?leaseId=${leaseId}&status=${status}`, {
         method: "POST",
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -627,12 +763,50 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
         return;
       }
 
-      const newSessionId = j?.edlSessionId || j?.sessionId || j?.edl_session_id || j?.session?.id || null;
+      const newSessionId =
+        j?.id ||
+        j?.edlSessionId ||
+        j?.sessionId ||
+        j?.edl_session_id ||
+        j?.session?.id ||
+        j?.edlSession?.id ||
+        null;
 
       setStatus(`EDL réinitialisé ✅ (${j?.createdItems ?? "?"} items)`);
       pushToast({ kind: "ok", message: "EDL réinitialisé ✅" });
+
       await loadSessions(newSessionId ? String(newSessionId) : undefined);
-      if (newSessionId) await loadItems(String(newSessionId));
+
+      // reload reference badge state
+      await loadReference();
+
+      const targetId = newSessionId ? String(newSessionId) : "";
+
+      if (targetId) {
+        sessionIdRef.current = targetId;
+        userPickedSessionRef.current = true;
+        setSessionId(targetId);
+        setViewMode(status === "exit" ? "EXIT" : "ENTRY");
+        await loadItems(targetId);
+      } else {
+        // fallback: si l'API ne renvoie pas d'id
+        const rSess = await fetch(`${API}/edl/sessions?leaseId=${leaseId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+        });
+        const jSess = await rSess.json().catch(() => []);
+        const fresh: EdlSession[] = Array.isArray(jSess) ? jSess : [];
+        fresh.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+
+        const picked = fresh.find((s) => s.status === status)?.id;
+        if (picked) {
+          sessionIdRef.current = picked;
+          userPickedSessionRef.current = true;
+          setSessionId(picked);
+          setViewMode(status === "exit" ? "EXIT" : "ENTRY");
+          await loadItems(picked);
+        }
+      }
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -880,7 +1054,12 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 
             <select
               value={sessionId}
-              onChange={(e) => setSessionId(e.target.value)}
+              onChange={(e) => {
+                const v = e.target.value;
+                userPickedSessionRef.current = true;
+                sessionIdRef.current = v;
+                setSessionId(v);
+              }}
               style={{ ...inputStyle(border), width: 280, background: "#fbfbfd" }}
               title="Session"
             >
@@ -931,8 +1110,13 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
 
             <button
               onClick={applyUnitReferenceToLeaseEdl}
-              disabled={applyingReference}
-              style={{ ...btnSecondary(border), opacity: applyingReference ? 0.6 : 1, fontWeight: 900 }}
+              disabled={applyingReference || !hasReference}
+              style={{
+                ...btnSecondary(border),
+                opacity: applyingReference || !hasReference ? 0.6 : 1,
+                fontWeight: 900,
+              }}
+              title={!hasReference ? "Aucune référence logement définie" : ""}
             >
               {applyingReference ? "Application…" : "Réinitialiser depuis référence"}
             </button>
@@ -959,6 +1143,33 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
             ) : null}
           </div>
         )}
+
+        <div style={{ marginTop: 6, color: muted, fontSize: 12 }}>
+          Référence (état) :{" "}
+          {hasReference ? (
+            <b style={{ color: "#111" }}>
+              OK ({String(referenceInfo?.referenceEdlSessionId || "").slice(0, 8)}…)
+            </b>
+          ) : (
+            <b style={{ color: "crimson" }}>Aucune</b>
+          )}
+        </div>
+
+        {sessions.length === 0 && hasReference && (
+          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ color: muted, fontSize: 12, fontWeight: 900 }}>
+              Ce bail n'a aucune session EDL.
+            </div>
+            <button
+              onClick={bootstrapEntryFromReferenceEdl}
+              disabled={applyingReference}
+              style={{ ...btnPrimary(blue), opacity: applyingReference ? 0.6 : 1 }}
+              title="Crée automatiquement une session entrée clonée depuis la référence logement"
+            >
+              {applyingReference ? "Création…" : "Créer entrée depuis référence logement"}
+            </button>
+          </div>
+        )}  
 
         {status && <div style={{ marginTop: 10, color: green, fontWeight: 800 }}>{status}</div>}
         {error && <div style={{ marginTop: 10, color: "crimson", fontWeight: 800 }}>{error}</div>}
