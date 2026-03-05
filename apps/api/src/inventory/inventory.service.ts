@@ -46,6 +46,7 @@ export class InventoryService {
          il.id,
          il.inventory_session_id,
          il.catalog_item_id,
+         il.ref_key,
          il.entry_qty,
          il.entry_state,
          il.entry_notes,
@@ -547,4 +548,201 @@ export class InventoryService {
       preview: previewQ.rows,
     };
   }
+
+  // ------------------------------------------------------------
+  // ✅ Diff entry vs exit (par ref_key si possible)
+  // GET /inventory/sessions/:id/diff
+  // ------------------------------------------------------------
+  async diffForLease(sessionId: string) {
+    if (!sessionId) throw new BadRequestException('Missing sessionId');
+
+    const sQ = await this.pool.query(
+      `SELECT id, lease_id, status, created_at
+       FROM inventory_sessions
+       WHERE id=$1`,
+      [sessionId],
+    );
+    if (!sQ.rowCount) throw new BadRequestException('Unknown inventory session');
+
+    const base = sQ.rows[0] as { id: string; lease_id: string; status: string; created_at: string };
+    const leaseId = base.lease_id;
+    const baseStatus = String(base.status || '').toLowerCase();
+
+    let entrySessionId: string | null = null;
+    let exitSessionId: string | null = null;
+
+    if (baseStatus === 'exit') {
+      exitSessionId = base.id;
+
+      const entryQ = await this.pool.query(
+        `SELECT id
+         FROM inventory_sessions
+         WHERE lease_id=$1 AND status='entry' AND created_at <= $2
+         ORDER BY created_at DESC
+         LIMIT 1`,
+        [leaseId, base.created_at],
+      );
+      entrySessionId = entryQ.rows?.[0]?.id ?? null;
+    } else {
+      entrySessionId = base.id;
+
+      const exitAfterQ = await this.pool.query(
+        `SELECT id
+         FROM inventory_sessions
+         WHERE lease_id=$1 AND status='exit' AND created_at >= $2
+         ORDER BY created_at ASC
+         LIMIT 1`,
+        [leaseId, base.created_at],
+      );
+      exitSessionId = exitAfterQ.rows?.[0]?.id ?? null;
+
+      if (!exitSessionId) {
+        const exitLastQ = await this.pool.query(
+          `SELECT id
+           FROM inventory_sessions
+           WHERE lease_id=$1 AND status='exit'
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [leaseId],
+        );
+        exitSessionId = exitLastQ.rows?.[0]?.id ?? null;
+      }
+    }
+
+    // Lines + ref_key (listLines ne remonte pas ref_key dans ton SELECT actuel)
+    const entryLines = entrySessionId ? (await this.listLines(entrySessionId)) : [];
+    const exitLines = exitSessionId ? (await this.listLines(exitSessionId)) : [];
+
+    const entryRefQ = entrySessionId
+      ? await this.pool.query(
+          `SELECT id, ref_key
+           FROM inventory_lines
+           WHERE inventory_session_id=$1`,
+          [entrySessionId],
+        )
+      : { rows: [] as any[] };
+
+    const exitRefQ = exitSessionId
+      ? await this.pool.query(
+          `SELECT id, ref_key
+           FROM inventory_lines
+           WHERE inventory_session_id=$1`,
+          [exitSessionId],
+        )
+      : { rows: [] as any[] };
+
+    const refByIdEntry = new Map<string, string>();
+    for (const r of entryRefQ.rows) if (r?.id && r?.ref_key) refByIdEntry.set(String(r.id), String(r.ref_key));
+
+    const refByIdExit = new Map<string, string>();
+    for (const r of exitRefQ.rows) if (r?.id && r?.ref_key) refByIdExit.set(String(r.id), String(r.ref_key));
+
+    const entryEnriched = entryLines.map((ln: any) => ({
+      ...ln,
+      ref_key: refByIdEntry.get(String(ln.id)) ?? null,
+    }));
+    const exitEnriched = exitLines.map((ln: any) => ({
+      ...ln,
+      ref_key: refByIdExit.get(String(ln.id)) ?? null,
+    }));
+
+    const rows = buildInventoryDiff(entryEnriched, exitEnriched);
+
+    return {
+      ok: true,
+      leaseId,
+      baseSessionId: base.id,
+      entrySessionId,
+      exitSessionId,
+      rows,
+      counts: {
+        entryLines: entryLines.length,
+        exitLines: exitLines.length,
+        diffs: rows.length,
+      },
+    };
+  }
+
 }
+
+function normStr(x: any): string | null {
+  const s = x === undefined || x === null ? null : String(x);
+  const t = s?.trim();
+  return t ? t : null;
+}
+function normNum(x: any): number | null {
+  if (x === undefined || x === null || x === '') return null;
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+function invCategory(ln: any): string {
+  return normStr(ln?.category) ?? 'Divers';
+}
+function invLabel(ln: any): string {
+  return normStr(ln?.label) ?? normStr(ln?.catalog_label) ?? '';
+}
+
+function invKey(ln: any): string {
+  const rk = normStr(ln?.ref_key);
+  if (rk) return `ref:${rk}`;
+
+  const c = invCategory(ln).toLowerCase();
+  const l = invLabel(ln).toLowerCase();
+  return `cl:${c}__${l}`;
+}
+
+function buildInventoryDiff(entryLines: any[], exitLines: any[]) {
+  const emap = new Map<string, any>();
+  const xmap = new Map<string, any>();
+
+  for (const ln of entryLines || []) emap.set(invKey(ln), ln);
+  for (const ln of exitLines || []) xmap.set(invKey(ln), ln);
+
+  const keys = new Set<string>([...emap.keys(), ...xmap.keys()]);
+  const out: any[] = [];
+
+  for (const k of Array.from(keys).sort()) {
+    const e = emap.get(k);
+    const x = xmap.get(k);
+
+    const category = invCategory(e ?? x);
+    const label = invLabel(e ?? x);
+    const unit = normStr(e?.unit ?? x?.unit);
+
+    const entry_qty = normNum(e?.entry_qty);
+    const entry_state = normStr(e?.entry_state);
+    const entry_notes = normStr(e?.entry_notes);
+
+    const exit_qty = normNum(x?.exit_qty);
+    const exit_state = normStr(x?.exit_state);
+    const exit_notes = normStr(x?.exit_notes);
+
+    const kind = e && !x ? 'removed' : !e && x ? 'added' : 'changed';
+
+    if (kind === 'changed') {
+      const same =
+        entry_qty === exit_qty &&
+        entry_state === exit_state &&
+        entry_notes === exit_notes;
+      if (same) continue;
+    }
+
+    out.push({
+      key: k,
+      category,
+      label,
+      unit,
+      kind,
+      entry_qty,
+      entry_state,
+      entry_notes,
+      exit_qty,
+      exit_state,
+      exit_notes,
+    });
+  }
+
+  return out;
+}
+

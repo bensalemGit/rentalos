@@ -109,7 +109,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   const [addOpen, setAddOpen] = useState(false);
   const [addCategory, setAddCategory] = useState("");
   const [addLabel, setAddLabel] = useState("");
-  const [addUnit, setAddUnit] = useState("u");
+  const [addUnit, setAddUnit] = useState("piece");
   const [addQty, setAddQty] = useState<number>(1);
   const [addDupConfirm, setAddDupConfirm] = useState(false);
   const addLabelRef = useRef<HTMLInputElement | null>(null);
@@ -124,6 +124,26 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
       setToasts((p) => p.filter((x) => x.id !== id));
     }, 3500);
   }
+
+  // diff modal
+  const [diffOpen, setDiffOpen] = useState(false);
+  const [diffLoading, setDiffLoading] = useState(false);
+  const [diffError, setDiffError] = useState("");
+  const [diffRows, setDiffRows] = useState<
+    Array<{
+      key: string;
+      category: string;
+      label: string;
+      unit: string | null;
+      kind: "added" | "removed" | "changed" | string;
+      entry_qty: number | null;
+      entry_state: string | null;
+      entry_notes: string | null;
+      exit_qty: number | null;
+      exit_state: string | null;
+      exit_notes: string | null;
+    }>
+  >([]);
 
   // undo
   const undoTimers = useRef<Record<string, any>>({});
@@ -232,6 +252,14 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
         if (target) {
           sessionIdRef.current = target;
           setSessionId(target);
+
+          // ✅ bonus: auto vue selon le status
+          // (ici on ne peut pas utiliser `sessions` state, mais `arr` est dispo)
+          const s = arr.find((x) => x.id === target);
+          const st = String(s?.status || "").toLowerCase();
+          if (st === "exit") setViewMode("EXIT");
+          else if (st === "entry") setViewMode("ENTRY");
+
         }
       }
 
@@ -344,6 +372,35 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     }
   }
 
+  async function openDiffModal() {
+    const sid = sessionIdRef.current || sessionId;
+    if (!sid) return;
+
+    setDiffOpen(true);
+    setDiffLoading(true);
+    setDiffError("");
+    setDiffRows([]);
+
+    try {
+      const r = await fetch(`${API}/inventory/sessions/${sid}/diff`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+      });
+
+      const j = await r.json().catch(() => ({} as any));
+      if (!r.ok) {
+        throw new Error(j?.message || "Erreur diff inventaire");
+      }
+
+      setDiffRows(Array.isArray(j?.rows) ? j.rows : []);
+    } catch (e: any) {
+      setDiffError(String(e?.message || e));
+      pushToast({ kind: "err", message: "Erreur chargement différences" });
+    } finally {
+      setDiffLoading(false);
+    }
+  }
+
   useEffect(() => {
     if (!token) return;
 
@@ -369,6 +426,12 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     loadLines(sessionId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, sessionId]);
+
+  useEffect(() => {
+    if (!sessionId) return;
+    syncViewModeWithSession(sessionId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sessionId, sessions]);
 
   async function patchLine(id: string, patch: Partial<InvLine>) {
     setError("");
@@ -464,7 +527,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
         try {
           const category = getCategory(line);
           const label = String(getLabel(line) || "");
-          const unit = String(line.unit || "u");
+          const unit = String(line.unit || "piece");
           const qty = Number(line.entry_qty ?? line.default_qty ?? 1);
 
           const created = await createInventoryLine({ category, label, unit, qty });
@@ -498,7 +561,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
     const category = (addCategory || "Divers").trim() || "Divers";
     const label = (addLabel || "").trim();
-    const unit = (addUnit || "u").trim() || "u";
+    const unit = (addUnit || "piece").trim() || "piece";
     const qty = Number.isFinite(addQty) ? Math.max(0, Number(addQty)) : 1;
 
     if (!label) {
@@ -522,7 +585,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
       setAddDupConfirm(false);
       setAddLabel("");
       setAddQty(1);
-      setAddUnit("u");
+      setAddUnit("piece");
       setAddCategory(category);
     } catch (e: any) {
       setError(String(e?.message || e));
@@ -800,7 +863,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   function openAddModal(presetCategory?: string) {
     setAddCategory(presetCategory || (allCategories[0] || "Séjour"));
     setAddLabel("");
-    setAddUnit("u");
+    setAddUnit("piece");
     setAddQty(1);
     setAddDupConfirm(false);
     setAddOpen(true);
@@ -840,6 +903,16 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     (showEntry ? "minmax(260px, 1fr) " : "") +
     (showExit ? "minmax(260px, 1fr) " : "") +
     "260px";
+
+
+  function syncViewModeWithSession(nextSessionId: string, list: InvSession[] = sessions) {
+    const s = list.find((x) => x.id === nextSessionId);
+    if (!s) return;
+
+    const st = String(s.status || "").toLowerCase();
+    if (st === "exit") setViewMode("EXIT");
+    else if (st === "entry") setViewMode("ENTRY");
+  }
 
   return (
     <main style={{ maxWidth: 1400, margin: "0 auto", padding: 12, background: bg, minHeight: "100vh" }}>
@@ -928,7 +1001,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
               <label style={labelStyle(muted)}>
                 Unité
-                <input value={addUnit} onChange={(e) => setAddUnit(e.target.value)} placeholder="u" style={inputStyle(border)} />
+                <input value={addUnit} onChange={(e) => setAddUnit(e.target.value)} placeholder="piece" style={inputStyle(border)} />
               </label>
 
               <label style={labelStyle(muted)}>
@@ -950,6 +1023,114 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
               <button onClick={() => setAddOpen(false)} style={btnSecondary(border)}>Annuler</button>
               <button onClick={onAddSubmit} style={btnPrimary(blue)}>
                 {existsDuplicate(addCategory || "Divers", addLabel) && !addDupConfirm ? "Ajouter quand même" : "Ajouter"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Diff modal */}
+      {diffOpen && (
+        <div
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setDiffOpen(false);
+          }}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(2,6,23,0.45)",
+            zIndex: 9998,
+            display: "grid",
+            placeItems: "center",
+            padding: 12,
+          }}
+        >
+          <div
+            style={{
+              width: 980,
+              maxWidth: "100%",
+              borderRadius: 18,
+              background: "#fff",
+              border: `1px solid ${border}`,
+              boxShadow: "0 20px 60px rgba(0,0,0,0.25)",
+              padding: 14,
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+              <div style={{ fontWeight: 950, fontSize: 16 }}>Différences Inventaire (Entrée ↔ Sortie)</div>
+              <button onClick={() => setDiffOpen(false)} style={btnSecondary(border)}>
+                ✕
+              </button>
+            </div>
+
+            <div style={{ marginTop: 10, color: muted, fontSize: 12 }}>
+              Session sélectionnée : <b style={{ color: "#111" }}>{(sessionIdRef.current || sessionId).slice(0, 8)}…</b>
+            </div>
+
+            {diffLoading && (
+              <div style={{ marginTop: 12, color: muted, fontWeight: 900 }}>Chargement…</div>
+            )}
+            {diffError && (
+              <div style={{ marginTop: 12, color: "crimson", fontWeight: 900 }}>{diffError}</div>
+            )}
+
+            {!diffLoading && !diffError && (
+              <div style={{ marginTop: 12 }}>
+                {!diffRows.length ? (
+                  <div style={{ color: muted, fontWeight: 900 }}>Aucune différence ✅</div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8, maxHeight: "65vh", overflow: "auto", paddingRight: 4 }}>
+                    {diffRows.map((r) => (
+                      <div
+                        key={r.key}
+                        style={{
+                          border: `1px solid ${border}`,
+                          borderRadius: 14,
+                          padding: 10,
+                          background: "#fbfbfd",
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontWeight: 950 }}>
+                              {r.category} • {r.label} {r.unit ? <span style={{ color: muted, fontWeight: 800 }}>({r.unit})</span> : null}
+                            </div>
+                            <div style={{ color: muted, fontSize: 12 }}>{r.key}</div>
+                          </div>
+                          <span style={diffPill(r.kind as any)}>{String(r.kind).toUpperCase()}</span>
+                        </div>
+
+                        <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+                          <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fff" }}>
+                            <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Entrée</div>
+                            <div style={{ fontSize: 12, color: muted }}>
+                              <b style={{ color: "#111" }}>Qté:</b> {r.entry_qty ?? "—"} • <b style={{ color: "#111" }}>État:</b> {r.entry_state ?? "—"}
+                            </div>
+                            <div style={{ fontSize: 12, color: muted, marginTop: 6, whiteSpace: "pre-wrap" }}>
+                              <b style={{ color: "#111" }}>Notes:</b> {r.entry_notes ?? "—"}
+                            </div>
+                          </div>
+
+                          <div style={{ border: `1px solid ${border}`, borderRadius: 12, padding: 10, background: "#fff" }}>
+                            <div style={{ fontWeight: 900, fontSize: 12, marginBottom: 6 }}>Sortie</div>
+                            <div style={{ fontSize: 12, color: muted }}>
+                              <b style={{ color: "#111" }}>Qté:</b> {r.exit_qty ?? "—"} • <b style={{ color: "#111" }}>État:</b> {r.exit_state ?? "—"}
+                            </div>
+                            <div style={{ fontSize: 12, color: muted, marginTop: 6, whiteSpace: "pre-wrap" }}>
+                              <b style={{ color: "#111" }}>Notes:</b> {r.exit_notes ?? "—"}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div style={{ marginTop: 12, display: "flex", justifyContent: "flex-end", gap: 10 }}>
+              <button onClick={() => setDiffOpen(false)} style={btnSecondary(border)}>
+                Fermer
               </button>
             </div>
           </div>
@@ -991,6 +1172,9 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
                 userPickedSessionRef.current = true;
                 sessionIdRef.current = v;
                 setSessionId(v);
+
+                // ✅ bonus: auto vue selon le status de la session
+                syncViewModeWithSession(v);
               }}
               style={{ ...inputStyle(border), width: 280, background: "#fbfbfd" }}
               title="Session"
@@ -1022,6 +1206,7 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
             <button onClick={() => loadSessions()} style={btnSecondary(border)}>Rafraîchir</button>
 
+
             {viewMode !== "EXIT" && (
               <button
                 onClick={copyEntryToExit}
@@ -1038,6 +1223,15 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
               style={{ ...btnSecondary(border), opacity: !sessionId || savingReference ? 0.6 : 1, fontWeight: 900 }}
             >
               {savingReference ? "Enregistrement…" : "Définir référence logement"}
+            </button>
+
+            <button
+              onClick={openDiffModal}
+              disabled={!sessionId}
+              style={{ ...btnSecondary(border), opacity: sessionId ? 1 : 0.6, fontWeight: 900 }}
+              title="Voir les différences Entrée ↔ Sortie"
+            >
+              Différences
             </button>
 
             <button
@@ -1333,6 +1527,28 @@ function toastPill(kind: ToastKind) {
     letterSpacing: 0.4,
   } as const;
 }
+
+function diffPill(kind: "added" | "removed" | "changed" | string) {
+  const k = String(kind || "").toLowerCase();
+  const map: Record<string, { b: string; bg: string; c: string }> = {
+    added: { b: "rgba(22,163,74,0.25)", bg: "rgba(22,163,74,0.10)", c: "#14532d" },
+    removed: { b: "rgba(220,38,38,0.28)", bg: "rgba(220,38,38,0.10)", c: "#7f1d1d" },
+    changed: { b: "rgba(245,158,11,0.30)", bg: "rgba(245,158,11,0.12)", c: "#78350f" },
+  };
+  const s = map[k] || map.changed;
+  return {
+    fontSize: 11,
+    fontWeight: 950,
+    padding: "4px 8px",
+    borderRadius: 999,
+    border: `1px solid ${s.b}`,
+    background: s.bg,
+    color: s.c,
+    letterSpacing: 0.4,
+    whiteSpace: "nowrap",
+  } as const;
+}
+
 function card(border: string, bg: string) {
   return {
     border: `1px solid ${border}`,
