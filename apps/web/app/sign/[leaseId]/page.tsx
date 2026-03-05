@@ -102,21 +102,49 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     setToken(localStorage.getItem("token") || "");
   }, []);
 
-function setupCanvas(c: HTMLCanvasElement) {
-  // Canvas "interne" en haute résolution, affiché en 180px de haut via CSS
-  c.width = 900;
-  c.height = 360;
+function setupCanvasHiDpi(canvas: HTMLCanvasElement) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
 
-  const ctx = c.getContext("2d");
+  // Taille CSS visible
+  const cssW = Math.max(1, Math.floor(rect.width));
+  const cssH = Math.max(1, Math.floor(rect.height));
+
+  // Taille interne réelle (pixels)
+  canvas.width = Math.floor(cssW * dpr);
+  canvas.height = Math.floor(cssH * dpr);
+
+  const ctx = canvas.getContext("2d");
   if (!ctx) return;
+
+  // Toutes les coords qu'on va utiliser seront en pixels CSS
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
   ctx.lineWidth = 2.2;
   ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111";
 }
 
-  useEffect(() => {
-    if (!canvasRef.current) return;
-    setupCanvas(canvasRef.current);
-  }, []);
+function getCanvasPoint(canvas: HTMLCanvasElement, e: any) {
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  return { x, y }; // coords en pixels CSS
+}
+
+useEffect(() => {
+  const c = canvasRef.current;
+  if (!c) return;
+
+  const apply = () => setupCanvasHiDpi(c);
+  apply();
+
+  const onResize = () => apply();
+  window.addEventListener("resize", onResize);
+
+  return () => window.removeEventListener("resize", onResize);
+}, []);
 
   function normalizeTenantId(t: LeaseTenant): string {
     return String(t.tenant_id || t.id || "").trim();
@@ -593,31 +621,35 @@ function setupCanvas(c: HTMLCanvasElement) {
     await fetchSignatureStatus(leaseId);
   }
 
-  function clearCanvas() {
-    const c = canvasRef.current;
-    if (!c) return;
-    const ctx = c.getContext("2d");
-    if (!ctx) return;
-    ctx.clearRect(0, 0, c.width, c.height);
-    signatureDirty.current = false;
-  }
+function clearCanvas() {
+  const c = canvasRef.current;
+  if (!c) return;
+
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+
+  // Clear en pixels internes
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, c.width, c.height);
+
+  // Re-setup transform + styles
+  setupCanvasHiDpi(c);
+
+  signatureDirty.current = false;
+}
 
   function dataUrl(c: HTMLCanvasElement | null) {
     if (!c) return "";
     return c.toDataURL("image/png");
   }
 
- function posPointer(e: any, c: HTMLCanvasElement) {
-  const rect = c.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  return { x, y };
-}
-
 function onPointerDown(e: any) {
   const c = canvasRef.current;
   if (!c) return;
+
   drawing.current = true;
+  signatureDirty.current = true;
+
   try {
     (e.currentTarget as HTMLCanvasElement)?.setPointerCapture?.(e.pointerId);
   } catch {}
@@ -625,13 +657,14 @@ function onPointerDown(e: any) {
   const ctx = c.getContext("2d");
   if (!ctx) return;
 
-  const p = posPointer(e, c);
+  const p = getCanvasPoint(c, e);
   ctx.beginPath();
   ctx.moveTo(p.x, p.y);
 }
 
 function onPointerMove(e: any) {
   if (!drawing.current) return;
+
   const c = canvasRef.current;
   if (!c) return;
 
@@ -640,7 +673,7 @@ function onPointerMove(e: any) {
 
   signatureDirty.current = true;
 
-  const p = posPointer(e, c);
+  const p = getCanvasPoint(c, e);
   ctx.lineTo(p.x, p.y);
   ctx.stroke();
 }
@@ -648,9 +681,11 @@ function onPointerMove(e: any) {
 function onPointerUp(e: any) {
   const c = canvasRef.current;
   if (!c) return;
+
   try {
     (e.currentTarget as HTMLCanvasElement)?.releasePointerCapture?.(e.pointerId);
   } catch {}
+
   drawing.current = false;
 }
 
@@ -1676,8 +1711,6 @@ async function signGuarantorOnPlace() {
             >
               <canvas
                 ref={canvasRef}
-                width={900}
-                height={360}
                 style={{
                   width: "100%",
                   height: "100%",
