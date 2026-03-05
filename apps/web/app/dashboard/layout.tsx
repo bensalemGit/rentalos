@@ -1,144 +1,150 @@
 "use client";
+
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 
 function hasToken() {
   if (typeof window === "undefined") return false;
   return !!localStorage.getItem("token");
 }
 
+const NAV = [
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/dashboard/projects", label: "Projets" },
+  { href: "/dashboard/buildings", label: "Immeubles" },
+  { href: "/dashboard/units", label: "Logements" },
+  { href: "/dashboard/tenants", label: "Locataires" },
+  { href: "/dashboard/leases", label: "Baux" },
+];
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [ok, setOk] = useState(false);
+  const pathname = usePathname();
 
   useEffect(() => {
     setOk(hasToken());
   }, []);
 
+  const activeHref = useMemo(() => {
+    const hit = NAV.find((n) => pathname === n.href || pathname?.startsWith(n.href + "/"));
+    return hit?.href || "/dashboard";
+  }, [pathname]);
+
   if (!ok) {
     return (
-      <main style={{ padding: 16, fontFamily: "Arial" }}>
-        <h1>Accès admin</h1>
-        <p>Vous devez être connecté.</p>
-        <Link href="/"><button>Aller à la connexion</button></Link>
-      </main>
+      <div style={{ minHeight: "100vh", display: "grid", placeItems: "center", padding: 24 }}>
+        <div
+          style={{
+            width: "min(520px, 100%)",
+            background: "var(--card)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            padding: 18,
+            boxShadow: "var(--shadow)",
+          }}
+        >
+          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Accès admin</div>
+          <div style={{ color: "var(--muted)", marginBottom: 14 }}>Vous devez être connecté.</div>
+          <Link
+            href="/"
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid var(--border)",
+              background: "var(--primary)",
+              color: "white",
+              fontWeight: 800,
+            }}
+          >
+            Aller à la connexion
+          </Link>
+        </div>
+      </div>
     );
   }
 
-  const blue = "#1f6feb";
-  const bg = "#f6f8fa";
-  const border = "#e5e7eb";
-  const green = "#16a34a";
-
   return (
-    <div style={{ display: "flex", minHeight: "100vh", fontFamily: "Arial", background: bg }}>
+    <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "280px 1fr" }}>
       {/* Sidebar */}
       <aside
         style={{
-          width: 270,
-          background: "#fff",
-          borderRight: `1px solid ${border}`,
-          padding: 14,
+          background: "var(--card)",
+          borderRight: "1px solid var(--border)",
+          padding: 16,
+          position: "sticky",
+          top: 0,
+          height: "100vh",
+          overflow: "auto",
         }}
       >
         {/* Brand */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 14 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div
-              style={{
-                width: 14,
-                height: 14,
-                borderRadius: 999,
-                background: blue,
-                boxShadow: "0 0 0 4px rgba(31,111,235,0.12)",
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", lineHeight: 1.1 }}>
-              <div style={{ fontWeight: 900, letterSpacing: 0.2, fontSize: 16 }}>RentalOS</div>
-              <div style={{ color: "#6b7280", fontSize: 12 }}>Admin</div>
-            </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
+          <div style={{ fontWeight: 900, fontSize: 18, letterSpacing: 0.2 }}>
+            Rental<span style={{ color: "var(--primary)" }}>OS</span>
           </div>
-
-          <div
-            style={{
-              fontSize: 11,
-              fontWeight: 800,
-              color: green,
-              border: `1px solid rgba(22,163,74,0.35)`,
-              background: "rgba(22,163,74,0.10)",
-              padding: "4px 8px",
-              borderRadius: 999,
-            }}
-            title="Environnement de production"
-          >
-            PROD
-          </div>
+          <div style={{ fontSize: 12, color: "var(--muted)" }}>Admin • PROD</div>
         </div>
 
-        <div style={{ color: "#6b7280", fontSize: 12, marginBottom: 10 }}>
+        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 800, marginBottom: 10 }}>
           Navigation
         </div>
 
-        <nav style={{ display: "grid", gap: 10 }}>
-          <Link href="/dashboard/projects">
-            <button style={navBtnStyle(blue)}>Projets</button>
-          </Link>
-		  <Link href="/dashboard/buildings">
-			<button style={navBtnStyle(blue)}>Immeubles</button>
-		  </Link>
-		  <Link href="/dashboard/units">
-            <button style={navBtnStyle(blue)}>Logements</button>
-          </Link>
-          <Link href="/dashboard/tenants">
-            <button style={navBtnStyle(blue)}>Locataires</button>
-          </Link>
-          <Link href="/dashboard/leases">
-            <button style={navBtnStyle(blue)}>Baux</button>
-          </Link>
-        </nav>
-
-        <div style={{ marginTop: 16, borderTop: `1px solid ${border}`, paddingTop: 12 }}>
-          <button
-            onClick={() => {
-              localStorage.removeItem("token");
-              window.location.href = "/";
-            }}
-            style={{
-              width: "100%",
-              padding: "10px 12px",
-              borderRadius: 12,
-              border: `1px solid ${border}`,
-              background: "#fff",
-              cursor: "pointer",
-            }}
-          >
-            Déconnexion
-          </button>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {NAV.map((n) => {
+            const active = n.href === activeHref;
+            return (
+              <Link
+                key={n.href}
+                href={n.href}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: 12,
+                  border: "1px solid var(--border)",
+                  background: active ? "rgba(37,99,235,0.10)" : "white",
+                  color: active ? "var(--primary)" : "var(--text)",
+                  fontWeight: 800,
+                  boxShadow: "var(--shadow)",
+                }}
+              >
+                {n.label}
+              </Link>
+            );
+          })}
         </div>
 
-        <div style={{ marginTop: 10, color: "#9ca3af", fontSize: 12 }}>
+        <div style={{ height: 14 }} />
+
+        <button
+          onClick={() => {
+            localStorage.removeItem("token");
+            window.location.href = "/";
+          }}
+          style={{
+            width: "100%",
+            padding: "10px 12px",
+            borderRadius: 12,
+            border: "1px solid var(--border)",
+            background: "white",
+            cursor: "pointer",
+            fontWeight: 800,
+          }}
+        >
+          Déconnexion
+        </button>
+
+        <div style={{ marginTop: 14, fontSize: 12, color: "var(--muted)" }}>
           France — location meublée
         </div>
       </aside>
 
       {/* Content */}
-      <section style={{ flex: 1, padding: 18 }}>
-        {children}
-      </section>
+      <main style={{ padding: 24 }}>
+        <div style={{ maxWidth: 1200, margin: "0 auto" }}>{children}</div>
+      </main>
     </div>
   );
-}
-
-function navBtnStyle(blue: string) {
-  return {
-    width: "100%",
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px solid #e5e7eb",
-    background: "#fff",
-    cursor: "pointer",
-    textAlign: "left" as const,
-    fontWeight: 650,
-    boxShadow: "0 1px 1px rgba(0,0,0,0.03)",
-    outlineColor: blue,
-  };
 }
