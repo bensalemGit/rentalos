@@ -117,6 +117,65 @@ function toneFromStatus(s?: string) {
   return "neutral";
 }
 
+function isMissingStatus(s?: string) {
+  const v = String(s || "").toUpperCase();
+  return v === "NOT_GENERATED" || v === "DRAFT" || v === "MISSING" || v === "NOT_SENT" || v === "NONE";
+}
+
+function countMissingFromSignatureStatus(sigStatus: any) {
+  if (!sigStatus) return { missing: 0, label: "—", firstAnchor: "contract" as const };
+
+  const missing: { anchor: "contract" | "tenants" | "guarantees" | "edl-inv"; msg: string }[] = [];
+
+  // Contrat
+  const contractStatus = String(sigStatus?.contract?.status || "").toUpperCase();
+  if (contractStatus !== "SIGNED") {
+    missing.push({ anchor: "contract", msg: "Contrat à finaliser" });
+  }
+
+  // Locataires
+  const tenants = sigStatus?.contract?.tenants || [];
+  const tenantsUnsigned = Array.isArray(tenants)
+    ? tenants.filter((t: any) => String(t.signatureStatus || "").toUpperCase() !== "SIGNED")
+    : [];
+  if (tenantsUnsigned.length > 0) {
+    missing.push({ anchor: "tenants", msg: `${tenantsUnsigned.length} signature(s) locataire manquante(s)` });
+  }
+
+  // Garanties
+  const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus.guarantees : [];
+  const guaranteesMissing = guarantees.filter((g: any) => String(g.signatureStatus || "").toUpperCase() !== "SIGNED");
+  if (guaranteesMissing.length > 0) {
+    missing.push({ anchor: "guarantees", msg: `${guaranteesMissing.length} garantie(s) non signée(s)` });
+  }
+
+  // EDL/Inv/Packs
+  const edlDocs = [sigStatus?.edl?.entry, sigStatus?.edl?.exit].filter(Boolean);
+  const invDocs = [sigStatus?.inventory?.entry, sigStatus?.inventory?.exit].filter(Boolean);
+  const packEdlInvDocs = [(sigStatus as any)?.packEdlInv?.entry, (sigStatus as any)?.packEdlInv?.exit].filter(Boolean);
+
+  const edlInvMissing = [...edlDocs, ...invDocs, ...packEdlInvDocs].filter(
+    (d: any) => !d?.documentId || isMissingStatus(d?.status)
+  );
+  if (edlInvMissing.length > 0) {
+    missing.push({ anchor: "edl-inv", msg: `${edlInvMissing.length} doc(s) EDL/Inventaire à faire` });
+  }
+
+  const missingCount = missing.length;
+  const firstAnchor = missingCount > 0 ? missing[0].anchor : ("contract" as const);
+
+  const label =
+    missingCount === 0 ? "Tout est prêt" : missingCount === 1 ? missing[0].msg : `${missingCount} actions à faire`;
+
+  return { missing: missingCount, label, firstAnchor };
+}
+
+function scrollToAnchor(id: string) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
 const API =
   typeof window !== "undefined"
     ? window.location.origin + "/api"
@@ -203,7 +262,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const blue = "#1f6feb";
   const border = "#e5e7eb";
   const muted = "#6b7280";
-  const green = "#16a34a";
 
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
@@ -787,8 +845,6 @@ function onPointerUp(e: any) {
   drawing.current = false;
 }
 
-  const hasFinal = useMemo(() => !!finalSignedDoc?.id, [finalSignedDoc]);
-
   const isRP = useMemo(() => {
     const k = String(leaseKind || "").toUpperCase();
     return k === "MEUBLE_RP" || k === "NU_RP";
@@ -1123,6 +1179,7 @@ async function signGuarantorOnPlace() {
     await fetchSignatureStatus(leaseId); // recharge les statuts contrat + garanties
   }
 
+  const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
       <div
@@ -1144,9 +1201,19 @@ async function signGuarantorOnPlace() {
             <span style={{ fontWeight: 900 }}>PACK_FINAL_V2:</span> {packFinalV2Doc?.id ? "OK" : "—"}
           </div>
         </div>
-
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Badge tone={hasFinal ? "success" : "warning"}>{hasFinal ? "Dossier OK" : "En attente"}</Badge>
+          <Badge tone={!sigStatus ? "neutral" : dossier.missing === 0 ? "success" : "warning"}>
+            {!sigStatus ? "Chargement…" : dossier.missing === 0 ? "Dossier OK" : dossier.label}
+          </Badge>
+
+          <Btn
+            variant="primary"
+            onClick={() => scrollToAnchor(dossier.firstAnchor)}
+            disabled={!sigStatus}
+            title={!sigStatus ? "Charge d’abord le statut" : ""}
+          >
+            Terminer le dossier
+          </Btn>
 
           <Btn variant="secondary" onClick={refreshAll} disabled={loadingSigStatus}>
             Rafraîchir
