@@ -1,10 +1,121 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
 import { SignableCard } from "./_components/SignableCard";
+
+const ui = {
+  card: {
+    background: "var(--card)",
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius)",
+    boxShadow: "var(--shadow)",
+  } as React.CSSProperties,
+  hTitle: { fontSize: 18, fontWeight: 950, margin: 0 } as React.CSSProperties,
+  sub: { fontSize: 13, color: "var(--muted)", marginTop: 4 } as React.CSSProperties,
+};
+
+function Badge({
+  tone,
+  children,
+}: {
+  tone: "success" | "warning" | "danger" | "neutral" | "primary";
+  children: React.ReactNode;
+}) {
+  const map: any = {
+    success: { bg: "rgba(22,163,74,0.12)", fg: "var(--success)", bd: "rgba(22,163,74,0.25)" },
+    warning: { bg: "rgba(245,158,11,0.14)", fg: "var(--warning)", bd: "rgba(245,158,11,0.25)" },
+    danger: { bg: "rgba(239,68,68,0.12)", fg: "var(--danger)", bd: "rgba(239,68,68,0.25)" },
+    neutral: { bg: "rgba(100,116,139,0.10)", fg: "var(--muted)", bd: "rgba(100,116,139,0.22)" },
+    primary: { bg: "rgba(37,99,235,0.10)", fg: "var(--primary)", bd: "rgba(37,99,235,0.25)" },
+  };
+  const s = map[tone];
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        padding: "4px 10px",
+        borderRadius: 999,
+        border: `1px solid ${s.bd}`,
+        background: s.bg,
+        color: s.fg,
+        fontWeight: 900,
+        fontSize: 12,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {children}
+    </span>
+  );
+}
+
+function Btn({
+  variant,
+  children,
+  ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant: "primary" | "secondary" | "ghost";
+}) {
+  const base: React.CSSProperties = {
+    padding: "10px 12px",
+    borderRadius: 12,
+    fontWeight: 950,
+    cursor: "pointer",
+    border: "1px solid var(--border)",
+  };
+
+  const styles: any = {
+    primary: { ...base, background: "var(--primary)", border: "1px solid rgba(37,99,235,0.25)", color: "white" },
+    secondary: { ...base, background: "white", color: "var(--text)" },
+    ghost: { ...base, background: "transparent", color: "var(--primary)" },
+  };
+
+  return (
+    <button {...rest} style={{ ...(styles[variant] || styles.secondary), ...(rest.style || {}) }}>
+      {children}
+    </button>
+  );
+}
+
+function Card({
+  id,
+  title,
+  subtitle,
+  right,
+  children,
+}: {
+  id?: string;
+  title: string;
+  subtitle?: string;
+  right?: React.ReactNode;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} style={{ ...ui.card, padding: 16 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+        <div>
+          <div style={{ fontWeight: 950, fontSize: 14 }}>{title}</div>
+          {subtitle ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{subtitle}</div> : null}
+        </div>
+        {right}
+      </div>
+      <div style={{ marginTop: 12 }}>{children}</div>
+    </section>
+  );
+}
+
+function toneFromStatus(s?: string) {
+  const v = String(s || "").toUpperCase();
+  if (v.includes("SIGNED")) return "success";
+  if (v.includes("IN_PROGRESS")) return "warning";
+  if (v.includes("GENERATED")) return "primary";
+  if (v.includes("NOT") || v.includes("DRAFT")) return "neutral";
+  if (v.includes("MISSING") || v.includes("ERROR")) return "danger";
+  return "neutral";
+}
 
 const API =
   typeof window !== "undefined"
@@ -82,10 +193,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
-
-  // confirmations
-  const [tenantSigned, setTenantSigned] = useState(false);
-  const [landlordSigned, setLandlordSigned] = useState(false);
 
   const [sigStatus, setSigStatus] = useState<SignatureStatusPayload | null>(null);
   // ✅ Local override: permet d'utiliser immédiatement l'id d'acte renvoyé par /documents/guarantor-act
@@ -200,9 +307,6 @@ useEffect(() => {
     setError("");
     setStatus("Chargement…");
 
-    setTenantSigned(false);
-    setLandlordSigned(false);
-
     try {
       // load lease bundle (kind + tenants)
       await loadLeaseBundle();
@@ -269,12 +373,6 @@ useEffect(() => {
         null;
 
       setPackFinalV2Doc(packFinalV2);
-
-
-      if (signed?.id) {
-        setTenantSigned(true);
-        setLandlordSigned(true);
-      }
 
       setStatus("");
     } catch (e: any) {
@@ -1027,36 +1125,68 @@ async function signGuarantorOnPlace() {
 
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+      <div
+        style={{
+          ...ui.card,
+          padding: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          alignItems: "center",
+        }}
+      >
         <div>
-          <h1 style={{ margin: 0 }}>Contrat & signatures</h1>
-          <div style={{ color: muted, marginTop: 6, fontSize: 13 }}>
-            Bail {leaseId.slice(0, 8)}… • Contrat: {contractDoc?.id ? "OK" : "—"} • Notice:{" "}
-            {noticeDoc?.id ? "OK" : isRP ? "—" : "n/a"} • Pack: {packDoc?.id ? "OK" : "—"} • PACK_FINAL_V2: {packFinalV2Doc?.id ? "OK" : "—"} • Contrat SIGNED_FINAL: {hasFinal ? "OK" : "—"}
+          <h1 style={ui.hTitle}>Contrat & signatures</h1>
+          <div style={ui.sub}>
+            Bail {leaseId.slice(0, 8)}… •{" "}
+            <span style={{ fontWeight: 900 }}>Contrat:</span> {sigStatus?.contract?.status || "—"} •{" "}
+            <span style={{ fontWeight: 900 }}>Garanties:</span> {(sigStatus?.guarantees?.length ?? 0) || 0} •{" "}
+            <span style={{ fontWeight: 900 }}>PACK_FINAL_V2:</span> {packFinalV2Doc?.id ? "OK" : "—"}
           </div>
         </div>
 
-        <button onClick={() => refreshAll()} style={btnSecondary(border)}>
-          Rafraîchir
-        </button>
+        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+          <Badge tone={hasFinal ? "success" : "warning"}>{hasFinal ? "Dossier OK" : "En attente"}</Badge>
+
+          <Btn variant="secondary" onClick={refreshAll} disabled={loadingSigStatus}>
+            Rafraîchir
+          </Btn>
+        </div>
       </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <a href="#contract" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+          Contrat
+        </a>
+        <a href="#tenants" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+          Locataires
+        </a>
+        <a href="#guarantees" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+          Garanties
+        </a>
+        <a href="#edl-inv" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+          EDL & Inventaires
+        </a>
+      </div>
+
+      <style dangerouslySetInnerHTML={{ __html: `html{scroll-behavior:smooth}` }} />
 
       <div className="sign-grid" style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16, alignItems: "start" }}>
         <div style={{ display: "grid", gap: 14 }}>
           {/* LEFT COLUMN START */}
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <button onClick={generateContract} style={btnAction(border)}>
+        <Btn variant="primary" onClick={generateContract} style={{ minWidth: 160 }}>
           Générer contrat
-        </button>
+        </Btn>
 
-        <button
+        <Btn
+          variant="secondary"
           onClick={() => contractDoc?.id && downloadDoc(contractDoc.id, contractDoc.filename)}
-          style={btnAction(border)}
           disabled={!contractDoc?.id}
+          style={{ minWidth: 160 }}
         >
           Télécharger contrat
-        </button>
+        </Btn>
 
         {isRP && (
           <>
@@ -1112,9 +1242,7 @@ async function signGuarantorOnPlace() {
         </button>
 
       </div>
-            <div style={card(border)}>
-        <h2 style={{ marginTop: 0 }}>Contrat</h2>
-
+      <Card id="contract" title="Contrat" subtitle="Génération, téléchargement, signatures">
         {!sigStatus && loadingSigStatus && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
         )}
@@ -1181,8 +1309,8 @@ async function signGuarantorOnPlace() {
             ]}
           />
         ) : null}
-      </div>
-
+      </Card>
+      
       {finalSignedDoc?.id && (
         <div style={card(border)}>
           <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
@@ -1209,10 +1337,11 @@ async function signGuarantorOnPlace() {
       {/* ========================= */}
       {/* Locataires (signature)    */}
       {/* ========================= */}
-      <div style={card(border)}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
-          <h2 style={{ marginTop: 0 }}>Locataires (signature)</h2>
-
+      <Card
+        id="tenants"
+        title="Locataires (signature)"
+        subtitle="Envoi de liens, statut de signature"
+        right={
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
               onClick={() => sendPublicLink(false)}
@@ -1230,7 +1359,8 @@ async function signGuarantorOnPlace() {
               Renvoyer (force, tous)
             </button>
           </div>
-        </div>
+        }
+      >
 
         {!sigStatus?.contract?.tenants?.length ? (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucun locataire.</div>
@@ -1270,117 +1400,122 @@ async function signGuarantorOnPlace() {
             ))}
           </div>
         )}
-      </div>
+      </Card>
 
-      <div id="guarantees-block" style={card(border)}>
-        <h2 style={{ marginTop: 0 }}>Garanties (caution)</h2>
-
-        {!sigStatus && loadingSigStatus && <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>}
-        {sigStatusError && <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>}
+      <Card id="guarantees" title="Garanties (caution)" subtitle="Acte caution, liens, ACK locataire">
+        {!sigStatus && loadingSigStatus && (
+          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
+        )}
+        {sigStatusError && (
+          <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
+        )}
 
         {sigStatus && sigStatus.guarantees.length === 0 && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucune garantie CAUTION sélectionnée.</div>
         )}
 
         {sigStatus && sigStatus.guarantees.length > 0 && (
-        <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-          {sigStatus?.guarantees?.map((g) => {
-            const statusText =
-              g.signatureStatus === "SIGNED"
-                ? "🟢 Signé"
-                : g.signatureStatus === "IN_PROGRESS"
-                  ? "🟡 En cours"
-                  : g.signatureStatus === "SENT"
-                    ? "🟠 Lien envoyé"
-                    : "🔵 Non envoyé";
+          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+            {sigStatus.guarantees.map((g) => {
+              const statusText =
+                g.signatureStatus === "SIGNED"
+                  ? "🟢 Signé"
+                  : g.signatureStatus === "IN_PROGRESS"
+                    ? "🟡 En cours"
+                    : g.signatureStatus === "SENT"
+                      ? "🟠 Lien envoyé"
+                      : "🔵 Non envoyé";
 
-            const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
+              const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
 
-            const ackTenant = g.tenantId;
-            const ackRequired = Boolean(g.ack?.required);
-            const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
-            const ackOk = Boolean(ackInfo?.acknowledged);
+              const ackTenant = g.tenantId;
+              const ackRequired = Boolean(g.ack?.required);
+              const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
+              const ackOk = Boolean(ackInfo?.acknowledged);
 
-            const primaryLabel =
-              g.signatureStatus === "SIGNED"
-                ? "📤 Partager au garant"
-                : g.lastLink
-                  ? "Renvoyer lien signature"
-                  : "Envoyer lien signature";
+              const primaryLabel =
+                g.signatureStatus === "SIGNED"
+                  ? "📤 Partager au garant"
+                  : g.lastLink
+                    ? "Renvoyer lien signature"
+                    : "Envoyer lien signature";
+              
+              const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;      
 
-            return (
-              <SignableCard
-                key={g.guaranteeId}
-                title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
-                statusChip={
-                  <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
-                    {statusText}
-                  </span>
-                }
-                subtitle={
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div>
-                      <strong>Lien :</strong> {linkState}
-                      {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
+              return (
+                <SignableCard
+                  key={g.guaranteeId}
+                  title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
+                  statusChip={
+                    <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
+                      {statusText}
+                    </span>
+                  }
+                  subtitle={
+                    <div style={{ display: "grid", gap: 6 }}>
+                      <div>
+                        <strong>Lien :</strong> {linkState}
+                        {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
+                      </div>
+                      <div>
+                        <strong>ACK locataire :</strong>{" "}
+                        {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
+                      </div>
                     </div>
-                    <div>
-                      <strong>ACK locataire :</strong>{" "}
-                      {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
-                    </div>
-                  </div>
-                }
-                actions={[
-                  {
-                    label: primaryLabel,
-                    onClick: () => {
-                      if (g.signatureStatus === "SIGNED") {
-                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
+                  }
+                  actions={[
+                    {
+                      label: primaryLabel,
+                      onClick: () => {
+                        if (g.signatureStatus === "SIGNED") {
+                          return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
+                            alert(e.message || String(e))
+                          );
+                        }
+                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
                           alert(e.message || String(e))
                         );
-                      }
-                      return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
-                        alert(e.message || String(e))
-                      );
+                      },
+                      disabled: g.signatureStatus === "SIGNED"
+                        ? !g.signedFinalDocumentId
+                        : !actId,
                     },
-                    disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !g.actDocumentId,
-                  },
-                  {
-                    label: "Générer acte",
-                    kind: "secondary",
-                    disabled: Boolean(g.actDocumentId),
-                    onClick: async () => {
-                      await generateGuarantorActFor(g.guaranteeId);
-                      await fetchSignatureStatus(leaseId);
+                    {
+                      label: "Générer acte",
+                      kind: "secondary",
+                      disabled: Boolean(actId),
+                      onClick: async () => {
+                        await generateGuarantorActFor(g.guaranteeId);
+                        await fetchSignatureStatus(leaseId);
+                      },
                     },
-                  },
-                  {
-                    label: "Télécharger PDF",
-                    kind: "secondary",
-                    disabled: !g.actDocumentId,
-                    onClick: () => g.actDocumentId && downloadDoc(g.actDocumentId, "acte_caution.pdf"),
-                  },
-                  {
-                    label: "ACK : Marquer comme lu",
-                    kind: "secondary",
-                    disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
-                    onClick: () =>
-                      g.signedFinalDocumentId &&
-                      acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
-                        alert(e.message || String(e))
-                      ),
-                  },
-                ]}
-              />
-            );
-          })}
-        </div>
-      )}
-      </div>
+                    {
+                      label: "Télécharger PDF",
+                      kind: "secondary",
+                      disabled: !actId,
+                      onClick: () => actId && downloadDoc(actId, "acte_caution.pdf"),
+                    },
+                    {
+                      label: "ACK : Marquer comme lu",
+                      kind: "secondary",
+                      disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
+                      onClick: () =>
+                        g.signedFinalDocumentId &&
+                        acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
+                          alert(e.message || String(e))
+                        ),
+                    },
+                  ]}
+                />
+              );
+            })}
+          </div>
+        )}
+      </Card>
 
       {sigStatus && (
-        <div style={card(border)}>
-          <h2 style={{ marginTop: 0 }}>EDL & Inventaires</h2>
-
+        <Card id="edl-inv" title="EDL & Inventaires" subtitle="Docs entrée/sortie + packs">
+        
           {/* ✅ Pack EDL + Inventaire (recommandé) */}
           {[
             (sigStatus as any)?.packEdlInv?.entry,
@@ -1402,11 +1537,9 @@ async function signGuarantorOnPlace() {
                   {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
                 </div>
 
-                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                  Statut:{" "}
-                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                    {p.status}
-                  </span>
+                <div style={{ fontSize: 13, color: muted, marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontWeight: 900 }}>Statut:</span>
+                  <Badge tone={toneFromStatus(p.status)}>{p.status || "—"}</Badge>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
@@ -1454,11 +1587,9 @@ async function signGuarantorOnPlace() {
               <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
                 <div style={{ fontWeight: 800 }}>{d.label}</div>
 
-                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                  Statut:{" "}
-                  <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                    {d.status}
-                  </span>
+                <div style={{ fontSize: 13, color: muted, marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
+                  <span style={{ fontWeight: 900 }}>Statut:</span>
+                  <Badge tone={toneFromStatus(d.status)}>{d.status || "—"}</Badge>
                 </div>
 
                 <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
@@ -1500,7 +1631,7 @@ async function signGuarantorOnPlace() {
                 </div>
               </div>
             ))}
-        </div>
+        </Card>
       )}
 
       <div>
@@ -1822,21 +1953,6 @@ function card(border: string) {
     background: "#fff",
     padding: 14,
     minWidth: 0,
-  } as const;
-}
-
-function labelStyle(muted: string) {
-  return { display: "grid", gap: 6, fontSize: 12, color: muted, minWidth: 0 } as const;
-}
-
-function inputStyle(border: string) {
-  return {
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: `1px solid ${border}`,
-    width: "100%",
-    minWidth: 0,
-    boxSizing: "border-box",
   } as const;
 }
 
