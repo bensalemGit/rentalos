@@ -1398,11 +1398,11 @@ function SummaryRow({
       ? [
           ...sigStatus.contract.tenants
             .filter((t) => t.signatureStatus !== "SIGNED")
-            .map((t) => t.fullName),
-          sigStatus.contract.landlord.signatureStatus !== "SIGNED" ? "Bailleur" : null,
+            .map(() => "locataire"),
+          sigStatus.contract.landlord.signatureStatus !== "SIGNED" ? "bailleur" : null,
         ]
           .filter(Boolean)
-          .join(", ") || "Aucun signataire manquant"
+          .join(", ") || "Aucune"
       : "Chargement…";
 
     const tenantsList = sigStatus?.contract?.tenants || [];
@@ -1436,10 +1436,10 @@ function SummaryRow({
     const tenantsSummaryText = !sigStatus
       ? "Chargement…"
       : tenantsTotalCount === 0
-        ? "Aucun locataire rattaché au bail."
+        ? "Aucun locataire"
         : tenantsPendingCount === 0
-          ? `${tenantsSignedCount} locataire(s), tous signés`
-          : `${tenantsSignedCount} signé(s) • ${tenantsPendingCount} en attente sur ${tenantsTotalCount}`;
+          ? `${tenantsSignedCount} signataire(s), tous signés`
+          : `${tenantsPendingCount} signature(s) en attente sur ${tenantsTotalCount}`;
 
     const guaranteesCount = sigStatus?.guarantees?.length || 0;
     const guaranteesUnsignedCount = sigStatus?.guarantees?.filter((g) => g.signatureStatus !== "SIGNED").length || 0;
@@ -1507,12 +1507,13 @@ function SummaryRow({
         }}
       >
         <div>
-          <h1 style={ui.hTitle}>Contrat & signatures</h1>
-          <div style={ui.sub}>
-            Bail {leaseId.slice(0, 8)}… •{" "}
-            <span style={{ fontWeight: 700 }}>Contrat:</span> {sigStatus?.contract?.status || "—"} •{" "}
-            <span style={{ fontWeight: 700 }}>Garanties:</span> {(sigStatus?.guarantees?.length ?? 0) || 0} •{" "}
-            <span style={{ fontWeight: 700 }}>PACK_FINAL_V2:</span> {packFinalV2Doc?.id ? "OK" : "—"}
+          <h1 style={{ ...ui.hTitle, fontSize: 28, fontWeight: 900 }}>
+            Signature & Documents
+          </h1>
+          <div style={{ ...ui.sub, fontSize: 15 }}>
+            Bail #{leaseId.slice(0, 8)}… —{" "}
+            <span style={{ fontWeight: 800 }}>Statut :</span>{" "}
+            {!sigStatus ? "Chargement…" : dossier.missing === 0 ? "Dossier prêt" : `${dossier.missing} action(s) restante(s)`}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1555,16 +1556,10 @@ function SummaryRow({
         <div style={{ display: "grid", gap: 14 }}>
           {/* LEFT COLUMN START */}
 
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <Btn variant="secondary" onClick={() => sendPublicLink(false)} disabled={!contractDoc?.id}>
-          Envoyer liens locataires
-        </Btn>
-      </div>
-
       <Card
         id="contract"
-        title="Contrat"
-        subtitle="Génération, téléchargement, signatures"
+        title="Contrat de location"
+        subtitle="Document principal du bail"
         right={
           <button
             type="button"
@@ -1574,15 +1569,15 @@ function SummaryRow({
               setContractMenuOpen((v) => !v);
             }}
             style={{
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              fontSize: 20,
-              lineHeight: 1,
-              color: "var(--muted)",
-              padding: 4,
-            }}
-          >
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            fontSize: 18,
+            lineHeight: 1,
+            color: "#94a3b8",
+            padding: 2,
+          }}
+                    >
             ⋯
           </button>
         }
@@ -1643,7 +1638,7 @@ function SummaryRow({
                 subtitle={
                   <div style={{ display: "grid", gap: 6 }}>
                     <div>
-                      <strong>Manquent :</strong> {missingContractSignersText}
+                      <strong>Signature(s) requise(s) :</strong> {missingContractSignersText}
                     </div>
                   </div>
                 }
@@ -1717,8 +1712,8 @@ function SummaryRow({
       {/* ========================= */}
       <Card
         id="tenants"
-        title="Locataires (signature)"
-        subtitle="Envoi de liens, statut de signature"
+        title="Locataires"
+        subtitle="Signatures locataires"
       >
         {!sigStatus && loadingSigStatus ? (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
@@ -1745,7 +1740,7 @@ function SummaryRow({
                 onClick: () => sendPublicLink(false),
               },
               {
-                label: "Renvoyer (force)",
+                label: "Renvoyer",
                 kind: "secondary",
                 disabled: !contractDoc?.id,
                 onClick: () => sendPublicLink(true),
@@ -1818,8 +1813,8 @@ function SummaryRow({
 
       <Card
         id="guarantees"
-        title="Garanties (caution)"
-        subtitle="Acte caution, liens, ACK locataire"
+        title="Garanties"
+        subtitle="Acte caution"
         right={
           <button
             type="button"
@@ -1832,10 +1827,10 @@ function SummaryRow({
               border: "none",
               background: "transparent",
               cursor: "pointer",
-              fontSize: 20,
+              fontSize: 18,
               lineHeight: 1,
-              color: "var(--muted)",
-              padding: 4,
+              color: "#94a3b8",
+              padding: 2,
             }}
           >
             ⋯
@@ -2005,7 +2000,7 @@ function SummaryRow({
         <Card
           id="edl-inv"
           title="EDL & Inventaires"
-          subtitle="Docs entrée/sortie + packs"
+          subtitle="Entrée, sortie et packs"
           right={
             <button
               type="button"
@@ -2018,10 +2013,10 @@ function SummaryRow({
                 border: "none",
                 background: "transparent",
                 cursor: "pointer",
-                fontSize: 20,
+                fontSize: 18,
                 lineHeight: 1,
-                color: "var(--muted)",
-                padding: 4,
+                color: "#94a3b8",
+                padding: 2,
               }}
             >
               ⋯
@@ -2068,8 +2063,8 @@ function SummaryRow({
             statusChip={edlInvSummaryChip}
             subtitle={
               <div style={{ display: "grid", gap: 2 }}>
-                <SummaryRow label="Pack EDL + Inventaire (entrée)" status={packEntryStatus} />
-                <SummaryRow label="Pack EDL + Inventaire (sortie)" status={packExitStatus} />
+                <SummaryRow label="Pack entrée" status={packEntryStatus} />
+                <SummaryRow label="Pack sortie" status={packExitStatus} />
                 <SummaryRow label="EDL / Inventaires" status={edlInvDocsSummaryText} />
               </div>
             }
