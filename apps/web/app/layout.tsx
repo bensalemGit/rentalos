@@ -17,9 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 --border:#e5e7eb;
                 --text:#0f172a;
                 --muted:#64748b;
-                --primary:#3b82f6;
-                --primary-ghost:rgba(59,130,246,0.10);
-                --primary-border:rgba(59,130,246,0.25);
+                --primary:#1d4ed8;
+                --primary-ghost:rgba(29,78,216,0.06);
+                --primary-border:rgba(29,78,216,0.18);
                 --success:#16a34a;
                 --warning:#f59e0b;
                 --danger:#ef4444;
