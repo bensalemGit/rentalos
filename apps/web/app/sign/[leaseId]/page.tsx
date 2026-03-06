@@ -297,6 +297,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [showContractDetails, setShowContractDetails] = useState(false);
   const [showGuaranteesDetails, setShowGuaranteesDetails] = useState(false);
   const [showEdlInvDetails, setShowEdlInvDetails] = useState(false);
+  const [showTenantsDetails, setShowTenantsDetails] = useState(false);
 
   // canvas unique
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1404,6 +1405,42 @@ function SummaryRow({
           .join(", ") || "Aucun signataire manquant"
       : "Chargement…";
 
+    const tenantsList = sigStatus?.contract?.tenants || [];
+
+    const tenantsTotalCount = tenantsList.length;
+    const tenantsSignedCount = tenantsList.filter((t) => t.signatureStatus === "SIGNED").length;
+    const tenantsPendingCount = tenantsList.filter((t) => t.signatureStatus !== "SIGNED").length;
+
+    const tenantsSummaryChip = (
+      <Badge
+        tone={
+          !sigStatus
+            ? "neutral"
+            : tenantsTotalCount === 0
+              ? "neutral"
+              : tenantsPendingCount === 0
+                ? "success"
+                : "warning"
+        }
+      >
+        {!sigStatus
+          ? "Chargement…"
+          : tenantsTotalCount === 0
+            ? "Aucun locataire"
+            : tenantsPendingCount === 0
+              ? "Tous signés"
+              : `${tenantsPendingCount} à signer`}
+      </Badge>
+    );
+
+    const tenantsSummaryText = !sigStatus
+      ? "Chargement…"
+      : tenantsTotalCount === 0
+        ? "Aucun locataire rattaché au bail."
+        : tenantsPendingCount === 0
+          ? `${tenantsSignedCount} locataire(s), tous signés`
+          : `${tenantsSignedCount} signé(s) • ${tenantsPendingCount} en attente sur ${tenantsTotalCount}`;
+
     const guaranteesCount = sigStatus?.guarantees?.length || 0;
     const guaranteesUnsignedCount = sigStatus?.guarantees?.filter((g) => g.signatureStatus !== "SIGNED").length || 0;
 
@@ -1519,14 +1556,9 @@ function SummaryRow({
           {/* LEFT COLUMN START */}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-        <Btn variant="primary" onClick={generateContract}>
-          Générer contrat
-        </Btn>
-
         <Btn variant="secondary" onClick={() => sendPublicLink(false)} disabled={!contractDoc?.id}>
           Envoyer liens locataires
         </Btn>
-
       </div>
 
       <Card
@@ -1617,9 +1649,9 @@ function SummaryRow({
                 }
                 actions={[
                   {
-                    label: "Rafraîchir",
-                    kind: "secondary",
-                    onClick: () => fetchSignatureStatus(leaseId),
+                    label: "Générer contrat",
+                    kind: "primary",
+                    onClick: generateContract,
                   },
                   {
                     label: "Télécharger PDF",
@@ -1687,65 +1719,101 @@ function SummaryRow({
         id="tenants"
         title="Locataires (signature)"
         subtitle="Envoi de liens, statut de signature"
-        right={
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button
-              onClick={() => sendPublicLink(false)}
-              style={btnAction(border)}
-              disabled={!contractDoc?.id}
-            >
-              Envoyer liens (tous)
-            </button>
-
-            <button
-              onClick={() => sendPublicLink(true)}
-              style={btnAction(border)}
-              disabled={!contractDoc?.id}
-            >
-              Renvoyer (force, tous)
-            </button>
-          </div>
-        }
       >
+        {!sigStatus && loadingSigStatus ? (
+          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
+        ) : null}
 
-        {!sigStatus?.contract?.tenants?.length ? (
-          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucun locataire.</div>
-        ) : (
-          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            {sigStatus.contract.tenants.map((t) => (
-              <div key={t.leaseTenantId} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
-                  <div style={{ minWidth: 240 }}>
-                    <div style={{ fontWeight: 800 }}>
-                      {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
-                    </div>
+        {sigStatusError ? (
+          <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
+        ) : null}
 
-                    <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                      Statut:{" "}
-                      <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                        {t.signatureStatus}
-                      </span>
-                      {t.lastLink?.createdAt ? (
-                        <span style={{ marginLeft: 8 }}>
-                          (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                    <button
-                      style={btnSecondary(border)}
-                      onClick={() => fetchSignatureStatus(leaseId)}
-                    >
-                      Rafraîchir statuts
-                    </button>
-                  </div>
-                </div>
+        {sigStatus ? (
+          <SignableCard
+            title="Locataires"
+            statusChip={tenantsSummaryChip}
+            subtitle={
+              <div style={{ display: "grid", gap: 6 }}>
+                <div>{tenantsSummaryText}</div>
               </div>
-            ))}
+            }
+            actions={[
+              {
+                label: "Envoyer liens",
+                kind: "secondary",
+                disabled: !contractDoc?.id,
+                onClick: () => sendPublicLink(false),
+              },
+              {
+                label: "Renvoyer (force)",
+                kind: "secondary",
+                disabled: !contractDoc?.id,
+                onClick: () => sendPublicLink(true),
+              },
+            ]}
+          />
+        ) : null}
+
+        <div style={{ marginTop: 10 }}>
+          <DetailToggle
+            open={showTenantsDetails}
+            onClick={() => setShowTenantsDetails((v) => !v)}
+          />
+        </div>
+
+        {showTenantsDetails ? (
+          <div style={{ marginTop: 12 }}>
+            {!sigStatus?.contract?.tenants?.length ? (
+              <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucun locataire.</div>
+            ) : (
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {sigStatus.contract.tenants.map((t) => (
+                  <div
+                    key={t.leaseTenantId}
+                    style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}
+                  >
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 12,
+                        alignItems: "flex-start",
+                        flexWrap: "wrap",
+                      }}
+                    >
+                      <div style={{ minWidth: 240 }}>
+                        <div style={{ fontWeight: 800 }}>
+                          {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
+                        </div>
+
+                        <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                          Statut:{" "}
+                          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                            {t.signatureStatus}
+                          </span>
+                          {t.lastLink?.createdAt ? (
+                            <span style={{ marginLeft: 8 }}>
+                              (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
+                            </span>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        <button
+                          style={btnSecondary(border)}
+                          onClick={() => fetchSignatureStatus(leaseId)}
+                        >
+                          Rafraîchir statuts
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        ) : null}
       </Card>
 
       <Card
