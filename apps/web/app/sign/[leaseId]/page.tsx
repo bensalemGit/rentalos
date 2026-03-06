@@ -6,15 +6,37 @@ import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
 import { SignableCard } from "./_components/SignableCard";
 
+const brandBlue = "#356AC3";
+const brandBlueHover = "#2F5DAE";
+const textStrong = "#1f2937";
+const textSoft = "#64748b";
+const borderSoft = "#d9dee7";
+const borderSoftStrong = "#cfd7e3";
+const bgSoft = "#f8fafc";
+
+
 const ui = {
   card: {
-    background: "var(--card)",
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius)",
-    boxShadow: "var(--shadow)",
+    background: "#ffffff",
+    border: `1px solid ${borderSoft}`,
+    borderRadius: 22,
+    boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
   } as React.CSSProperties,
-  hTitle: { fontSize: 18, fontWeight: 800, margin: 0 } as React.CSSProperties,
-  sub: { fontSize: 13, color: "var(--muted)", marginTop: 4 } as React.CSSProperties,
+  hTitle: {
+    fontSize: 18,
+    fontWeight: 800,
+    margin: 0,
+    letterSpacing: -0.02,
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  } as React.CSSProperties,
+  sub: {
+    fontSize: 13,
+    color: "var(--muted)",
+    marginTop: 4,
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  } as React.CSSProperties,
 };
 
 function Badge({
@@ -25,11 +47,11 @@ function Badge({
   children: React.ReactNode;
 }) {
   const map: any = {
-    success: { bg: "rgba(22,163,74,0.12)", fg: "var(--success)", bd: "rgba(22,163,74,0.25)" },
-    warning: { bg: "rgba(245,158,11,0.14)", fg: "var(--warning)", bd: "rgba(245,158,11,0.25)" },
-    danger: { bg: "rgba(239,68,68,0.12)", fg: "var(--danger)", bd: "rgba(239,68,68,0.25)" },
-    neutral: { bg: "rgba(100,116,139,0.10)", fg: "var(--muted)", bd: "rgba(100,116,139,0.22)" },
-    primary: { bg: "var(--primary-ghost)", fg: "var(--primary)", bd: "var(--primary-border)" },
+    success: { bg: "rgba(22,163,74,0.11)", fg: "#2f7a4b", bd: "transparent" },
+    warning: { bg: "rgba(217,119,6,0.10)", fg: "#b45309", bd: "transparent" },
+    danger: { bg: "rgba(239,68,68,0.10)", fg: "#b91c1c", bd: "transparent" },
+    neutral: { bg: "rgba(100,116,139,0.10)", fg: "#64748b", bd: "transparent" },
+    primary: { bg: "rgba(53,106,195,0.10)", fg: brandBlue, bd: "transparent" },
   };
   const s = map[tone];
   return (
@@ -37,13 +59,16 @@ function Badge({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        padding: "4px 10px",
+        padding: "4px 11px",
         borderRadius: 999,
-        border: `1px solid ${s.bd}`,
+        border: "1px solid transparent",
         background: s.bg,
         color: s.fg,
         fontWeight: 700,
-        fontSize: 12,
+        fontSize: 11.5,
+        letterSpacing: -0.01,
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         whiteSpace: "nowrap",
       }}
     >
@@ -59,24 +84,36 @@ const Btn = React.forwardRef<
   }
 >(function Btn({ variant, children, ...rest }, ref) {
   const base: React.CSSProperties = {
-    padding: "10px 12px",
-    borderRadius: 12,
-    fontWeight: 800,
+    padding: "10px 14px",
+    borderRadius: 14,
+    fontWeight: 700,
     cursor: "pointer",
     border: "1px solid var(--border)",
     transition: "background 120ms ease, box-shadow 120ms ease, border-color 120ms ease",
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   };
 
   const styles: any = {
     primary: {
       ...base,
-      background: "var(--primary)",
-      border: "1px solid var(--primary-border)",
+      background: brandBlue,
+      border: `1px solid ${brandBlue}`,
       color: "white",
-      boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+      boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.08), 0 1px 2px rgba(53,106,195,0.14)",
     },
-    secondary: { ...base, background: "white", color: "var(--text)" },
-    ghost: { ...base, background: "transparent", color: "var(--primary)" },
+    secondary: {
+      ...base,
+      background: bgSoft,
+      color: "#1e293b",
+      border: `1px solid ${borderSoftStrong}`,
+    },
+    ghost: {
+      ...base,
+      background: "transparent",
+      color: "#356AE6",
+      border: "1px solid transparent",
+    },
   };
 
   return (
@@ -103,12 +140,38 @@ function Card({
     <section id={id} style={{ ...ui.card, padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontWeight: 800, fontSize: 14 }}>{title}</div>
-          {subtitle ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{subtitle}</div> : null}
+          <div
+            style={{
+              fontWeight: 800,
+              fontSize: 14,
+              display: "flex",
+              alignItems: "center",
+              gap: 8,
+              color: "#0f172a",
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            {sectionIcon(id)}
+            <span>{title}</span>
+          </div>
+          {subtitle ? (
+            <div
+              style={{
+                fontSize: 12,
+                color: "#64748b",
+                marginTop: 4,
+                fontFamily:
+                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              }}
+            >
+              {subtitle}
+            </div>
+          ) : null}
         </div>
         {right}
       </div>
-      <div style={{ marginTop: 12 }}>{children}</div>
+      <div style={{ marginTop: 14 }}>{children}</div>
     </section>
   );
 }
@@ -125,9 +188,9 @@ function InlineMenu({
       style={{
         marginTop: 10,
         marginBottom: 12,
-        border: "1px solid var(--border)",
-        borderRadius: 12,
-        background: "#f8fafc",
+        border: `1px solid ${borderSoft}`,
+        borderRadius: 14,
+        background: bgSoft,
         boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
         padding: 10,
       }}
@@ -136,10 +199,12 @@ function InlineMenu({
         style={{
           fontSize: 11,
           fontWeight: 700,
-          color: "var(--muted)",
+          color: textSoft,
           marginBottom: 8,
           textTransform: "uppercase",
-          letterSpacing: 0.3,
+          letterSpacing: 0.5,
+          fontFamily:
+            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         }}
       >
         {title}
@@ -165,6 +230,21 @@ function toneFromStatus(s?: string) {
 function isMissingStatus(s?: string) {
   const v = String(s || "").toUpperCase();
   return v === "NOT_GENERATED" || v === "DRAFT" || v === "MISSING" || v === "NOT_SENT" || v === "NONE";
+}
+
+function humanDocStatus(s?: string) {
+  const v = String(s || "").toUpperCase();
+
+  if (v === "NOT_GENERATED") return "Non généré";
+  if (v === "DRAFT") return "Brouillon";
+  if (v === "MISSING") return "Manquant";
+  if (v === "NOT_SENT") return "Non envoyé";
+  if (v === "NONE") return "—";
+  if (v.includes("SIGNED")) return "Signé";
+  if (v.includes("IN_PROGRESS")) return "En cours";
+  if (v.includes("GENERATED")) return "Généré";
+
+  return s || "—";
 }
 
 function countMissingFromSignatureStatus(sigStatus: any) {
@@ -220,6 +300,109 @@ function scrollToAnchor(id: string) {
   if (!el) return;
   el.scrollIntoView({ behavior: "smooth", block: "start" });
 }
+
+function sectionIcon(sectionId?: string) {
+  const wrapStyle: React.CSSProperties = {
+    width: 18,
+    height: 18,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  };
+
+  if (sectionId === "contract") {
+    return (
+      <span aria-hidden="true" style={{ ...wrapStyle, color: "#6f8fb8" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M8 3h6l5 5v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+          <path d="M14 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+          <path d="M9 13h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M9 17h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (sectionId === "tenants") {
+    return (
+      <span aria-hidden="true" style={{ ...wrapStyle, color: "#7a6fd0" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="9.5" cy="7" r="3" stroke="currentColor" strokeWidth="2" />
+          <path
+            d="M22 21v-2a4 4 0 0 0-3-3.87"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <path
+            d="M16 4.13a3 3 0 0 1 0 5.82"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    );
+  }
+
+  if (sectionId === "guarantees") {
+    return (
+      <span aria-hidden="true" style={{ ...wrapStyle, color: "#7ea98b" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <path
+            d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3Z"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </span>
+    );
+  }
+
+  if (sectionId === "edl-inv") {
+    return (
+      <span aria-hidden="true" style={{ ...wrapStyle, color: "#6f8fb8" }}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+          <rect x="6" y="4" width="12" height="16" rx="2" stroke="currentColor" strokeWidth="2" />
+          <path d="M9 8h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M9 12h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          <path d="M9 16h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      </span>
+    );
+  }
+
+  return null;
+}
+
+const anchorTabStyle: React.CSSProperties = {
+  background: "#ffffff",
+  border: "1px solid #d5dbe5",
+  borderRadius: 12,
+  padding: "8px 12px",
+  fontWeight: 700,
+  color: "#0f172a",
+  textDecoration: "none",
+  boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+  fontFamily:
+    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+};
 
 const API =
   typeof window !== "undefined"
@@ -1330,10 +1513,12 @@ function DetailToggle({
       style={{
         border: "none",
         background: "transparent",
-        color: "var(--primary)",
+        color: brandBlue,
         cursor: "pointer",
-        fontWeight: 800,
+        fontWeight: 700,
         padding: 0,
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
     >
       {open ? "Masquer le détail" : "Voir le détail"}
@@ -1371,39 +1556,74 @@ function SummaryRow({
 
     const contractStatusValue = sigStatus?.contract?.status || "—";
 
+    const contractStatusTone =
+      contractStatusValue === "SIGNED"
+        ? "success"
+        : contractStatusValue === "IN_PROGRESS" || contractStatusValue === "DRAFT"
+          ? "warning"
+          : "neutral";
+
+    const contractStatusLabel =
+      contractStatusValue === "SIGNED"
+        ? "Signé"
+        : contractStatusValue === "IN_PROGRESS"
+          ? "En cours"
+          : contractStatusValue === "DRAFT"
+            ? "Brouillon"
+            : "Non généré";
+
     const contractStatusChip = (
       <span
-        style={chip(
-          "#e5e7eb",
-          contractStatusValue === "SIGNED"
-            ? "#16a34a"
-            : contractStatusValue === "IN_PROGRESS"
-              ? "#b45309"
-              : contractStatusValue === "DRAFT"
-                ? "#b45309"
-                : "#64748b"
-        )}
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          padding: "7px 12px",
+          borderRadius: 999,
+          fontSize: 12,
+          fontWeight: 700,
+          letterSpacing: -0.01,
+          fontFamily:
+            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          ...statusPillStyle(contractStatusTone),
+        }}
       >
-        {contractStatusValue === "SIGNED"
-          ? "🟢 Signé"
-          : contractStatusValue === "IN_PROGRESS"
-            ? "🟡 En cours"
-            : contractStatusValue === "DRAFT"
-              ? "🟠 Brouillon"
-              : "🔵 Non généré"}
+        <span
+          aria-hidden="true"
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: 999,
+            background:
+              contractStatusTone === "success"
+                ? "#16a34a"
+                : contractStatusTone === "warning"
+                  ? "#d97706"
+                  : "#94a3b8",
+          }}
+        />
+        {contractStatusLabel}
       </span>
     );
 
-    const missingContractSignersText = sigStatus
-      ? [
-          ...sigStatus.contract.tenants
-            .filter((t) => t.signatureStatus !== "SIGNED")
-            .map(() => "locataire"),
-          sigStatus.contract.landlord.signatureStatus !== "SIGNED" ? "bailleur" : null,
-        ]
-          .filter(Boolean)
-          .join(", ") || "Aucune"
-      : "Chargement…";
+    const contractSignersSummary = (() => {
+      if (!sigStatus) return "Chargement…";
+
+      const roles: string[] = [];
+      const tenantsToSign = sigStatus.contract.tenants.filter((t) => t.signatureStatus !== "SIGNED").length;
+
+      if (tenantsToSign > 0) {
+        roles.push(tenantsToSign > 1 ? `${tenantsToSign} locataires` : "locataire");
+      }
+
+      if (String(sigStatus.contract.landlord.signatureStatus || "").toUpperCase() !== "SIGNED") {
+        roles.push("bailleur");
+      }
+
+      if (roles.length === 0) return "Aucune signature requise";
+
+      return `Signatures requises : ${roles.join(", ")}`;
+    })();
 
     const tenantsList = sigStatus?.contract?.tenants || [];
 
@@ -1439,7 +1659,7 @@ function SummaryRow({
         ? "Aucun locataire"
         : tenantsPendingCount === 0
           ? `${tenantsSignedCount} signataire(s), tous signés`
-          : `${tenantsPendingCount} signature(s) en attente sur ${tenantsTotalCount}`;
+          : `${tenantsPendingCount} signature(s) en attente`;
 
     const guaranteesCount = sigStatus?.guarantees?.length || 0;
     const guaranteesUnsignedCount = sigStatus?.guarantees?.filter((g) => g.signatureStatus !== "SIGNED").length || 0;
@@ -1448,10 +1668,10 @@ function SummaryRow({
       !sigStatus
         ? "Chargement…"
         : guaranteesCount === 0
-          ? "Aucune garantie CAUTION sélectionnée."
+          ? "Aucune garantie"
           : guaranteesUnsignedCount === 0
-            ? `${guaranteesCount} garantie(s), toutes signées`
-            : `${guaranteesUnsignedCount} garantie(s) à finaliser sur ${guaranteesCount}`;
+            ? `${guaranteesCount} garantie(s), toutes prêtes`
+            : `${guaranteesUnsignedCount} garantie(s) à finaliser`;
 
     const packEntry = (sigStatus as any)?.packEdlInv?.entry || null;
     const packExit = (sigStatus as any)?.packEdlInv?.exit || null;
@@ -1481,79 +1701,213 @@ function SummaryRow({
           ? "Chargement…"
           : edlInvMissingCount === 0
             ? "Tout est prêt"
-            : `${edlInvMissingCount} doc(s) à faire`}
+            : `${edlInvMissingCount} documents restants`}
       </Badge>
     );
 
-    const packEntryStatus = packEntry?.status || "—";
-    const packExitStatus = packExit?.status || "—";
+    const packEntryStatus = humanDocStatus(packEntry?.status);
+    const packExitStatus = humanDocStatus(packExit?.status);
 
     const edlInvDocsSummaryText = !sigStatus
       ? "Chargement…"
       : edlInvMissingCount === 0
-        ? "Tous les EDL / inventaires sont prêts"
-        : `${edlInvMissingCount} document(s) EDL / inventaire à générer ou finaliser`;
+        ? "Tous les documents sont prêts"
+        : `${edlInvMissingCount} documents restants`;
 
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
       <div
         style={{
-          ...ui.card,
-          padding: 16,
           display: "flex",
           justifyContent: "space-between",
-          gap: 12,
           alignItems: "center",
+          gap: 16,
+          marginBottom: 2,
+        }}
+      >
+        <h1
+          style={{
+            margin: 0,
+            fontSize: 34,
+            lineHeight: 1.05,
+            fontWeight: 800,
+            letterSpacing: -0.045,
+            color: textStrong,
+            fontFamily:
+              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+}}
+        >
+          <span style={{ fontWeight: 800 }}>Signature</span>{" "}
+          <span style={{ fontWeight: 500 }}>& Documents</span>
+        </h1>
+
+        <Btn
+          variant="secondary"
+          onClick={refreshAll}
+          disabled={loadingSigStatus}
+          style={{
+            borderRadius: 16,
+            padding: "10px 16px",
+            background: "#f8fafc",
+          }}
+        >
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+            <span aria-hidden="true" style={{ display: "inline-flex", lineHeight: 0 }}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M20 12a8 8 0 1 1-2.34-5.66"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M20 4v6h-6"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </span>
+            Rafraîchir
+          </span>
+        </Btn>
+      </div>
+      <div
+        style={{
+          ...ui.card,
+          padding: "28px 32px",
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 24,
+          alignItems: "flex-start",
         }}
       >
         <div>
-          <h1 style={{ ...ui.hTitle, fontSize: 28, fontWeight: 900 }}>
-            Signature & Documents
-          </h1>
-          <div style={{ ...ui.sub, fontSize: 15 }}>
-            Bail #{leaseId.slice(0, 8)}… —{" "}
-            <span style={{ fontWeight: 800 }}>Statut :</span>{" "}
-            {!sigStatus ? "Chargement…" : dossier.missing === 0 ? "Dossier prêt" : `${dossier.missing} action(s) restante(s)`}
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 800,
+              color: textStrong,
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            Bail #{leaseId.slice(0, 8)}…
+          </div>
+
+          <div
+            style={{
+              marginTop: 16,
+              fontSize: 16,
+              lineHeight: 1.5,
+              color: "#334155",
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            <span style={{ color: "#64748b" }}>Locataire :</span>{" "}
+            <span style={{ fontWeight: 800, color: "#1f2937" }}>
+              {sigStatus?.contract?.tenants?.[0]?.fullName || tenants?.[0]?.full_name || "—"}
+            </span>
+            {" — "}
+            <span style={{ color: "#64748b" }}>Statut :</span>{" "}
+            <span style={{ color: "#b45309", fontWeight: 700 }}>
+              {!sigStatus
+                ? "Chargement…"
+                : tenantsTotalCount > 0
+                  ? tenantsPendingCount === 0
+                    ? `Tous signés (${tenantsSignedCount}/${tenantsTotalCount})`
+                    : `Signatures en attente (${tenantsSignedCount}/${tenantsTotalCount})`
+                  : dossier.missing === 0
+                    ? "Dossier prêt"
+                    : `${dossier.missing} action(s) restante(s)`}
+            </span>
           </div>
         </div>
-        <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-          <Badge tone={!sigStatus ? "neutral" : dossier.missing === 0 ? "success" : "warning"}>
-            {!sigStatus ? "Chargement…" : dossier.missing === 0 ? "Dossier OK" : dossier.label}
-          </Badge>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+          {!sigStatus ? (
+            <Badge tone="neutral">Chargement…</Badge>
+          ) : dossier.missing > 0 ? (
+            <Badge tone="warning">{`${dossier.missing} action(s) à faire`}</Badge>
+          ) : (
+            <Badge tone="success">Dossier prêt</Badge>
+          )}
 
           <Btn
             variant="primary"
             onClick={() => scrollToAnchor(dossier.firstAnchor)}
             disabled={!sigStatus}
             title={!sigStatus ? "Charge d’abord le statut" : ""}
+            style={{
+              padding: "12px 18px",
+              borderRadius: 16,
+              background: brandBlue,
+              border: `1px solid ${brandBlue}`,
+              boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
+            }}
           >
             Terminer le dossier
           </Btn>
-
-          <Btn variant="secondary" onClick={refreshAll} disabled={loadingSigStatus}>
-            Rafraîchir
-          </Btn>
         </div>
       </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <a href="#contract" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
+        <a href="#contract" style={anchorTabStyle}>
           Contrat
         </a>
-        <a href="#tenants" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
+        <a href="#tenants" style={anchorTabStyle}>
           Locataires
         </a>
-        <a href="#guarantees" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
+        <a href="#guarantees" style={anchorTabStyle}>
           Garanties
         </a>
-        <a href="#edl-inv" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
+        <a href="#edl-inv" style={anchorTabStyle}>
           EDL & Inventaires
         </a>
       </div>
-
       <style dangerouslySetInnerHTML={{ __html: `html{scroll-behavior:smooth}` }} />
 
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 420px",
+          gap: 16,
+          alignItems: "end",
+          marginTop: 4,
+          marginBottom: -2,
+        }}
+      >
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 800,
+            letterSpacing: 0.8,
+            color: "#334155",
+            textTransform: "uppercase",
+            fontFamily:
+              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          }}
+        >
+          Documents
+        </div>
+        <div
+          style={{
+            fontSize: 16,
+            fontWeight: 800,
+            letterSpacing: 0.8,
+            color: "#334155",
+            textTransform: "uppercase",
+            fontFamily:
+              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          }}
+        >
+          Signature
+</div>
+      </div>
+
       <div className="sign-grid" style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16, alignItems: "start" }}>
-        <div style={{ display: "grid", gap: 14 }}>
+        <div style={{ display: "grid", gap: 16 }}>
           {/* LEFT COLUMN START */}
 
       <Card
@@ -1637,19 +1991,17 @@ function SummaryRow({
                 statusChip={contractStatusChip}
                 subtitle={
                   <div style={{ display: "grid", gap: 6 }}>
-                    <div>
-                      <strong>Signature(s) requise(s) :</strong> {missingContractSignersText}
-                    </div>
+                    <div>{contractSignersSummary}</div>
                   </div>
                 }
                 actions={[
                   {
-                    label: "Générer contrat",
+                    label: "Générer PDF",
                     kind: "primary",
                     onClick: generateContract,
                   },
                   {
-                    label: "Télécharger PDF",
+                    label: "Télécharger",
                     kind: "secondary",
                     disabled: !sigStatus.contract.documentId,
                     onClick: () =>
@@ -1712,8 +2064,8 @@ function SummaryRow({
       {/* ========================= */}
       <Card
         id="tenants"
-        title="Locataires"
-        subtitle="Signatures locataires"
+        title="Suivi des signatures locataires"
+        subtitle="Envoi et relance des liens de signature"
       >
         {!sigStatus && loadingSigStatus ? (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
@@ -1725,7 +2077,7 @@ function SummaryRow({
 
         {sigStatus ? (
           <SignableCard
-            title="Locataires"
+            title="Liens de signature"
             statusChip={tenantsSummaryChip}
             subtitle={
               <div style={{ display: "grid", gap: 6 }}>
@@ -1734,8 +2086,8 @@ function SummaryRow({
             }
             actions={[
               {
-                label: "Envoyer liens",
-                kind: "secondary",
+                label: "Envoyer les liens",
+                kind: "primary",
                 disabled: !contractDoc?.id,
                 onClick: () => sendPublicLink(false),
               },
@@ -1784,7 +2136,7 @@ function SummaryRow({
                         <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
                           Statut:{" "}
                           <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                            {t.signatureStatus}
+                            {humanDocStatus(t.signatureStatus)}
                           </span>
                           {t.lastLink?.createdAt ? (
                             <span style={{ marginLeft: 8 }}>
@@ -1796,7 +2148,7 @@ function SummaryRow({
 
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                         <button
-                          style={btnSecondary(border)}
+                          style={btnSecondary()}
                           onClick={() => fetchSignatureStatus(leaseId)}
                         >
                           Rafraîchir statuts
@@ -1814,7 +2166,7 @@ function SummaryRow({
       <Card
         id="guarantees"
         title="Garanties"
-        subtitle="Acte caution"
+        subtitle="Actes de caution"
         right={
           <button
             type="button"
@@ -1874,8 +2226,8 @@ function SummaryRow({
             }
             actions={[
               {
-                label: "Gérer garanties",
-                kind: "secondary",
+                label: "Gérer",
+                kind: "primary",
                 onClick: openGuarantees,
               },
             ]}
@@ -2071,7 +2423,7 @@ function SummaryRow({
             actions={[
               {
                 label: "Générer PDF",
-                kind: "secondary",
+                kind: "primary",
                 onClick: generatePack,
               },
               {
@@ -2121,12 +2473,12 @@ function SummaryRow({
                       }}
                     >
                       <span style={{ fontWeight: 700 }}>Statut:</span>
-                      <Badge tone={toneFromStatus(p.status)}>{p.status || "—"}</Badge>
+                      <Badge tone={toneFromStatus(p.status)}>{humanDocStatus(p.status)}</Badge>
                     </div>
 
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
                       <button
-                        style={btnAction(border)}
+                        style={btnAction()}
                         disabled={Boolean(p.documentId)}
                         onClick={() => {
                           const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
@@ -2137,7 +2489,7 @@ function SummaryRow({
                       </button>
 
                       <button
-                        style={btnSecondary(border)}
+                        style={btnSecondary()}
                         disabled={!p.documentId}
                         onClick={() =>
                           p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)
@@ -2147,7 +2499,7 @@ function SummaryRow({
                       </button>
 
                       <button
-                        style={btnSecondary(border)}
+                        style={btnSecondary()}
                         disabled={!p.signedFinalDocumentId}
                         onClick={() =>
                           p.signedFinalDocumentId &&
@@ -2182,7 +2534,7 @@ function SummaryRow({
                       }}
                     >
                       <span style={{ fontWeight: 700 }}>Statut:</span>
-                      <Badge tone={toneFromStatus(d.status)}>{d.status || "—"}</Badge>
+                      <Badge tone={toneFromStatus(d.status)}>{humanDocStatus(d.status)}</Badge>
                     </div>
 
                     <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
@@ -2195,7 +2547,7 @@ function SummaryRow({
 
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
                       <button
-                        style={btnAction(border)}
+                        style={btnAction()}
                         disabled={Boolean(d.documentId)}
                         onClick={() => {
                           const k = String(d.key || "");
@@ -2209,7 +2561,7 @@ function SummaryRow({
                       </button>
 
                       <button
-                        style={btnSecondary(border)}
+                        style={btnSecondary()}
                         disabled={!d.documentId}
                         onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
                       >
@@ -2217,7 +2569,7 @@ function SummaryRow({
                       </button>
 
                       <button
-                        style={btnSecondary(border)}
+                        style={btnSecondary()}
                         disabled={!d.signedFinalDocumentId}
                         onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
                       >
@@ -2230,55 +2582,28 @@ function SummaryRow({
           ) : null}
         </Card>
       )}
-
-      <div>
-        <Link href="/dashboard/leases" style={{ color: blue, fontWeight: 800 }}>
-          Retour aux baux
-        </Link>
-      </div>
       {/* LEFT COLUMN END */}
       </div>
 
       {/* RIGHT COLUMN START */}
-        <div className="sign-sticky" style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div
+          className="sign-sticky"
+          style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 12 }}
+        >
           <div
             style={{
-              background: "var(--card)",
-              border: "1px solid var(--border)",
-              borderRadius: "var(--radius)",
-              padding: 16,
-              boxShadow: "var(--shadow)",
+              background: "#fff",
+              border: "1px solid #d9dee7",
+              borderRadius: 22,
+              padding: 18,
+              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 14 }}>Signature</div>
-                <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
-                  Sélectionne un rôle, un document, puis signe.
-                </div>
-              </div>
-              <span
-                style={{
-                  display: "inline-flex",
-                  padding: "4px 10px",
-                  borderRadius: 999,
-                  border: "1px solid rgba(148,163,184,0.24)",
-                  background: "#f8fafc",
-                  color: "#475569",
-                  fontWeight: 700,
-                  fontSize: 12,
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Sur place
-              </span>
-            </div>
-
-            <div style={{ height: 12 }} />
+            <div style={{ height: 2 }} />
 
             {/* Role */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Signer en tant que</div>
+              <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>Signer en tant que</div>
               <select
                 value={role}
                 onChange={(e) => {
@@ -2288,10 +2613,13 @@ function SummaryRow({
                 style={{
                   width: "100%",
                   padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: "white",
+                  borderRadius: 14,
+                  border: `1px solid ${borderSoftStrong}`,
+                  background: "#fff",
                   fontWeight: 700,
+                  color: "#1f2937",
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
                 <option value="LOCATAIRE">Locataire</option>
@@ -2305,8 +2633,8 @@ function SummaryRow({
             {/* Locataire multi */}
             {role === "LOCATAIRE" && hasMultipleTenants ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
-                  Locataire signataire (obligatoire)
+                <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>
+                  Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
                 </div>
                 <select
                   value={selectedTenantId}
@@ -2314,10 +2642,13 @@ function SummaryRow({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "white",
-                    fontWeight: 700,
+                    borderRadius: 14,
+                    border: `1px solid ${borderSoftStrong}`,
+                    background: "#fff",
+                    fontWeight: 500,
+                    color: "#1f2937",
+                    fontFamily:
+                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                   }}
                 >
                   <option value="">— Sélectionner —</option>
@@ -2338,7 +2669,7 @@ function SummaryRow({
 
             {/* Document */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Document à signer</div>
+              <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>Document à signer</div>
 
               {role === "GARANT" ? (
                 <select
@@ -2348,10 +2679,13 @@ function SummaryRow({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "white",
-                    fontWeight: 700,
+                    borderRadius: 14,
+                    border: `1px solid ${borderSoftStrong}`,
+                    background: "#fff",
+                    fontWeight: 500,
+                    color: "#1f2937",
+                    fontFamily:
+                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                     cursor: guarantorSignables.length ? "pointer" : "not-allowed",
                   }}
                 >
@@ -2375,10 +2709,13 @@ function SummaryRow({
                   style={{
                     width: "100%",
                     padding: "10px 12px",
-                    borderRadius: 12,
-                    border: "1px solid var(--border)",
-                    background: "white",
-                    fontWeight: 700,
+                    borderRadius: 14,
+                    border: `1px solid ${borderSoftStrong}`,
+                    background: "#fff",
+                    fontWeight: 500,
+                    color: "#1f2937",
+                    fontFamily:
+                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                     cursor: landlordSignables.length ? "pointer" : "not-allowed",
                   }}
                 >
@@ -2402,7 +2739,7 @@ function SummaryRow({
 
             {/* Nom */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Nom signataire</div>
+              <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>Nom signataire</div>
               <input
                 value={role === "LOCATAIRE" ? tenantName : role === "BAILLEUR" ? landlordName : guarantorName}
                 onChange={(e) => {
@@ -2413,10 +2750,13 @@ function SummaryRow({
                 style={{
                   width: "100%",
                   padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: "white",
-                  fontWeight: 700,
+                  borderRadius: 14,
+                  border: `1px solid ${borderSoftStrong}`,
+                  background: "#fff",
+                  fontWeight: 500,
+                  color: "#1f2937",
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                   boxSizing: "border-box",
                 }}
               />
@@ -2425,14 +2765,14 @@ function SummaryRow({
             <div style={{ height: 12 }} />
 
             {/* Pad */}
-            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 6 }}>Signature</div>
+            <div style={{ fontSize: 12, color: textSoft, fontWeight: 600, marginBottom: 6 }}>Signature</div>
 
             <div
               style={{
                 width: "100%",
                 height: 180,
                 borderRadius: 12,
-                border: "1px solid var(--border)",
+                border: `1px solid ${borderSoftStrong}`,
                 background: "white",
                 overflow: "hidden",
               }}
@@ -2462,11 +2802,13 @@ function SummaryRow({
                 style={{
                   flex: 1,
                   padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: "white",
-                  cursor: "pointer",
+                  borderRadius: 14,
+                  border: `1px solid ${borderSoftStrong}`,
+                  background: "#fff",
                   fontWeight: 700,
+                  color: "#1f2937",
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
                 Effacer
@@ -2482,14 +2824,16 @@ function SummaryRow({
                 style={{
                   flex: 1,
                   padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid rgba(29,78,216,0.18)",
-                  background: "#1d4ed8",
+                  borderRadius: 14,
+                  border: `1px solid ${brandBlue}`,
+                  background: brandBlue,
                   color: "white",
                   cursor: "pointer",
-                  fontWeight: 800,
-                  boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+                  fontWeight: 500,
+                  boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
                   opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
                 Signer
@@ -2557,37 +2901,73 @@ function card(border: string) {
 function btnPrimarySmall() {
   return {
     padding: "10px 14px",
-    borderRadius: 12,
-    border: `1px solid rgba(148,163,184,0.24)`,
-    background: "#f8fafc",
-    color: "#0f172a",
+    borderRadius: 14,
+    border: `1px solid ${brandBlue}`,
+    background: brandBlue,
+    color: "#fff",
     fontWeight: 700,
     cursor: "pointer",
     textAlign: "center" as const,
+    boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
 }
 
-function btnSecondary(border: string) {
+function btnSecondary() {
   return {
     padding: "10px 14px",
-    borderRadius: 12,
-    border: `1px solid ${border}`,
-    background: "#fff",
+    borderRadius: 14,
+    border: `1px solid ${borderSoftStrong}`,
+    background: "#ffffff",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 700,
+    color: "#0f172a",
+    boxShadow: "0 1px 1px rgba(15,23,42,0.03)",
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
 }
 
-function btnAction(border: string) {
+function btnAction() {
   return {
     padding: "10px 12px",
-    borderRadius: 12,
-    border: `1px solid ${border}`,
-    background: "#fff",
+    borderRadius: 14,
+    border: `1px solid ${borderSoftStrong}`,
+    background: "#ffffff",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 700,
     minWidth: 160,
     textAlign: "center" as const,
+    color: "#0f172a",
+    boxShadow: "0 1px 1px rgba(15,23,42,0.03)",
+    fontFamily:
+      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+  } as const;
+}
+
+
+function statusPillStyle(tone: "success" | "warning" | "neutral") {
+  if (tone === "success") {
+    return {
+      background: "rgba(22,163,74,0.10)",
+      color: "#15803d",
+      border: "1px solid transparent",
+    } as const;
+  }
+
+  if (tone === "warning") {
+    return {
+      background: "rgba(217,119,6,0.10)",
+      color: "#b45309",
+      border: "1px solid transparent",
+    } as const;
+  }
+
+  return {
+    background: "#f1f5f9",
+    color: "#64748b",
+    border: "1px solid transparent",
   } as const;
 }
 
