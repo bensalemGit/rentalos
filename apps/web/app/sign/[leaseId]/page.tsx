@@ -29,7 +29,7 @@ function Badge({
     warning: { bg: "rgba(245,158,11,0.14)", fg: "var(--warning)", bd: "rgba(245,158,11,0.25)" },
     danger: { bg: "rgba(239,68,68,0.12)", fg: "var(--danger)", bd: "rgba(239,68,68,0.25)" },
     neutral: { bg: "rgba(100,116,139,0.10)", fg: "var(--muted)", bd: "rgba(100,116,139,0.22)" },
-    primary: { bg: "rgba(37,99,235,0.10)", fg: "var(--primary)", bd: "rgba(37,99,235,0.25)" },
+    primary: { bg: "var(--primary-ghost)", fg: "var(--primary)", bd: "var(--primary-border)" },
   };
   const s = map[tone];
   return (
@@ -67,7 +67,7 @@ const Btn = React.forwardRef<
   };
 
   const styles: any = {
-    primary: { ...base, background: "var(--primary)", border: "1px solid rgba(37,99,235,0.25)", color: "white" },
+    primary: { ...base, background: "var(--primary)", border: "1px solid var(--primary-border)", color: "white" },
     secondary: { ...base, background: "white", color: "var(--text)" },
     ghost: { ...base, background: "transparent", color: "var(--primary)" },
   };
@@ -216,7 +216,6 @@ type GuarantorSignable = {
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
   const [token, setToken] = useState("");
-  const [showActionsMenu, setShowActionsMenu] = useState(false);
 
   const [docs, setDocs] = useState<Doc[]>([]);
   const [contractDoc, setContractDoc] = useState<Doc | null>(null);
@@ -245,13 +244,18 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   // ✅ NEW: panneau signature unique (droite)
   const [role, setRole] = useState<"LOCATAIRE" | "BAILLEUR" | "GARANT">("LOCATAIRE");
 
+  const [contractMenuOpen, setContractMenuOpen] = useState(false);
+  const [guaranteesMenuOpen, setGuaranteesMenuOpen] = useState(false);
+  const [edlMenuOpen, setEdlMenuOpen] = useState(false);
+
   // canvas unique
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const signatureDirty = useRef(false);
-  const actionsPanelRef = useRef<HTMLDivElement | null>(null);
-  const actionsWrapRef = useRef<HTMLDivElement | null>(null);
-  const [menuPlacement, setMenuPlacement] = useState<"down" | "up">("down");
+
+  const contractMenuRef = useRef<HTMLDivElement | null>(null);
+  const guaranteesMenuRef = useRef<HTMLDivElement | null>(null);
+  const edlMenuRef = useRef<HTMLDivElement | null>(null);
 
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
@@ -262,7 +266,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [loadingSigStatus, setLoadingSigStatus] = useState(false);
   const [sigStatusError, setSigStatusError] = useState<string | null>(null);
 
-  const blue = "#1f6feb";
+  const blue = "#3b82f6";
   const border = "#e5e7eb";
   const muted = "#6b7280";
 
@@ -272,83 +276,24 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
   useEffect(() => {
     const onPointerDown = (e: MouseEvent) => {
-      const el = actionsWrapRef.current;
-      if (!el) return;
-      if (el.contains(e.target as Node)) return; // click inside => ne ferme pas
-      setShowActionsMenu(false); // click outside => ferme
+      const target = e.target as Node;
+
+      if (contractMenuRef.current && !contractMenuRef.current.contains(target)) {
+        setContractMenuOpen(false);
+      }
+
+      if (guaranteesMenuRef.current && !guaranteesMenuRef.current.contains(target)) {
+        setGuaranteesMenuOpen(false);
+      }
+
+      if (edlMenuRef.current && !edlMenuRef.current.contains(target)) {
+        setEdlMenuOpen(false);
+      }
     };
 
     document.addEventListener("mousedown", onPointerDown);
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, []);
-
-
-  useEffect(() => {
-    if (!showActionsMenu) return;
-
-    const getScrollParent = (node: HTMLElement | null): HTMLElement | null => {
-      let p = node?.parentElement || null;
-      while (p) {
-        const s = window.getComputedStyle(p);
-        const overflowY = s.overflowY;
-        const isScrollable = (overflowY === "auto" || overflowY === "scroll") && p.scrollHeight > p.clientHeight;
-        if (isScrollable) return p;
-        p = p.parentElement;
-      }
-      return null; // => window
-    };
-
-    const wrap = actionsWrapRef.current;
-    const panel = actionsPanelRef.current;
-    if (!wrap || !panel) return;
-
-    const scrollParent = getScrollParent(wrap);
-
-    const computePlacement = () => {
-      const wrapEl = actionsWrapRef.current;
-      const panelEl = actionsPanelRef.current;
-      if (!wrapEl || !panelEl) return;
-
-      const wrapRect = wrapEl.getBoundingClientRect();
-
-      // hauteur visible réelle du panel (déjà limitée par maxHeight)
-      const panelHeight = panelEl.getBoundingClientRect().height;
-
-      const gap = 8;
-
-      // viewport = window OU conteneur scrollable
-      let viewportTop = 0;
-      let viewportBottom = window.innerHeight;
-
-      if (scrollParent) {
-        const vp = scrollParent.getBoundingClientRect();
-        viewportTop = vp.top;
-        viewportBottom = vp.bottom;
-      }
-
-      const spaceBelow = viewportBottom - wrapRect.bottom;
-      const spaceAbove = wrapRect.top - viewportTop;
-
-      const shouldOpenUp = spaceBelow < panelHeight + gap && spaceAbove > spaceBelow;
-
-      setMenuPlacement((prev) => (prev === (shouldOpenUp ? "up" : "down") ? prev : shouldOpenUp ? "up" : "down"));
-    };
-
-    const raf = requestAnimationFrame(computePlacement);
-
-    const onResize = () => computePlacement();
-    window.addEventListener("resize", onResize);
-
-    // écoute le bon scroll : conteneur si présent, sinon window
-    const scrollTarget: any = scrollParent || window;
-    scrollTarget.addEventListener("scroll", computePlacement, { passive: true });
-
-    return () => {
-      cancelAnimationFrame(raf);
-      window.removeEventListener("resize", onResize);
-      scrollTarget.removeEventListener("scroll", computePlacement);
-    };
-  }, [showActionsMenu]);
 
 function setupCanvasHiDpi(canvas: HTMLCanvasElement) {
   const dpr = window.devicePixelRatio || 1;
@@ -786,6 +731,21 @@ useEffect(() => {
     a.remove();
     setStatus("Téléchargé ✅");
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  }
+
+  function downloadContractPdf() {
+    if (!contractDoc?.id) return;
+    downloadDoc(contractDoc.id, contractDoc.filename);
+  }
+
+  function downloadNoticePdf() {
+    if (!noticeDoc?.id) return;
+    downloadDoc(noticeDoc.id, noticeDoc.filename);
+  }
+
+  function downloadPackPdf() {
+    if (!packDoc?.id) return;
+    downloadDoc(packDoc.id, packDoc.filename);
   }
 
   async function fetchSignatureStatus(currentLeaseId: string) {
@@ -1418,132 +1378,87 @@ function MenuItem(props: {
           Envoyer liens locataires
         </Btn>
 
-        <div
-          ref={actionsWrapRef}
-          style={{ position: "relative" }}
-          onMouseDown={(e) => e.stopPropagation()} // important: évite le "mousedown" global
-        >
-          <Btn
-            variant="secondary"
-            onClick={() => setShowActionsMenu((v) => !v)}
-          >
-            ⋯ Plus d’actions
-          </Btn>
+      </div>
 
-          {showActionsMenu ? (
-            <div
-              ref={actionsPanelRef}
+      <Card
+        id="contract"
+        title="Contrat"
+        subtitle="Génération, téléchargement, signatures"
+        right={
+          <div
+            ref={contractMenuRef}
+            style={{ position: "relative" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setContractMenuOpen((v) => !v)}
               style={{
-                ...menuStyles.panel,
-                top: menuPlacement === "down" ? "calc(100% + 8px)" : "auto",
-                bottom: menuPlacement === "up" ? "calc(100% + 8px)" : "auto",
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                color: "var(--muted)",
+                padding: 4,
               }}
             >
-              <div style={menuStyles.sectionTitle}>Documents</div>
+              ⋯
+            </button>
 
-              <MenuItem
-                icon="📄"
-                label="Télécharger contrat"
-                disabled={!contractDoc?.id}
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  contractDoc?.id && downloadDoc(contractDoc.id, contractDoc.filename);
+            {contractMenuOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 28,
+                  right: 0,
+                  zIndex: 40,
+                  width: 240,
+                  ...ui.card,
+                  padding: 8,
                 }}
-              />
+              >
+                <div style={{ fontSize: 11, fontWeight: 900, color: "var(--muted)", padding: "4px 8px 8px" }}>
+                  CONTRAT
+                </div>
 
-              {isRP ? (
-                <>
+                <MenuItem
+                  label="Télécharger contrat"
+                  icon="📄"
+                  disabled={!contractDoc?.id}
+                  onClick={() => {
+                    setContractMenuOpen(false);
+                    downloadContractPdf();
+                  }}
+                />
+
+                {isRP ? (
                   <MenuItem
-                    icon="📝"
                     label="Générer notice"
+                    icon="📝"
                     onClick={() => {
-                      setShowActionsMenu(false);
+                      setContractMenuOpen(false);
                       generateNotice();
                     }}
                   />
+                ) : null}
 
+                {isRP ? (
                   <MenuItem
-                    icon="📄"
                     label="Télécharger notice"
+                    icon="📄"
                     disabled={!noticeDoc?.id}
                     onClick={() => {
-                      setShowActionsMenu(false);
-                      noticeDoc?.id && downloadDoc(noticeDoc.id, noticeDoc.filename);
+                      setContractMenuOpen(false);
+                      downloadNoticePdf();
                     }}
                   />
-                </>
-              ) : null}
-
-              <MenuItem
-                icon="📦"
-                label="Générer pack (EDL + Inventaire)"
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  generatePack();
-                }}
-              />
-
-              <MenuItem
-                icon="📦"
-                label="Télécharger pack"
-                disabled={!packDoc?.id}
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  packDoc?.id && downloadDoc(packDoc.id, packDoc.filename);
-                }}
-              />
-
-              <MenuItem
-                icon="✅"
-                label="Générer PACK_FINAL signé (V2)"
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  generatePackFinalV2();
-                }}
-              />
-
-              <div style={menuStyles.divider} />
-
-              <div style={menuStyles.sectionTitle}>Communication</div>
-
-              <MenuItem
-                icon="📤"
-                label="Renvoyer liens locataires (force)"
-                disabled={!contractDoc?.id}
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  sendPublicLink(true);
-                }}
-              />
-
-              <div style={menuStyles.divider} />
-
-              <div style={menuStyles.sectionTitle}>Gestion</div>
-
-              <MenuItem
-                icon="🔐"
-                label="Gérer garanties"
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  openGuarantees();
-                }}
-              />
-
-              <MenuItem
-                icon="➡️"
-                label="Aller à EDL & Inventaires"
-                onClick={() => {
-                  setShowActionsMenu(false);
-                  scrollToAnchor("edl-inv");
-                }}
-              />
-            </div>
-          ) : null}
-        </div>
-      </div>
-
-
-      <Card id="contract" title="Contrat" subtitle="Génération, téléchargement, signatures">
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        }
+      >
         {!sigStatus && loadingSigStatus && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
         )}
@@ -1703,7 +1618,61 @@ function MenuItem(props: {
         )}
       </Card>
 
-      <Card id="guarantees" title="Garanties (caution)" subtitle="Acte caution, liens, ACK locataire">
+      <Card
+        id="guarantees"
+        title="Garanties (caution)"
+        subtitle="Acte caution, liens, ACK locataire"
+        right={
+          <div
+            ref={guaranteesMenuRef}
+            style={{ position: "relative" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setGuaranteesMenuOpen((v) => !v)}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                color: "var(--muted)",
+                padding: 4,
+              }}
+            >
+              ⋯
+            </button>
+
+            {guaranteesMenuOpen ? (
+              <div
+                style={{
+                  position: "absolute",
+                  top: 28,
+                  right: 0,
+                  zIndex: 40,
+                  width: 220,
+                  ...ui.card,
+                  padding: 8,
+                }}
+              >
+                <div style={{ fontSize: 11, fontWeight: 900, color: "var(--muted)", padding: "4px 8px 8px" }}>
+                  GARANTIES
+                </div>
+
+                <MenuItem
+                  label="Gérer garanties"
+                  icon="🔐"
+                  onClick={() => {
+                    setGuaranteesMenuOpen(false);
+                    openGuarantees();
+                  }}
+                />
+              </div>
+            ) : null}
+          </div>
+        }
+      >
         {!sigStatus && loadingSigStatus && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
         )}
@@ -1815,7 +1784,80 @@ function MenuItem(props: {
       </Card>
 
       {sigStatus && (
-        <Card id="edl-inv" title="EDL & Inventaires" subtitle="Docs entrée/sortie + packs">
+        <Card
+          id="edl-inv"
+          title="EDL & Inventaires"
+          subtitle="Docs entrée/sortie + packs"
+          right={
+            <div
+              ref={edlMenuRef}
+              style={{ position: "relative" }}
+              onMouseDown={(e) => e.stopPropagation()}
+            >
+              <button
+                type="button"
+                onClick={() => setEdlMenuOpen((v) => !v)}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  fontSize: 20,
+                  lineHeight: 1,
+                  color: "var(--muted)",
+                  padding: 4,
+                }}
+              >
+                ⋯
+              </button>
+
+              {edlMenuOpen ? (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: 28,
+                    right: 0,
+                    zIndex: 40,
+                    width: 280,
+                    ...ui.card,
+                    padding: 8,
+                  }}
+                >
+                  <div style={{ fontSize: 11, fontWeight: 900, color: "var(--muted)", padding: "4px 8px 8px" }}>
+                    EDL & INVENTAIRES
+                  </div>
+
+                  <MenuItem
+                    label="Générer pack (EDL + Inventaire)"
+                    icon="📦"
+                    onClick={() => {
+                      setEdlMenuOpen(false);
+                      generatePack();
+                    }}
+                  />
+
+                  <MenuItem
+                    label="Télécharger pack"
+                    icon="📄"
+                    disabled={!packDoc?.id}
+                    onClick={() => {
+                      setEdlMenuOpen(false);
+                      downloadPackPdf();
+                    }}
+                  />
+
+                  <MenuItem
+                    label="Générer PACK_FINAL signé (V2)"
+                    icon="✅"
+                    onClick={() => {
+                      setEdlMenuOpen(false);
+                      generatePackFinalV2();
+                    }}
+                  />
+                </div>
+              ) : null}
+            </div>
+          }
+        >
         
           {/* ✅ Pack EDL + Inventaire (recommandé) */}
           {[
@@ -1966,8 +2008,8 @@ function MenuItem(props: {
                   display: "inline-flex",
                   padding: "4px 10px",
                   borderRadius: 999,
-                  border: "1px solid rgba(37,99,235,0.25)",
-                  background: "rgba(37,99,235,0.10)",
+                  border: "1px solid var(--primary-border)",
+                  background: "var(--primary-ghost)",
                   color: "var(--primary)",
                   fontWeight: 900,
                   fontSize: 12,
