@@ -294,6 +294,10 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [guaranteesMenuOpen, setGuaranteesMenuOpen] = useState(false);
   const [edlMenuOpen, setEdlMenuOpen] = useState(false);
 
+  const [showContractDetails, setShowContractDetails] = useState(false);
+  const [showGuaranteesDetails, setShowGuaranteesDetails] = useState(false);
+  const [showEdlInvDetails, setShowEdlInvDetails] = useState(false);
+
   // canvas unique
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
@@ -1312,7 +1316,147 @@ function MenuItem({
   );
 }
 
-  const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
+function DetailToggle({
+  open,
+  onClick,
+}: {
+  open: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        border: "none",
+        background: "transparent",
+        color: "var(--primary)",
+        cursor: "pointer",
+        fontWeight: 800,
+        padding: 0,
+      }}
+    >
+      {open ? "Masquer le détail" : "Voir le détail"}
+    </button>
+  );
+}
+
+function SummaryRow({
+  label,
+  status,
+}: {
+  label: string;
+  status: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        gap: 12,
+        alignItems: "center",
+        padding: "8px 0",
+        borderBottom: "1px solid rgba(226,232,240,0.7)",
+      }}
+    >
+      <div style={{ fontWeight: 700 }}>{label}</div>
+      <div style={{ color: "var(--muted)", fontWeight: 700 }}>{status}</div>
+    </div>
+  );
+}
+
+
+
+    const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
+
+    const contractStatusValue = sigStatus?.contract?.status || "—";
+
+    const contractStatusChip = (
+      <span
+        style={chip(
+          "#e5e7eb",
+          contractStatusValue === "SIGNED"
+            ? "#16a34a"
+            : contractStatusValue === "IN_PROGRESS"
+              ? "#b45309"
+              : contractStatusValue === "DRAFT"
+                ? "#b45309"
+                : "#64748b"
+        )}
+      >
+        {contractStatusValue === "SIGNED"
+          ? "🟢 Signé"
+          : contractStatusValue === "IN_PROGRESS"
+            ? "🟡 En cours"
+            : contractStatusValue === "DRAFT"
+              ? "🟠 Brouillon"
+              : "🔵 Non généré"}
+      </span>
+    );
+
+    const missingContractSignersText = sigStatus
+      ? [
+          ...sigStatus.contract.tenants
+            .filter((t) => t.signatureStatus !== "SIGNED")
+            .map((t) => t.fullName),
+          sigStatus.contract.landlord.signatureStatus !== "SIGNED" ? "Bailleur" : null,
+        ]
+          .filter(Boolean)
+          .join(", ") || "Aucun signataire manquant"
+      : "Chargement…";
+
+    const guaranteesCount = sigStatus?.guarantees?.length || 0;
+    const guaranteesUnsignedCount = sigStatus?.guarantees?.filter((g) => g.signatureStatus !== "SIGNED").length || 0;
+
+    const guaranteesSummaryText =
+      !sigStatus
+        ? "Chargement…"
+        : guaranteesCount === 0
+          ? "Aucune garantie CAUTION sélectionnée."
+          : guaranteesUnsignedCount === 0
+            ? `${guaranteesCount} garantie(s), toutes signées`
+            : `${guaranteesUnsignedCount} garantie(s) à finaliser sur ${guaranteesCount}`;
+
+    const packEntry = (sigStatus as any)?.packEdlInv?.entry || null;
+    const packExit = (sigStatus as any)?.packEdlInv?.exit || null;
+
+    const edlDocsFlat = sigStatus
+      ? [
+          sigStatus.edl?.entry,
+          sigStatus.edl?.exit,
+          sigStatus.inventory?.entry,
+          sigStatus.inventory?.exit,
+          packEntry,
+          packExit,
+        ].filter(Boolean)
+      : [];
+
+    const edlInvMissingCount = edlDocsFlat.filter(
+      (d: any) => !d?.documentId || isMissingStatus(d?.status)
+    ).length;
+
+    const edlInvSummaryChip = (
+      <Badge
+        tone={
+          !sigStatus ? "neutral" : edlInvMissingCount === 0 ? "success" : edlInvMissingCount <= 2 ? "warning" : "danger"
+        }
+      >
+        {!sigStatus
+          ? "Chargement…"
+          : edlInvMissingCount === 0
+            ? "Tout est prêt"
+            : `${edlInvMissingCount} doc(s) à faire`}
+      </Badge>
+    );
+
+    const packEntryStatus = packEntry?.status || "—";
+    const packExitStatus = packExit?.status || "—";
+
+    const edlInvDocsSummaryText = !sigStatus
+      ? "Chargement…"
+      : edlInvMissingCount === 0
+        ? "Tous les EDL / inventaires sont prêts"
+        : `${edlInvMissingCount} document(s) EDL / inventaire à générer ou finaliser`;
+
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
       <div
@@ -1451,97 +1595,91 @@ function MenuItem({
             </InlineMenu>
           ) : null}
 
-        {!sigStatus && loadingSigStatus && (
-          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-        )}
-        {sigStatusError && (
-          <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-        )}
+          {!sigStatus && loadingSigStatus ? (
+            <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
+          ) : null}
 
-        {sigStatus ? (
-          <SignableCard
-            title="Contrat de location"
-            statusChip={
-              <span
-                style={chip(
-                  "#e5e7eb",
-                  sigStatus.contract.status === "SIGNED" ? "#16a34a" : "#b45309"
-                )}
-              >
-                {sigStatus.contract.status === "SIGNED"
-                  ? "🟢 Signé"
-                  : sigStatus.contract.status === "IN_PROGRESS"
-                    ? "🟡 En cours"
-                    : sigStatus.contract.status === "DRAFT"
-                      ? "🟠 Brouillon"
-                      : "🔵 Non généré"}
-              </span>
-            }
-            subtitle={
-              <div style={{ display: "grid", gap: 6 }}>
-                <div>
-                  <strong>Manquent :</strong>{" "}
-                  {[
-                    ...sigStatus.contract.tenants
-                      .filter((t) => t.signatureStatus !== "SIGNED")
-                      .map((t) => t.fullName),
-                    sigStatus.contract.landlord.signatureStatus !== "SIGNED" ? "Bailleur" : null,
-                  ]
-                    .filter(Boolean)
-                    .join(", ") || "Personne"}
-                </div>
+          {sigStatusError ? (
+            <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
+          ) : null}
+
+          {sigStatus ? (
+            <>
+              <SignableCard
+                title="Contrat de location"
+                statusChip={contractStatusChip}
+                subtitle={
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div>
+                      <strong>Manquent :</strong> {missingContractSignersText}
+                    </div>
+                  </div>
+                }
+                actions={[
+                  {
+                    label: "Rafraîchir",
+                    kind: "secondary",
+                    onClick: () => fetchSignatureStatus(leaseId),
+                  },
+                  {
+                    label: "Télécharger PDF",
+                    kind: "secondary",
+                    disabled: !sigStatus.contract.documentId,
+                    onClick: () =>
+                      sigStatus.contract.documentId &&
+                      downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
+                  },
+                  {
+                    label: "Télécharger signé",
+                    kind: "secondary",
+                    disabled: !sigStatus.contract.signedFinalDocumentId,
+                    onClick: () =>
+                      sigStatus.contract.signedFinalDocumentId &&
+                      downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
+                  },
+                ]}
+              />
+
+              <div style={{ marginTop: 10 }}>
+                <DetailToggle
+                  open={showContractDetails}
+                  onClick={() => setShowContractDetails((v) => !v)}
+                />
               </div>
-            }
-            actions={[
-              {
-                label: "Rafraîchir",
-                kind: "secondary",
-                onClick: () => fetchSignatureStatus(leaseId),
-              },
-              {
-                label: "Télécharger PDF",
-                kind: "secondary",
-                disabled: !sigStatus.contract.documentId,
-                onClick: () =>
-                  sigStatus.contract.documentId &&
-                  downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
-              },
-              {
-                label: "Télécharger signé",
-                kind: "secondary",
-                disabled: !sigStatus.contract.signedFinalDocumentId,
-                onClick: () =>
-                  sigStatus.contract.signedFinalDocumentId &&
-                  downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
-              },
-            ]}
-          />
-        ) : null}
+
+              {showContractDetails ? (
+                <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+                  {finalSignedDoc?.id ? (
+                    <div style={card(border)}>
+                      <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
+                      <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
+                      <button
+                        onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)}
+                        style={btnPrimarySmall()}
+                      >
+                        Télécharger PDF signé
+                      </button>
+                    </div>
+                  ) : null}
+
+                  {packFinalV2Doc?.id ? (
+                    <div style={card(border)}>
+                      <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
+                      <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
+                      <button
+                        onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
+                        style={btnPrimarySmall()}
+                      >
+                        Télécharger PACK_FINAL signé
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </>
+          ) : null}
       </Card>
       
-      {finalSignedDoc?.id && (
-        <div style={card(border)}>
-          <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
-          <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
-          <button onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)} style={btnPrimarySmall()}>
-            Télécharger PDF signé
-          </button>
-        </div>
-      )}
-
-      {packFinalV2Doc?.id && (
-        <div style={card(border)}>
-          <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
-          <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
-          <button
-            onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
-            style={btnPrimarySmall()}
-          >
-            Télécharger PACK_FINAL signé
-          </button>
-        </div>
-      )}
-
       {/* ========================= */}
       {/* Locataires (signature)    */}
       {/* ========================= */}
@@ -1649,114 +1787,150 @@ function MenuItem({
             </MenuItem>
           </InlineMenu>
         ) : null}
-        {!sigStatus && loadingSigStatus && (
+
+        {!sigStatus && loadingSigStatus ? (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-        )}
-        {sigStatusError && (
+        ) : null}
+
+        {sigStatusError ? (
           <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-        )}
+        ) : null}
 
-        {sigStatus && sigStatus.guarantees.length === 0 && (
-          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucune garantie CAUTION sélectionnée.</div>
-        )}
+        {sigStatus ? (
+          <SignableCard
+            title="Garanties"
+            statusChip={
+              <Badge tone={guaranteesCount > 0 ? (guaranteesUnsignedCount === 0 ? "success" : "warning") : "neutral"}>
+                {guaranteesCount > 0 ? `${guaranteesCount} garantie(s)` : "Aucune"}
+              </Badge>
+            }
+            subtitle={
+              <div style={{ display: "grid", gap: 6 }}>
+                <div>{guaranteesSummaryText}</div>
+              </div>
+            }
+            actions={[
+              {
+                label: "Gérer garanties",
+                kind: "secondary",
+                onClick: openGuarantees,
+              },
+            ]}
+          />
+        ) : null}
 
-        {sigStatus && sigStatus.guarantees.length > 0 && (
-          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-            {sigStatus.guarantees.map((g) => {
-              const statusText =
-                g.signatureStatus === "SIGNED"
-                  ? "🟢 Signé"
-                  : g.signatureStatus === "IN_PROGRESS"
-                    ? "🟡 En cours"
-                    : g.signatureStatus === "SENT"
-                      ? "🟠 Lien envoyé"
-                      : "🔵 Non envoyé";
+        <div style={{ marginTop: 10 }}>
+          <DetailToggle
+            open={showGuaranteesDetails}
+            onClick={() => setShowGuaranteesDetails((v) => !v)}
+          />
+        </div>
 
-              const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
+        {showGuaranteesDetails ? (
+          <div style={{ marginTop: 12 }}>
+            {sigStatus && sigStatus.guarantees.length === 0 ? (
+              <div style={{ marginTop: 8, fontSize: 13, color: muted }}>
+                Aucune garantie CAUTION sélectionnée.
+              </div>
+            ) : null}
 
-              const ackTenant = g.tenantId;
-              const ackRequired = Boolean(g.ack?.required);
-              const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
-              const ackOk = Boolean(ackInfo?.acknowledged);
+            {sigStatus && sigStatus.guarantees.length > 0 ? (
+              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                {sigStatus.guarantees.map((g) => {
+                  const statusText =
+                    g.signatureStatus === "SIGNED"
+                      ? "🟢 Signé"
+                      : g.signatureStatus === "IN_PROGRESS"
+                        ? "🟡 En cours"
+                        : g.signatureStatus === "SENT"
+                          ? "🟠 Lien envoyé"
+                          : "🔵 Non envoyé";
 
-              const primaryLabel =
-                g.signatureStatus === "SIGNED"
-                  ? "📤 Partager au garant"
-                  : g.lastLink
-                    ? "Renvoyer lien signature"
-                    : "Envoyer lien signature";
-              
-              const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;      
+                  const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
 
-              return (
-                <SignableCard
-                  key={g.guaranteeId}
-                  title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
-                  statusChip={
-                    <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
-                      {statusText}
-                    </span>
-                  }
-                  subtitle={
-                    <div style={{ display: "grid", gap: 6 }}>
-                      <div>
-                        <strong>Lien :</strong> {linkState}
-                        {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
-                      </div>
-                      <div>
-                        <strong>ACK locataire :</strong>{" "}
-                        {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
-                      </div>
-                    </div>
-                  }
-                  actions={[
-                    {
-                      label: primaryLabel,
-                      onClick: () => {
-                        if (g.signatureStatus === "SIGNED") {
-                          return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
-                            alert(e.message || String(e))
-                          );
-                        }
-                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
-                          alert(e.message || String(e))
-                        );
-                      },
-                      disabled: g.signatureStatus === "SIGNED"
-                        ? !g.signedFinalDocumentId
-                        : !actId,
-                    },
-                    {
-                      label: "Générer acte",
-                      kind: "secondary",
-                      disabled: Boolean(actId),
-                      onClick: async () => {
-                        await generateGuarantorActFor(g.guaranteeId);
-                        await fetchSignatureStatus(leaseId);
-                      },
-                    },
-                    {
-                      label: "Télécharger PDF",
-                      kind: "secondary",
-                      disabled: !actId,
-                      onClick: () => actId && downloadDoc(actId, "acte_caution.pdf"),
-                    },
-                    {
-                      label: "ACK : Marquer comme lu",
-                      kind: "secondary",
-                      disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
-                      onClick: () =>
-                        g.signedFinalDocumentId &&
-                        acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
-                          alert(e.message || String(e))
-                        ),
-                    },
-                  ]}
-                />
-              );
-            })}
+                  const ackTenant = g.tenantId;
+                  const ackRequired = Boolean(g.ack?.required);
+                  const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
+                  const ackOk = Boolean(ackInfo?.acknowledged);
+
+                  const primaryLabel =
+                    g.signatureStatus === "SIGNED"
+                      ? "📤 Partager au garant"
+                      : g.lastLink
+                        ? "Renvoyer lien signature"
+                        : "Envoyer lien signature";
+
+                  const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;
+
+                  return (
+                    <SignableCard
+                      key={g.guaranteeId}
+                      title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
+                      statusChip={
+                        <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
+                          {statusText}
+                        </span>
+                      }
+                      subtitle={
+                        <div style={{ display: "grid", gap: 6 }}>
+                          <div>
+                            <strong>Lien :</strong> {linkState}
+                            {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
+                          </div>
+                          <div>
+                            <strong>ACK locataire :</strong>{" "}
+                            {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
+                          </div>
+                        </div>
+                      }
+                      actions={[
+                        {
+                          label: primaryLabel,
+                          onClick: () => {
+                            if (g.signatureStatus === "SIGNED") {
+                              return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
+                                alert(e.message || String(e))
+                              );
+                            }
+                            return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
+                              alert(e.message || String(e))
+                            );
+                          },
+                          disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !actId,
+                        },
+                        {
+                          label: "Générer acte",
+                          kind: "secondary",
+                          disabled: Boolean(actId),
+                          onClick: async () => {
+                            await generateGuarantorActFor(g.guaranteeId);
+                            await fetchSignatureStatus(leaseId);
+                          },
+                        },
+                        {
+                          label: "Télécharger PDF",
+                          kind: "secondary",
+                          disabled: !actId,
+                          onClick: () => actId && downloadDoc(actId, "acte_caution.pdf"),
+                        },
+                        {
+                          label: "ACK : Marquer comme lu",
+                          kind: "secondary",
+                          disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
+                          onClick: () =>
+                            g.signedFinalDocumentId &&
+                            acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
+                              alert(e.message || String(e))
+                            ),
+                        },
+                      ]}
+                    />
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
-        )}
+        ) : null}
       </Card>
 
       {sigStatus && (
@@ -1820,122 +1994,177 @@ function MenuItem({
               </MenuItem>
             </InlineMenu>
           ) : null}
-        
-          {/* ✅ Pack EDL + Inventaire (recommandé) */}
-          {[
-            (sigStatus as any)?.packEdlInv?.entry,
-            (sigStatus as any)?.packEdlInv?.exit,
-          ]
-            .filter(Boolean)
-            .map((p: any) => (
-              <div
-                key={p.key || p.label}
-                style={{
-                  border: `1px solid ${border}`,
-                  borderRadius: 14,
-                  padding: 12,
-                  marginTop: 10,
-                  background: "rgba(248,250,252,0.9)",
-                }}
-              >
-                <div style={{ fontWeight: 800 }}>
-                  {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
-                </div>
 
-                <div style={{ fontSize: 13, color: muted, marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontWeight: 700 }}>Statut:</span>
-                  <Badge tone={toneFromStatus(p.status)}>{p.status || "—"}</Badge>
-                </div>
+          <SignableCard
+            title="EDL & Inventaires"
+            statusChip={edlInvSummaryChip}
+            subtitle={
+              <div style={{ display: "grid", gap: 2 }}>
+                <SummaryRow label="Pack EDL + Inventaire (entrée)" status={packEntryStatus} />
+                <SummaryRow label="Pack EDL + Inventaire (sortie)" status={packExitStatus} />
+                <SummaryRow label="EDL / Inventaires" status={edlInvDocsSummaryText} />
+              </div>
+            }
+            actions={[
+              {
+                label: "Générer PDF",
+                kind: "secondary",
+                onClick: generatePack,
+              },
+              {
+                label: "Télécharger",
+                kind: "secondary",
+                disabled: !packDoc?.id,
+                onClick: downloadPackPdf,
+              },
+            ]}
+          />
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                  <button
-                    style={btnAction(border)}
-                    disabled={Boolean(p.documentId)}
-                    onClick={() => {
-                      // on déduit la phase depuis la key (ou fallback)
-                      const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
-                      return generatePackEdlInv(phase as "entry" | "exit");
+          <div style={{ marginTop: 10 }}>
+            <DetailToggle
+              open={showEdlInvDetails}
+              onClick={() => setShowEdlInvDetails((v) => !v)}
+            />
+          </div>
+
+          {showEdlInvDetails ? (
+            <div style={{ marginTop: 12 }}>
+              {/* ✅ Pack EDL + Inventaire (recommandé) */}
+              {[packEntry, packExit]
+                .filter(Boolean)
+                .map((p: any) => (
+                  <div
+                    key={p.key || p.label}
+                    style={{
+                      border: `1px solid ${border}`,
+                      borderRadius: 14,
+                      padding: 12,
+                      marginTop: 10,
+                      background: "rgba(248,250,252,0.9)",
                     }}
                   >
-                    Générer PDF
-                  </button>
+                    <div style={{ fontWeight: 800 }}>
+                      {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
+                    </div>
 
-                  <button
-                    style={btnSecondary(border)}
-                    disabled={!p.documentId}
-                    onClick={() => p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)}
-                  >
-                    Télécharger PDF
-                  </button>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: muted,
+                        marginTop: 6,
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontWeight: 700 }}>Statut:</span>
+                      <Badge tone={toneFromStatus(p.status)}>{p.status || "—"}</Badge>
+                    </div>
 
-                  <button
-                    style={btnSecondary(border)}
-                    disabled={!p.signedFinalDocumentId}
-                    onClick={() =>
-                      p.signedFinalDocumentId && downloadDoc(p.signedFinalDocumentId, `${p.key || "pack_edl_inv"}_SIGNE.pdf`)
-                    }
-                  >
-                    Télécharger signé
-                  </button>
-                </div>
-              </div>
-            ))}
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                      <button
+                        style={btnAction(border)}
+                        disabled={Boolean(p.documentId)}
+                        onClick={() => {
+                          const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
+                          return generatePackEdlInv(phase as "entry" | "exit");
+                        }}
+                      >
+                        Générer PDF
+                      </button>
 
-          {[
-            sigStatus.edl?.entry,
-            sigStatus.edl?.exit,
-            sigStatus.inventory?.entry,
-            sigStatus.inventory?.exit,
-          ]
-            .filter(Boolean)
-            .map((d: any) => (
-              <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
-                <div style={{ fontWeight: 800 }}>{d.label}</div>
+                      <button
+                        style={btnSecondary(border)}
+                        disabled={!p.documentId}
+                        onClick={() =>
+                          p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)
+                        }
+                      >
+                        Télécharger PDF
+                      </button>
 
-                <div style={{ fontSize: 13, color: muted, marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontWeight: 700 }}>Statut:</span>
-                  <Badge tone={toneFromStatus(d.status)}>{d.status || "—"}</Badge>
-                </div>
+                      <button
+                        style={btnSecondary(border)}
+                        disabled={!p.signedFinalDocumentId}
+                        onClick={() =>
+                          p.signedFinalDocumentId &&
+                          downloadDoc(p.signedFinalDocumentId, `${p.key || "pack_edl_inv"}_SIGNE.pdf`)
+                        }
+                      >
+                        Télécharger signé
+                      </button>
+                    </div>
+                  </div>
+                ))}
 
-                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                  Bailleur: {d.need?.landlord?.signed ? "✅ signé" : "❌ manquant"} •
-                  Locataires:{" "}
-                  {(d.need?.tenants || []).filter((t: any) => !t.signed).length === 0 ? "✅ tous signés" : "❌ manquants"}
-                </div>
+              {[
+                sigStatus.edl?.entry,
+                sigStatus.edl?.exit,
+                sigStatus.inventory?.entry,
+                sigStatus.inventory?.exit,
+              ]
+                .filter(Boolean)
+                .map((d: any) => (
+                  <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
+                    <div style={{ fontWeight: 800 }}>{d.label}</div>
 
-                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                    <div
+                      style={{
+                        fontSize: 13,
+                        color: muted,
+                        marginTop: 6,
+                        display: "flex",
+                        gap: 8,
+                        alignItems: "center",
+                      }}
+                    >
+                      <span style={{ fontWeight: 700 }}>Statut:</span>
+                      <Badge tone={toneFromStatus(d.status)}>{d.status || "—"}</Badge>
+                    </div>
 
-                  <button
-                    style={btnAction(border)}
-                    disabled={Boolean(d.documentId)}
-                    onClick={() => {
-                      const k = String(d.key || "");
-                      if (k === "edl:entry" || k === "edl_entry") return generateEdl("entry");
-                      if (k === "edl:exit" || k === "edl_exit") return generateEdl("exit");
-                      if (k === "inv:entry" || k === "inv_entry") return generateInventory("entry");
-                      if (k === "inv:exit" || k === "inv_exit") return generateInventory("exit");
-                    }}
-                  >
-                    Générer PDF
-                  </button>
-                  <button
-                    style={btnSecondary(border)}
-                    disabled={!d.documentId}
-                    onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
-                  >
-                    Télécharger PDF
-                  </button>
+                    <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                      Bailleur: {d.need?.landlord?.signed ? "✅ signé" : "❌ manquant"} •
+                      Locataires:{" "}
+                      {(d.need?.tenants || []).filter((t: any) => !t.signed).length === 0
+                        ? "✅ tous signés"
+                        : "❌ manquants"}
+                    </div>
 
-                  <button
-                    style={btnSecondary(border)}
-                    disabled={!d.signedFinalDocumentId}
-                    onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
-                  >
-                    Télécharger signé
-                  </button>
-                </div>
-              </div>
-            ))}
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                      <button
+                        style={btnAction(border)}
+                        disabled={Boolean(d.documentId)}
+                        onClick={() => {
+                          const k = String(d.key || "");
+                          if (k === "edl:entry" || k === "edl_entry") return generateEdl("entry");
+                          if (k === "edl:exit" || k === "edl_exit") return generateEdl("exit");
+                          if (k === "inv:entry" || k === "inv_entry") return generateInventory("entry");
+                          if (k === "inv:exit" || k === "inv_exit") return generateInventory("exit");
+                        }}
+                      >
+                        Générer PDF
+                      </button>
+
+                      <button
+                        style={btnSecondary(border)}
+                        disabled={!d.documentId}
+                        onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
+                      >
+                        Télécharger PDF
+                      </button>
+
+                      <button
+                        style={btnSecondary(border)}
+                        disabled={!d.signedFinalDocumentId}
+                        onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
+                      >
+                        Télécharger signé
+                      </button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          ) : null}
         </Card>
       )}
 
