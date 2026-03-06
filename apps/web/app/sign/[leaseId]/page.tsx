@@ -13,7 +13,7 @@ const ui = {
     borderRadius: "var(--radius)",
     boxShadow: "var(--shadow)",
   } as React.CSSProperties,
-  hTitle: { fontSize: 18, fontWeight: 950, margin: 0 } as React.CSSProperties,
+  hTitle: { fontSize: 18, fontWeight: 800, margin: 0 } as React.CSSProperties,
   sub: { fontSize: 13, color: "var(--muted)", marginTop: 4 } as React.CSSProperties,
 };
 
@@ -42,7 +42,7 @@ function Badge({
         border: `1px solid ${s.bd}`,
         background: s.bg,
         color: s.fg,
-        fontWeight: 900,
+        fontWeight: 700,
         fontSize: 12,
         whiteSpace: "nowrap",
       }}
@@ -61,13 +61,20 @@ const Btn = React.forwardRef<
   const base: React.CSSProperties = {
     padding: "10px 12px",
     borderRadius: 12,
-    fontWeight: 950,
+    fontWeight: 800,
     cursor: "pointer",
     border: "1px solid var(--border)",
+    transition: "background 120ms ease, box-shadow 120ms ease, border-color 120ms ease",
   };
 
   const styles: any = {
-    primary: { ...base, background: "var(--primary)", border: "1px solid var(--primary-border)", color: "white" },
+    primary: {
+      ...base,
+      background: "var(--primary)",
+      border: "1px solid var(--primary-border)",
+      color: "white",
+      boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+    },
     secondary: { ...base, background: "white", color: "var(--text)" },
     ghost: { ...base, background: "transparent", color: "var(--primary)" },
   };
@@ -96,13 +103,52 @@ function Card({
     <section id={id} style={{ ...ui.card, padding: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div>
-          <div style={{ fontWeight: 950, fontSize: 14 }}>{title}</div>
+          <div style={{ fontWeight: 800, fontSize: 14 }}>{title}</div>
           {subtitle ? <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 4 }}>{subtitle}</div> : null}
         </div>
         {right}
       </div>
       <div style={{ marginTop: 12 }}>{children}</div>
     </section>
+  );
+}
+
+function InlineMenu({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div
+      style={{
+        marginTop: 10,
+        marginBottom: 12,
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        background: "#f8fafc",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
+        padding: 10,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 700,
+          color: "var(--muted)",
+          marginBottom: 8,
+          textTransform: "uppercase",
+          letterSpacing: 0.3,
+        }}
+      >
+        {title}
+      </div>
+
+      <div style={{ display: "grid", gap: 4 }}>
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -253,10 +299,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const drawing = useRef(false);
   const signatureDirty = useRef(false);
 
-  const contractMenuRef = useRef<HTMLDivElement | null>(null);
-  const guaranteesMenuRef = useRef<HTMLDivElement | null>(null);
-  const edlMenuRef = useRef<HTMLDivElement | null>(null);
-
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
 
@@ -266,7 +308,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [loadingSigStatus, setLoadingSigStatus] = useState(false);
   const [sigStatusError, setSigStatusError] = useState<string | null>(null);
 
-  const blue = "#3b82f6";
+  const blue = "#1d4ed8";
   const border = "#e5e7eb";
   const muted = "#6b7280";
 
@@ -274,26 +316,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     setToken(localStorage.getItem("token") || "");
   }, []);
 
-  useEffect(() => {
-    const onPointerDown = (e: MouseEvent) => {
-      const target = e.target as Node;
-
-      if (contractMenuRef.current && !contractMenuRef.current.contains(target)) {
-        setContractMenuOpen(false);
-      }
-
-      if (guaranteesMenuRef.current && !guaranteesMenuRef.current.contains(target)) {
-        setGuaranteesMenuOpen(false);
-      }
-
-      if (edlMenuRef.current && !edlMenuRef.current.contains(target)) {
-        setEdlMenuOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", onPointerDown);
-    return () => document.removeEventListener("mousedown", onPointerDown);
-  }, []);
 
 function setupCanvasHiDpi(canvas: HTMLCanvasElement) {
   const dpr = window.devicePixelRatio || 1;
@@ -1226,86 +1248,69 @@ async function signGuarantorOnPlace() {
     window.location.href = `/guarantees/${leaseId}`;
   }
 
-  const menuStyles = {
-    panel: {
-      position: "absolute" as const,
-      right: 0,
-      zIndex: 50,
-      width: 260,
-      padding: 6,
-      maxHeight: 380,
-      overflowY: "auto" as const,
-      background: "var(--card)",
-      border: "1px solid var(--border)",
-      borderRadius: 14,
-      boxShadow: "var(--shadow)",
-    },
-    sectionTitle: {
-      fontWeight: 950,
-      fontSize: 11,
-      color: "var(--muted)",
-      padding: "6px 8px",
-      textTransform: "uppercase" as const,
-      letterSpacing: 0.4,
-    },
-    divider: {
-      height: 1,
-      background: "var(--border)",
-      margin: "6px 4px",
-    },
-    item: {
-      width: "100%",
-      textAlign: "left" as const,
-      padding: "8px 10px",
-      borderRadius: 10,
-      border: "none",
-      background: "transparent",
-      cursor: "pointer",
-      fontWeight: 800,
-      fontSize: 13,
-      color: "var(--text)",
-      display: "flex",
-      alignItems: "center",
-      gap: 8,
-    },
-    itemDisabled: {
-      opacity: 0.45,
-      cursor: "not-allowed",
-    },
-    itemHoverBg: "rgba(100,116,139,0.10)",
-  };
 
-function MenuItem(props: {
-  label: string;
-  icon?: string;
-  disabled?: boolean;
+function MenuItem({
+  children,
+  icon,
+  onClick,
+  disabled,
+}: {
+  children: React.ReactNode;
+  icon?: React.ReactNode;
   onClick?: () => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      disabled={props.disabled}
-      onClick={props.onClick}
+      onClick={onClick}
+      disabled={disabled}
       style={{
-        ...menuStyles.item,
-        ...(props.disabled ? menuStyles.itemDisabled : null),
+        width: "100%",
+        textAlign: "left",
+        padding: "10px 12px",
+        borderRadius: 10,
+        border: "none",
+        background: "transparent",
+        cursor: disabled ? "not-allowed" : "pointer",
+        fontWeight: 700,
+        color: disabled ? "#9ca3af" : "var(--text)",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        transition: "background 120ms ease",
       }}
       onMouseEnter={(e) => {
-        if (props.disabled) return;
-        (e.currentTarget as HTMLButtonElement).style.background = menuStyles.itemHoverBg;
+        if (!disabled) e.currentTarget.style.background = "rgba(100,116,139,0.08)";
       }}
       onMouseLeave={(e) => {
-        (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+        e.currentTarget.style.background = "transparent";
       }}
     >
-      <span style={{ width: 18, textAlign: "center", opacity: 0.85 }}>
-        {props.icon || "•"}
+      <span
+        style={{
+          width: 20,
+          height: 20,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          flexShrink: 0,
+          borderRadius: 999,
+          border: disabled ? "1px solid rgba(148,163,184,0.16)" : "1px solid rgba(148,163,184,0.20)",
+          background: disabled ? "rgba(148,163,184,0.06)" : "rgba(148,163,184,0.08)",
+          color: disabled ? "#cbd5e1" : "#64748b",
+          fontSize: 11,
+          fontWeight: 700,
+          lineHeight: 1,
+        }}
+      >
+        {icon || "•"}
       </span>
-      <span style={{ flex: 1 }}>{props.label}</span>
+
+      <span>{children}</span>
     </button>
   );
 }
-
 
   const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
   return (
@@ -1324,9 +1329,9 @@ function MenuItem(props: {
           <h1 style={ui.hTitle}>Contrat & signatures</h1>
           <div style={ui.sub}>
             Bail {leaseId.slice(0, 8)}… •{" "}
-            <span style={{ fontWeight: 900 }}>Contrat:</span> {sigStatus?.contract?.status || "—"} •{" "}
-            <span style={{ fontWeight: 900 }}>Garanties:</span> {(sigStatus?.guarantees?.length ?? 0) || 0} •{" "}
-            <span style={{ fontWeight: 900 }}>PACK_FINAL_V2:</span> {packFinalV2Doc?.id ? "OK" : "—"}
+            <span style={{ fontWeight: 700 }}>Contrat:</span> {sigStatus?.contract?.status || "—"} •{" "}
+            <span style={{ fontWeight: 700 }}>Garanties:</span> {(sigStatus?.guarantees?.length ?? 0) || 0} •{" "}
+            <span style={{ fontWeight: 700 }}>PACK_FINAL_V2:</span> {packFinalV2Doc?.id ? "OK" : "—"}
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
@@ -1349,16 +1354,16 @@ function MenuItem(props: {
         </div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <a href="#contract" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+        <a href="#contract" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
           Contrat
         </a>
-        <a href="#tenants" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+        <a href="#tenants" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
           Locataires
         </a>
-        <a href="#guarantees" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+        <a href="#guarantees" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
           Garanties
         </a>
-        <a href="#edl-inv" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 900 }}>
+        <a href="#edl-inv" style={{ ...ui.card, padding: "8px 10px", borderRadius: 12, fontWeight: 700 }}>
           EDL & Inventaires
         </a>
       </div>
@@ -1385,80 +1390,67 @@ function MenuItem(props: {
         title="Contrat"
         subtitle="Génération, téléchargement, signatures"
         right={
-          <div
-            ref={contractMenuRef}
-            style={{ position: "relative" }}
-            onMouseDown={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            onClick={() => {
+              setGuaranteesMenuOpen(false);
+              setEdlMenuOpen(false);
+              setContractMenuOpen((v) => !v);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 20,
+              lineHeight: 1,
+              color: "var(--muted)",
+              padding: 4,
+            }}
           >
-            <button
-              type="button"
-              onClick={() => setContractMenuOpen((v) => !v)}
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                fontSize: 20,
-                lineHeight: 1,
-                color: "var(--muted)",
-                padding: 4,
-              }}
-            >
-              ⋯
-            </button>
-
-            {contractMenuOpen ? (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 28,
-                  right: 0,
-                  zIndex: 40,
-                  width: 240,
-                  ...ui.card,
-                  padding: 8,
-                }}
-              >
-                <div style={{ fontSize: 11, fontWeight: 900, color: "var(--muted)", padding: "4px 8px 8px" }}>
-                  CONTRAT
-                </div>
-
-                <MenuItem
-                  label="Télécharger contrat"
-                  icon="📄"
-                  disabled={!contractDoc?.id}
-                  onClick={() => {
-                    setContractMenuOpen(false);
-                    downloadContractPdf();
-                  }}
-                />
-
-                {isRP ? (
-                  <MenuItem
-                    label="Générer notice"
-                    icon="📝"
-                    onClick={() => {
-                      setContractMenuOpen(false);
-                      generateNotice();
-                    }}
-                  />
-                ) : null}
-
-                {isRP ? (
-                  <MenuItem
-                    label="Télécharger notice"
-                    icon="📄"
-                    disabled={!noticeDoc?.id}
-                    onClick={() => {
-                      setContractMenuOpen(false);
-                      downloadNoticePdf();
-                    }}
-                  />
-                ) : null}
-              </div>
-            ) : null}
-          </div>
+            ⋯
+          </button>
         }
       >
+          {contractMenuOpen ? (
+            <InlineMenu title="Contrat">
+              <MenuItem
+                icon="↓"
+                onClick={() => {
+                  setContractMenuOpen(false);
+                  downloadContractPdf();
+                }}
+                disabled={!contractDoc?.id}
+              >
+                Télécharger contrat
+              </MenuItem>
+
+              {isRP ? (
+                <MenuItem
+                  icon="+"
+                  onClick={() => {
+                    setContractMenuOpen(false);
+                    generateNotice();
+                  }}
+                >
+                  Générer notice
+                </MenuItem>
+              ) : null}
+
+              {isRP ? (
+                <MenuItem
+                  icon="↓"
+                  onClick={() => {
+                    setContractMenuOpen(false);
+                    downloadNoticePdf();
+                  }}
+                  disabled={!noticeDoc?.id}
+                >
+                  Télécharger notice
+                </MenuItem>
+              ) : null}
+            </InlineMenu>
+          ) : null}
+
         {!sigStatus && loadingSigStatus && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
         )}
@@ -1531,7 +1523,7 @@ function MenuItem(props: {
         <div style={card(border)}>
           <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
           <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
-          <button onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)} style={btnPrimarySmall(blue)}>
+          <button onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)} style={btnPrimarySmall()}>
             Télécharger PDF signé
           </button>
         </div>
@@ -1543,7 +1535,7 @@ function MenuItem(props: {
           <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
           <button
             onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
-            style={btnPrimarySmall(blue)}
+            style={btnPrimarySmall()}
           >
             Télécharger PACK_FINAL signé
           </button>
@@ -1623,56 +1615,40 @@ function MenuItem(props: {
         title="Garanties (caution)"
         subtitle="Acte caution, liens, ACK locataire"
         right={
-          <div
-            ref={guaranteesMenuRef}
-            style={{ position: "relative" }}
-            onMouseDown={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            onClick={() => {
+              setContractMenuOpen(false);
+              setEdlMenuOpen(false);
+              setGuaranteesMenuOpen((v) => !v);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              fontSize: 20,
+              lineHeight: 1,
+              color: "var(--muted)",
+              padding: 4,
+            }}
           >
-            <button
-              type="button"
-              onClick={() => setGuaranteesMenuOpen((v) => !v)}
-              style={{
-                border: "none",
-                background: "transparent",
-                cursor: "pointer",
-                fontSize: 20,
-                lineHeight: 1,
-                color: "var(--muted)",
-                padding: 4,
-              }}
-            >
-              ⋯
-            </button>
-
-            {guaranteesMenuOpen ? (
-              <div
-                style={{
-                  position: "absolute",
-                  top: 28,
-                  right: 0,
-                  zIndex: 40,
-                  width: 220,
-                  ...ui.card,
-                  padding: 8,
-                }}
-              >
-                <div style={{ fontSize: 11, fontWeight: 900, color: "var(--muted)", padding: "4px 8px 8px" }}>
-                  GARANTIES
-                </div>
-
-                <MenuItem
-                  label="Gérer garanties"
-                  icon="🔐"
-                  onClick={() => {
-                    setGuaranteesMenuOpen(false);
-                    openGuarantees();
-                  }}
-                />
-              </div>
-            ) : null}
-          </div>
+            ⋯
+          </button>
         }
       >
+        {guaranteesMenuOpen ? (
+          <InlineMenu title="Garanties">
+            <MenuItem
+              icon="→"
+              onClick={() => {
+                setGuaranteesMenuOpen(false);
+                openGuarantees();
+              }}
+            >
+              Gérer garanties
+            </MenuItem>
+          </InlineMenu>
+        ) : null}
         {!sigStatus && loadingSigStatus && (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
         )}
@@ -1789,75 +1765,61 @@ function MenuItem(props: {
           title="EDL & Inventaires"
           subtitle="Docs entrée/sortie + packs"
           right={
-            <div
-              ref={edlMenuRef}
-              style={{ position: "relative" }}
-              onMouseDown={(e) => e.stopPropagation()}
+            <button
+              type="button"
+              onClick={() => {
+                setContractMenuOpen(false);
+                setGuaranteesMenuOpen(false);
+                setEdlMenuOpen((v) => !v);
+              }}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                fontSize: 20,
+                lineHeight: 1,
+                color: "var(--muted)",
+                padding: 4,
+              }}
             >
-              <button
-                type="button"
-                onClick={() => setEdlMenuOpen((v) => !v)}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  fontSize: 20,
-                  lineHeight: 1,
-                  color: "var(--muted)",
-                  padding: 4,
-                }}
-              >
-                ⋯
-              </button>
-
-              {edlMenuOpen ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 28,
-                    right: 0,
-                    zIndex: 40,
-                    width: 280,
-                    ...ui.card,
-                    padding: 8,
-                  }}
-                >
-                  <div style={{ fontSize: 11, fontWeight: 900, color: "var(--muted)", padding: "4px 8px 8px" }}>
-                    EDL & INVENTAIRES
-                  </div>
-
-                  <MenuItem
-                    label="Générer pack (EDL + Inventaire)"
-                    icon="📦"
-                    onClick={() => {
-                      setEdlMenuOpen(false);
-                      generatePack();
-                    }}
-                  />
-
-                  <MenuItem
-                    label="Télécharger pack"
-                    icon="📄"
-                    disabled={!packDoc?.id}
-                    onClick={() => {
-                      setEdlMenuOpen(false);
-                      downloadPackPdf();
-                    }}
-                  />
-
-                  <MenuItem
-                    label="Générer PACK_FINAL signé (V2)"
-                    icon="✅"
-                    onClick={() => {
-                      setEdlMenuOpen(false);
-                      generatePackFinalV2();
-                    }}
-                  />
-                </div>
-              ) : null}
-            </div>
+              ⋯
+            </button>
           }
         >
+          {edlMenuOpen ? (
+            <InlineMenu title="EDL & Inventaires">
+              <MenuItem
+                icon="+"
+                onClick={() => {
+                  setEdlMenuOpen(false);
+                  generatePack();
+                }}
+              >
+                Générer pack (EDL + Inventaire)
+              </MenuItem>
+
+              <MenuItem
+                icon="↓"
+                onClick={() => {
+                  setEdlMenuOpen(false);
+                  downloadPackPdf();
+                }}
+                disabled={!packDoc?.id}
+              >
+                Télécharger pack
+              </MenuItem>
+
+              <MenuItem
+                icon="✓"
+                onClick={() => {
+                  setEdlMenuOpen(false);
+                  generatePackFinalV2();
+                }}
+              >
+                Générer PACK_FINAL signé (V2)
+              </MenuItem>
+            </InlineMenu>
+          ) : null}
         
           {/* ✅ Pack EDL + Inventaire (recommandé) */}
           {[
@@ -1873,7 +1835,7 @@ function MenuItem(props: {
                   borderRadius: 14,
                   padding: 12,
                   marginTop: 10,
-                  background: "rgba(31,111,235,0.04)",
+                  background: "rgba(248,250,252,0.9)",
                 }}
               >
                 <div style={{ fontWeight: 800 }}>
@@ -1881,7 +1843,7 @@ function MenuItem(props: {
                 </div>
 
                 <div style={{ fontSize: 13, color: muted, marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontWeight: 900 }}>Statut:</span>
+                  <span style={{ fontWeight: 700 }}>Statut:</span>
                   <Badge tone={toneFromStatus(p.status)}>{p.status || "—"}</Badge>
                 </div>
 
@@ -1931,7 +1893,7 @@ function MenuItem(props: {
                 <div style={{ fontWeight: 800 }}>{d.label}</div>
 
                 <div style={{ fontSize: 13, color: muted, marginTop: 6, display: "flex", gap: 8, alignItems: "center" }}>
-                  <span style={{ fontWeight: 900 }}>Statut:</span>
+                  <span style={{ fontWeight: 700 }}>Statut:</span>
                   <Badge tone={toneFromStatus(d.status)}>{d.status || "—"}</Badge>
                 </div>
 
@@ -1998,7 +1960,7 @@ function MenuItem(props: {
           >
             <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
               <div>
-                <div style={{ fontWeight: 950, fontSize: 14 }}>Signature</div>
+                <div style={{ fontWeight: 800, fontSize: 14 }}>Signature</div>
                 <div style={{ color: "var(--muted)", fontSize: 12, marginTop: 4 }}>
                   Sélectionne un rôle, un document, puis signe.
                 </div>
@@ -2008,10 +1970,10 @@ function MenuItem(props: {
                   display: "inline-flex",
                   padding: "4px 10px",
                   borderRadius: 999,
-                  border: "1px solid var(--primary-border)",
-                  background: "var(--primary-ghost)",
-                  color: "var(--primary)",
-                  fontWeight: 900,
+                  border: "1px solid rgba(148,163,184,0.24)",
+                  background: "#f8fafc",
+                  color: "#475569",
+                  fontWeight: 700,
                   fontSize: 12,
                   whiteSpace: "nowrap",
                 }}
@@ -2024,7 +1986,7 @@ function MenuItem(props: {
 
             {/* Role */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>Signer en tant que</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Signer en tant que</div>
               <select
                 value={role}
                 onChange={(e) => {
@@ -2037,7 +1999,7 @@ function MenuItem(props: {
                   borderRadius: 12,
                   border: "1px solid var(--border)",
                   background: "white",
-                  fontWeight: 900,
+                  fontWeight: 700,
                 }}
               >
                 <option value="LOCATAIRE">Locataire</option>
@@ -2051,7 +2013,7 @@ function MenuItem(props: {
             {/* Locataire multi */}
             {role === "LOCATAIRE" && hasMultipleTenants ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>
+                <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>
                   Locataire signataire (obligatoire)
                 </div>
                 <select
@@ -2063,7 +2025,7 @@ function MenuItem(props: {
                     borderRadius: 12,
                     border: "1px solid var(--border)",
                     background: "white",
-                    fontWeight: 900,
+                    fontWeight: 700,
                   }}
                 >
                   <option value="">— Sélectionner —</option>
@@ -2084,7 +2046,7 @@ function MenuItem(props: {
 
             {/* Document */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>Document à signer</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Document à signer</div>
 
               {role === "GARANT" ? (
                 <select
@@ -2097,7 +2059,7 @@ function MenuItem(props: {
                     borderRadius: 12,
                     border: "1px solid var(--border)",
                     background: "white",
-                    fontWeight: 900,
+                    fontWeight: 700,
                     cursor: guarantorSignables.length ? "pointer" : "not-allowed",
                   }}
                 >
@@ -2124,7 +2086,7 @@ function MenuItem(props: {
                     borderRadius: 12,
                     border: "1px solid var(--border)",
                     background: "white",
-                    fontWeight: 900,
+                    fontWeight: 700,
                     cursor: landlordSignables.length ? "pointer" : "not-allowed",
                   }}
                 >
@@ -2148,7 +2110,7 @@ function MenuItem(props: {
 
             {/* Nom */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900 }}>Nom signataire</div>
+              <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700 }}>Nom signataire</div>
               <input
                 value={role === "LOCATAIRE" ? tenantName : role === "BAILLEUR" ? landlordName : guarantorName}
                 onChange={(e) => {
@@ -2162,7 +2124,7 @@ function MenuItem(props: {
                   borderRadius: 12,
                   border: "1px solid var(--border)",
                   background: "white",
-                  fontWeight: 900,
+                  fontWeight: 700,
                   boxSizing: "border-box",
                 }}
               />
@@ -2171,7 +2133,7 @@ function MenuItem(props: {
             <div style={{ height: 12 }} />
 
             {/* Pad */}
-            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 900, marginBottom: 6 }}>Signature</div>
+            <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 700, marginBottom: 6 }}>Signature</div>
 
             <div
               style={{
@@ -2212,7 +2174,7 @@ function MenuItem(props: {
                   border: "1px solid var(--border)",
                   background: "white",
                   cursor: "pointer",
-                  fontWeight: 900,
+                  fontWeight: 700,
                 }}
               >
                 Effacer
@@ -2229,11 +2191,12 @@ function MenuItem(props: {
                   flex: 1,
                   padding: "10px 12px",
                   borderRadius: 12,
-                  border: "1px solid rgba(37,99,235,0.25)",
-                  background: "var(--primary)",
+                  border: "1px solid rgba(29,78,216,0.18)",
+                  background: "#1d4ed8",
                   color: "white",
                   cursor: "pointer",
-                  fontWeight: 950,
+                  fontWeight: 800,
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
                   opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
                 }}
               >
@@ -2252,7 +2215,7 @@ function MenuItem(props: {
                   background: "rgba(100,116,139,0.06)",
                 }}
               >
-                <div style={{ fontWeight: 900, fontSize: 12, color: "var(--muted)" }}>Statut</div>
+                <div style={{ fontWeight: 800, fontSize: 12, color: "var(--muted)" }}>Statut</div>
                 <div style={{ marginTop: 4, fontWeight: 800 }}>{status}</div>
               </div>
             ) : null}
@@ -2266,7 +2229,7 @@ function MenuItem(props: {
                   border: "1px solid rgba(239,68,68,0.25)",
                   background: "rgba(239,68,68,0.08)",
                   color: "var(--danger)",
-                  fontWeight: 900,
+                  fontWeight: 800,
                 }}
               >
                 {error}
@@ -2299,14 +2262,14 @@ function card(border: string) {
   } as const;
 }
 
-function btnPrimarySmall(blue: string) {
+function btnPrimarySmall() {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: `1px solid rgba(31,111,235,0.35)`,
-    background: "rgba(31,111,235,0.10)",
-    color: "#0b2a6f",
-    fontWeight: 800,
+    border: `1px solid rgba(148,163,184,0.24)`,
+    background: "#f8fafc",
+    color: "#0f172a",
+    fontWeight: 700,
     cursor: "pointer",
     textAlign: "center" as const,
   } as const;
@@ -2319,7 +2282,7 @@ function btnSecondary(border: string) {
     border: `1px solid ${border}`,
     background: "#fff",
     cursor: "pointer",
-    fontWeight: 700,
+    fontWeight: 600,
   } as const;
 }
 
@@ -2330,7 +2293,7 @@ function btnAction(border: string) {
     border: `1px solid ${border}`,
     background: "#fff",
     cursor: "pointer",
-    fontWeight: 700,
+    fontWeight: 600,
     minWidth: 160,
     textAlign: "center" as const,
   } as const;
