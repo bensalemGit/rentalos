@@ -1,12 +1,6 @@
 "use client";
 import React from "react";
 
-const brandBlue = "#356AC3";
-const borderSoft = "#d9dee7";
-const borderSoftStrong = "#cfd7e3";
-const textStrong = "#1f2937";
-const textSoft = "#64748b";
-
 export type SignableCardAction = {
   label: string;
   onClick: () => void | Promise<void>;
@@ -14,6 +8,12 @@ export type SignableCardAction = {
   disabled?: boolean;
   title?: string;
 };
+
+const brandBlue = "#2F5FB8";
+const borderSoft = "#dde3ec";
+const borderSoftStrong = "#cfd8e3";
+const textStrong = "#172033";
+const textSoft = "#667085";
 
 export function SignableCard(props: {
   title: string;
@@ -33,27 +33,19 @@ export function SignableCard(props: {
         background: "#fff",
         padding: 14,
         marginTop: 12,
+        boxShadow: "0 2px 6px rgba(15,23,42,0.03)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 12,
-          alignItems: "flex-start",
-        }}
-      >
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <h3
               style={{
                 margin: 0,
-                fontSize: 16,
-                lineHeight: 1.25,
-                fontWeight: 700,
+                fontSize: 15.5,
+                fontWeight: 800,
                 color: textStrong,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                letterSpacing: -0.02,
               }}
             >
               {props.title}
@@ -62,18 +54,7 @@ export function SignableCard(props: {
           </div>
 
           {props.subtitle ? (
-            <div
-              style={{
-                marginTop: 8,
-                color: textSoft,
-                fontSize: 13,
-                lineHeight: 1.45,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              {props.subtitle}
-            </div>
+            <div style={{ marginTop: 8, color: textSoft, fontSize: 13, lineHeight: 1.5 }}>{props.subtitle}</div>
           ) : null}
         </div>
 
@@ -89,13 +70,11 @@ export function SignableCard(props: {
                 borderRadius: 14,
                 border: `1px solid ${brandBlue}`,
                 background: brandBlue,
-                color: "#ffffff",
-                fontWeight: 700,
-                fontSize: 14,
-                lineHeight: 1.2,
+                color: "#fff",
+                fontWeight: 600,
                 cursor: a.disabled ? "not-allowed" : "pointer",
-                opacity: a.disabled ? 0.45 : 1,
-                boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
+                opacity: a.disabled ? 0.55 : 1,
+                boxShadow: "0 8px 18px rgba(47,95,184,0.16), inset 0 -1px 0 rgba(0,0,0,0.08)",
                 fontFamily:
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}
@@ -114,14 +93,12 @@ export function SignableCard(props: {
                 padding: "10px 14px",
                 borderRadius: 14,
                 border: `1px solid ${borderSoftStrong}`,
-                background: "#ffffff",
-                color: "#0f172a",
-                fontWeight: 700,
-                fontSize: 14,
-                lineHeight: 1.2,
+                background: "#fff",
+                color: "#243041",
+                fontWeight: 600,
                 cursor: a.disabled ? "not-allowed" : "pointer",
-                opacity: a.disabled ? 0.45 : 1,
-                boxShadow: "0 1px 1px rgba(15,23,42,0.03)",
+                opacity: a.disabled ? 0.55 : 1,
+                boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
                 fontFamily:
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}

@@ -1,17 +1,16 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
 import { SignableCard } from "./_components/SignableCard";
 
-const brandBlue = "#356AC3";
-const brandBlueHover = "#2F5DAE";
-const textStrong = "#1f2937";
-const textSoft = "#64748b";
-const borderSoft = "#d9dee7";
-const borderSoftStrong = "#cfd7e3";
+const brandBlue = "#2F5FB8";
+const brandBlueHover = "#284FA0";
+const textStrong = "#172033";
+const textSoft = "#667085";
+const borderSoft = "#dde3ec";
+const borderSoftStrong = "#cfd8e3";
 const bgSoft = "#f8fafc";
 
 
@@ -19,8 +18,9 @@ const ui = {
   card: {
     background: "#ffffff",
     border: `1px solid ${borderSoft}`,
-    borderRadius: 22,
-    boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+    borderRadius: 24,
+    boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
+    transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
   } as React.CSSProperties,
   hTitle: {
     fontSize: 18,
@@ -32,7 +32,7 @@ const ui = {
   } as React.CSSProperties,
   sub: {
     fontSize: 13,
-    color: "var(--muted)",
+    color: textSoft,
     marginTop: 4,
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -46,12 +46,12 @@ function Badge({
   tone: "success" | "warning" | "danger" | "neutral" | "primary";
   children: React.ReactNode;
 }) {
-  const map: any = {
-    success: { bg: "rgba(22,163,74,0.11)", fg: "#2f7a4b", bd: "transparent" },
-    warning: { bg: "rgba(217,119,6,0.10)", fg: "#b45309", bd: "transparent" },
-    danger: { bg: "rgba(239,68,68,0.10)", fg: "#b91c1c", bd: "transparent" },
-    neutral: { bg: "rgba(100,116,139,0.10)", fg: "#64748b", bd: "transparent" },
-    primary: { bg: "rgba(53,106,195,0.10)", fg: brandBlue, bd: "transparent" },
+    const map: any = {
+    success: { bg: "rgba(34,197,94,0.08)", fg: "#1f7a57", bd: "transparent" },
+    warning: { bg: "rgba(245,158,11,0.10)", fg: "#b45309", bd: "rgba(245,158,11,0.22)" },
+    danger: { bg: "rgba(239,68,68,0.08)", fg: "#b42318", bd: "transparent" },
+    neutral: { bg: "rgba(100,116,139,0.08)", fg: "#667085", bd: "transparent" },
+    primary: { bg: "rgba(47,95,184,0.09)", fg: brandBlue, bd: "transparent" },
   };
   const s = map[tone];
   return (
@@ -59,13 +59,13 @@ function Badge({
       style={{
         display: "inline-flex",
         alignItems: "center",
-        padding: "4px 11px",
+        padding: "5px 12px",
         borderRadius: 999,
-        border: "1px solid transparent",
+        border: `1px solid ${s.bd}`,
         background: s.bg,
         color: s.fg,
         fontWeight: 700,
-        fontSize: 11.5,
+        fontSize: 11,
         letterSpacing: -0.01,
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -85,11 +85,11 @@ const Btn = React.forwardRef<
 >(function Btn({ variant, children, ...rest }, ref) {
   const base: React.CSSProperties = {
     padding: "10px 14px",
-    borderRadius: 14,
-    fontWeight: 700,
+    borderRadius: 15,
+    fontWeight: 600,
     cursor: "pointer",
-    border: "1px solid var(--border)",
-    transition: "background 120ms ease, box-shadow 120ms ease, border-color 120ms ease",
+    border: `1px solid ${borderSoft}`,
+    transition: "background 140ms ease, box-shadow 140ms ease, border-color 140ms ease, transform 140ms ease",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   };
@@ -100,13 +100,14 @@ const Btn = React.forwardRef<
       background: brandBlue,
       border: `1px solid ${brandBlue}`,
       color: "white",
-      boxShadow: "inset 0 -1px 0 rgba(0,0,0,0.08), 0 1px 2px rgba(53,106,195,0.14)",
+      boxShadow: "0 6px 14px rgba(47,95,184,0.16), inset 0 -1px 0 rgba(0,0,0,0.08)",
     },
     secondary: {
       ...base,
-      background: bgSoft,
-      color: "#1e293b",
+      background: "#ffffff",
+      color: "#243041",
       border: `1px solid ${borderSoftStrong}`,
+      boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
     },
     ghost: {
       ...base,
@@ -129,38 +130,44 @@ function Card({
   subtitle,
   right,
   children,
+  toneStyle,
 }: {
   id?: string;
-  title: string;
-  subtitle?: string;
+  title: React.ReactNode;
+  subtitle?: React.ReactNode;
   right?: React.ReactNode;
   children: React.ReactNode;
+  toneStyle?: React.CSSProperties;
 }) {
   return (
-    <section id={id} style={{ ...ui.card, padding: 16 }}>
+    <section
+      id={id}
+      className="workflow-card"
+      style={{ ...ui.card, ...toneStyle, padding: 22 }}
+    >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div>
           <div
             style={{
               fontWeight: 800,
-              fontSize: 14,
+              fontSize: 15,
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              color: "#0f172a",
+              gap: 9,
+              color: textStrong,
+              letterSpacing: -0.01,
               fontFamily:
                 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
           >
-            {sectionIcon(id)}
-            <span>{title}</span>
+            {title}
           </div>
           {subtitle ? (
             <div
               style={{
-                fontSize: 12,
-                color: "#64748b",
-                marginTop: 4,
+                fontSize: 12.5,
+                color: textSoft,
+                marginTop: 5,
                 fontFamily:
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}
@@ -295,114 +302,88 @@ function countMissingFromSignatureStatus(sigStatus: any) {
   return { missing: missingCount, label, firstAnchor };
 }
 
-function scrollToAnchor(id: string) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  el.scrollIntoView({ behavior: "smooth", block: "start" });
+function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
+  const styles =
+    state === "done"
+      ? {
+          background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)",
+          border: "2px solid #22c55e",
+          color: "#15803d",
+          boxShadow: "0 0 0 6px rgba(34,197,94,0.10)",
+        }
+      : state === "current"
+        ? {
+            background: "linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%)",
+            border: "2px solid #f59e0b",
+            color: "#b45309",
+            boxShadow: "0 0 0 6px rgba(245,158,11,0.12)",
+          }
+        : {
+            background: "#ffffff",
+            border: `2px solid ${borderSoftStrong}`,
+            color: "#667085",
+            boxShadow: "0 0 0 4px rgba(148,163,184,0.08)",
+          };
+
+  return (
+    <span
+      aria-hidden="true"
+      style={{
+        width: 30,
+        height: 30,
+        borderRadius: 999,
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        fontSize: 12,
+        fontWeight: 800,
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+        ...styles,
+      }}
+    >
+      {state === "done" ? "✓" : step}
+    </span>
+  );
 }
 
-function sectionIcon(sectionId?: string) {
-  const wrapStyle: React.CSSProperties = {
-    width: 18,
-    height: 18,
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
+function workflowCardTone(state: "done" | "current" | "todo"): React.CSSProperties {
+  if (state === "done") {
+    return {
+      border: "1px solid rgba(34,197,94,0.24)",
+      background: "linear-gradient(180deg, #ffffff 0%, #f6fdf8 100%)",
+      boxShadow:
+        "0 16px 34px rgba(34,197,94,0.07), 0 2px 6px rgba(15,23,42,0.03)",
+    };
+  }
+
+  if (state === "current") {
+    return {
+      border: "1px solid rgba(245,158,11,0.44)",
+      background: "linear-gradient(180deg, #fffdf8 0%, #fff7ed 100%)",
+      boxShadow:
+        "0 24px 50px rgba(245,158,11,0.16), 0 6px 18px rgba(245,158,11,0.10), 0 2px 6px rgba(15,23,42,0.03)",
+      transform: "translateY(-3px)",
+    };
+  }
+
+  return {
+    border: `1px solid ${borderSoft}`,
+    background: "#ffffff",
+    boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
+    opacity: 0.96,
   };
+}
 
-  if (sectionId === "contract") {
-    return (
-      <span aria-hidden="true" style={{ ...wrapStyle, color: "#6f8fb8" }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M8 3h6l5 5v11a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinejoin="round"
-          />
-          <path d="M14 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
-          <path d="M9 13h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <path d="M9 17h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </span>
-    );
-  }
 
-  if (sectionId === "tenants") {
-    return (
-      <span aria-hidden="true" style={{ ...wrapStyle, color: "#7a6fd0" }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M16 21v-2a4 4 0 0 0-4-4H7a4 4 0 0 0-4 4v2"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <circle cx="9.5" cy="7" r="3" stroke="currentColor" strokeWidth="2" />
-          <path
-            d="M22 21v-2a4 4 0 0 0-3-3.87"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M16 4.13a3 3 0 0 1 0 5.82"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
-    );
-  }
-
-  if (sectionId === "guarantees") {
-    return (
-      <span aria-hidden="true" style={{ ...wrapStyle, color: "#7ea98b" }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M12 3l7 3v6c0 5-3.5 8-7 9-3.5-1-7-4-7-9V6l7-3Z"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </span>
-    );
-  }
-
-  if (sectionId === "edl-inv") {
-    return (
-      <span aria-hidden="true" style={{ ...wrapStyle, color: "#6f8fb8" }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-          <rect x="6" y="4" width="12" height="16" rx="2" stroke="currentColor" strokeWidth="2" />
-          <path d="M9 8h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <path d="M9 12h6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-          <path d="M9 16h4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-        </svg>
-      </span>
-    );
-  }
-
+function sectionIcon(sectionId?: string) {
+  if (sectionId === "contract") return stepCircle(1, "todo");
+  if (sectionId === "guarantees") return stepCircle(2, "todo");
+  if (sectionId === "edl-inv") return stepCircle(3, "todo");
   return null;
 }
 
-const anchorTabStyle: React.CSSProperties = {
-  background: "#ffffff",
-  border: "1px solid #d5dbe5",
-  borderRadius: 12,
-  padding: "8px 12px",
-  fontWeight: 700,
-  color: "#0f172a",
-  textDecoration: "none",
-  boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-  fontFamily:
-    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-};
 
 const API =
   typeof window !== "undefined"
@@ -480,7 +461,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [showContractDetails, setShowContractDetails] = useState(false);
   const [showGuaranteesDetails, setShowGuaranteesDetails] = useState(false);
   const [showEdlInvDetails, setShowEdlInvDetails] = useState(false);
-  const [showTenantsDetails, setShowTenantsDetails] = useState(false);
 
   // canvas unique
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -1104,6 +1084,7 @@ function onPointerUp(e: any) {
   }, [leaseKind]);
 
   const hasMultipleTenants = useMemo(() => (tenants?.length || 0) > 1, [tenants]);
+  const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
 
   const selectedTenant = useMemo(() => {
     const id = String(selectedTenantId || "").trim();
@@ -1114,7 +1095,21 @@ function onPointerUp(e: any) {
   // keep tenantName synced when selection changes (unless user edits manually afterwards)
   useEffect(() => {
     if (selectedTenant) setTenantName(normalizeTenantName(selectedTenant));
-  }, [selectedTenantId]);
+  }, [selectedTenant]);
+
+    useEffect(() => {
+    if (!sigStatus) return;
+    if (dossier.missing === 0) return;
+
+    const el = document.getElementById(dossier.firstAnchor);
+    if (!el) return;
+
+    const id = window.setTimeout(() => {
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
+
+    return () => window.clearTimeout(id);
+  }, [sigStatus, dossier]);
 
 
   // ✅ Patch 4.A — documents signables par le bailleur (contrat + actes caution)
@@ -1462,7 +1457,7 @@ function MenuItem({
         background: "transparent",
         cursor: disabled ? "not-allowed" : "pointer",
         fontWeight: 700,
-        color: disabled ? "#9ca3af" : "var(--text)",
+        color: disabled ? "#9ca3af" : textStrong,
         display: "flex",
         alignItems: "center",
         gap: 10,
@@ -1508,22 +1503,26 @@ function DetailToggle({
   onClick: () => void;
 }) {
   return (
-    <button
-      onClick={onClick}
-      style={{
-        border: "none",
-        background: "transparent",
-        color: brandBlue,
-        cursor: "pointer",
-        fontWeight: 700,
-        padding: 0,
-        fontFamily:
-          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-      }}
-    >
-      {open ? "Masquer le détail" : "Voir le détail"}
-    </button>
-  );
+  <button
+    onClick={onClick}
+    style={{
+      border: "none",
+      background: "transparent",
+      color: brandBlue,
+      cursor: "pointer",
+      fontWeight: 600,
+      fontSize: 13,
+      padding: 0,
+      display: "inline-flex",
+      alignItems: "center",
+      gap: 6,
+      fontFamily:
+        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+    }}
+  >
+    {open ? "Détails ▴" : "Détails ▾"}
+  </button>
+);
 }
 
 function SummaryRow({
@@ -1545,14 +1544,10 @@ function SummaryRow({
       }}
     >
       <div style={{ fontWeight: 700 }}>{label}</div>
-      <div style={{ color: "var(--muted)", fontWeight: 700 }}>{status}</div>
+      <div style={{ color: textSoft, fontWeight: 700 }}>{status}</div>
     </div>
   );
 }
-
-
-
-    const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
 
     const contractStatusValue = sigStatus?.contract?.status || "—";
 
@@ -1606,24 +1601,6 @@ function SummaryRow({
       </span>
     );
 
-    const contractSignersSummary = (() => {
-      if (!sigStatus) return "Chargement…";
-
-      const roles: string[] = [];
-      const tenantsToSign = sigStatus.contract.tenants.filter((t) => t.signatureStatus !== "SIGNED").length;
-
-      if (tenantsToSign > 0) {
-        roles.push(tenantsToSign > 1 ? `${tenantsToSign} locataires` : "locataire");
-      }
-
-      if (String(sigStatus.contract.landlord.signatureStatus || "").toUpperCase() !== "SIGNED") {
-        roles.push("bailleur");
-      }
-
-      if (roles.length === 0) return "Aucune signature requise";
-
-      return `Signatures requises : ${roles.join(", ")}`;
-    })();
 
     const tenantsList = sigStatus?.contract?.tenants || [];
 
@@ -1631,35 +1608,6 @@ function SummaryRow({
     const tenantsSignedCount = tenantsList.filter((t) => t.signatureStatus === "SIGNED").length;
     const tenantsPendingCount = tenantsList.filter((t) => t.signatureStatus !== "SIGNED").length;
 
-    const tenantsSummaryChip = (
-      <Badge
-        tone={
-          !sigStatus
-            ? "neutral"
-            : tenantsTotalCount === 0
-              ? "neutral"
-              : tenantsPendingCount === 0
-                ? "success"
-                : "warning"
-        }
-      >
-        {!sigStatus
-          ? "Chargement…"
-          : tenantsTotalCount === 0
-            ? "Aucun locataire"
-            : tenantsPendingCount === 0
-              ? "Tous signés"
-              : `${tenantsPendingCount} à signer`}
-      </Badge>
-    );
-
-    const tenantsSummaryText = !sigStatus
-      ? "Chargement…"
-      : tenantsTotalCount === 0
-        ? "Aucun locataire"
-        : tenantsPendingCount === 0
-          ? `${tenantsSignedCount} signataire(s), tous signés`
-          : `${tenantsPendingCount} signature(s) en attente`;
 
     const guaranteesCount = sigStatus?.guarantees?.length || 0;
     const guaranteesUnsignedCount = sigStatus?.guarantees?.filter((g) => g.signatureStatus !== "SIGNED").length || 0;
@@ -1714,6 +1662,53 @@ function SummaryRow({
         ? "Tous les documents sont prêts"
         : `${edlInvMissingCount} documents restants`;
 
+    const contractStepState: "done" | "current" | "todo" =
+      contractStatusValue === "SIGNED"
+        ? "done"
+        : contractStatusValue === "IN_PROGRESS" || contractStatusValue === "DRAFT"
+          ? "current"
+          : "todo";
+
+  const guaranteesStepState: "done" | "current" | "todo" =
+    guaranteesCount === 0
+      ? "todo"
+      : guaranteesUnsignedCount === 0
+        ? "done"
+        : "current";
+
+  const edlStepState: "done" | "current" | "todo" =
+    edlInvMissingCount === 0
+      ? "done"
+      : edlDocsFlat.length > 0
+        ? "current"
+        : "todo";
+
+  const workflowStates = [
+    contractStepState,
+    guaranteesStepState,
+    edlStepState,
+  ] as const;
+
+  const contractNarrative =
+    contractStepState === "done"
+      ? "Contrat finalisé et signatures terminées"
+      : tenantsPendingCount > 0
+        ? `${tenantsPendingCount} signature(s) locataire en attente`
+        : "Contrat à générer ou à finaliser";
+
+  const guaranteesNarrative =
+    guaranteesCount === 0
+      ? "Aucune garantie rattachée au dossier"
+      : guaranteesUnsignedCount === 0
+        ? "Toutes les garanties sont finalisées"
+        : `${guaranteesUnsignedCount} garantie(s) encore à traiter`;
+
+  const edlNarrative =
+    edlInvMissingCount === 0
+      ? "Tous les documents EDL / inventaire sont prêts"
+      : `${edlInvMissingCount} document(s) EDL / inventaire restants`;
+
+
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
       <div
@@ -1728,17 +1723,17 @@ function SummaryRow({
         <h1
           style={{
             margin: 0,
-            fontSize: 34,
-            lineHeight: 1.05,
+            fontSize: 40,
+            lineHeight: 1,
             fontWeight: 800,
-            letterSpacing: -0.045,
+            letterSpacing: -0.05,
             color: textStrong,
             fontFamily:
               'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 }}
         >
           <span style={{ fontWeight: 800 }}>Signature</span>{" "}
-          <span style={{ fontWeight: 500 }}>& Documents</span>
+          <span style={{ fontWeight: 400, color: "#243041" }}>& documents</span>
         </h1>
 
         <Btn
@@ -1776,127 +1771,190 @@ function SummaryRow({
       <div
         style={{
           ...ui.card,
-          padding: "28px 32px",
-          display: "flex",
-          justifyContent: "space-between",
-          gap: 24,
-          alignItems: "flex-start",
+          padding: "30px 32px",
+          display: "grid",
+          gap: 18,
         }}
       >
-        <div>
-          <div
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              color: textStrong,
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            }}
-          >
-            Bail #{leaseId.slice(0, 8)}…
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 20,
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ minWidth: 280 }}>
+            <div
+              style={{
+                fontSize: 24,
+                fontWeight: 800,
+                color: textStrong,
+                letterSpacing: -0.04,
+                fontFamily:
+                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              }}
+            >
+              Bail #{leaseId.slice(0, 8)}…
+            </div>
+
+            <div
+              style={{
+                marginTop: 12,
+                fontSize: 15.5,
+                lineHeight: 1.65,
+                color: "#334155",
+                fontFamily:
+                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              }}
+            >
+              <span style={{ color: textSoft }}>Locataire :</span>{" "}
+              <span style={{ fontWeight: 700, color: textStrong }}>
+                {sigStatus?.contract?.tenants?.[0]?.fullName || tenants?.[0]?.full_name || "—"}
+              </span>
+              {" — "}
+              <span style={{ color: textSoft }}>Statut :</span>{" "}
+              <span style={{ color: dossier.missing > 0 ? "#b45309" : "#2f7a4b", fontWeight: 700 }}>
+                {!sigStatus
+                  ? "Chargement…"
+                  : tenantsTotalCount > 0
+                    ? tenantsPendingCount === 0
+                      ? `Tous signés (${tenantsSignedCount}/${tenantsTotalCount})`
+                      : `Signatures en attente (${tenantsSignedCount}/${tenantsTotalCount})`
+                    : dossier.missing === 0
+                      ? "Dossier prêt"
+                      : `${dossier.missing} action(s) restante(s)`}
+              </span>
+            </div>
           </div>
 
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            {!sigStatus ? (
+              <Badge tone="neutral">Chargement…</Badge>
+            ) : dossier.missing > 0 ? (
+              <Badge tone="warning">{`${dossier.missing} action(s) à faire`}</Badge>
+            ) : (
+              <Badge tone="success">Dossier prêt</Badge>
+            )}
+          </div>
+        </div>
+
+        <div style={{ display: "grid", gap: 8 }}>
           <div
             style={{
-              marginTop: 16,
-              fontSize: 16,
-              lineHeight: 1.5,
-              color: "#334155",
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              height: 7,
+              borderRadius: 999,
+              background: "#eef3f8",
+              overflow: "hidden",
             }}
           >
-            <span style={{ color: "#64748b" }}>Locataire :</span>{" "}
-            <span style={{ fontWeight: 800, color: "#1f2937" }}>
-              {sigStatus?.contract?.tenants?.[0]?.fullName || tenants?.[0]?.full_name || "—"}
-            </span>
-            {" — "}
-            <span style={{ color: "#64748b" }}>Statut :</span>{" "}
-            <span style={{ color: "#b45309", fontWeight: 700 }}>
-              {!sigStatus
-                ? "Chargement…"
-                : tenantsTotalCount > 0
-                  ? tenantsPendingCount === 0
-                    ? `Tous signés (${tenantsSignedCount}/${tenantsTotalCount})`
-                    : `Signatures en attente (${tenantsSignedCount}/${tenantsTotalCount})`
+            <div
+              style={{
+                width: !sigStatus
+                  ? "18%"
                   : dossier.missing === 0
-                    ? "Dossier prêt"
-                    : `${dossier.missing} action(s) restante(s)`}
-            </span>
+                    ? "100%"
+                    : tenantsTotalCount > 0
+                      ? `${Math.max(18, Math.round((tenantsSignedCount / Math.max(tenantsTotalCount, 1)) * 100))}%`
+                      : "42%",
+                height: "100%",
+                borderRadius: 999,
+                background: dossier.missing === 0 ? "#66a884" : "#d49447",
+                transition: "width 180ms ease",
+              }}
+            />
           </div>
-        </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-          {!sigStatus ? (
-            <Badge tone="neutral">Chargement…</Badge>
-          ) : dossier.missing > 0 ? (
-            <Badge tone="warning">{`${dossier.missing} action(s) à faire`}</Badge>
-          ) : (
-            <Badge tone="success">Dossier prêt</Badge>
-          )}
-
-          <Btn
-            variant="primary"
-            onClick={() => scrollToAnchor(dossier.firstAnchor)}
-            disabled={!sigStatus}
-            title={!sigStatus ? "Charge d’abord le statut" : ""}
+          <div
             style={{
-              padding: "12px 18px",
-              borderRadius: 16,
-              background: brandBlue,
-              border: `1px solid ${brandBlue}`,
-              boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
           >
-            Terminer le dossier
-          </Btn>
+            <Badge tone={contractStepState === "done" ? "success" : "warning"}>
+              1. {contractStepState === "done" ? "Contrat signé" : contractStatusLabel === "Non généré" ? "Contrat non généré" : `Contrat ${contractStatusLabel.toLowerCase()}`}
+            </Badge>
+
+            <Badge tone={tenantsPendingCount === 0 ? "success" : "warning"}>
+              2. Locataires {tenantsPendingCount === 0 ? "tous signés" : `${tenantsPendingCount} en attente`}
+            </Badge>
+
+            <Badge
+              tone={
+                guaranteesCount === 0
+                  ? "neutral"
+                  : guaranteesUnsignedCount === 0
+                    ? "success"
+                    : "warning"
+              }
+            >
+              3. Garanties{" "}
+              {guaranteesCount === 0
+                ? "aucune"
+                : guaranteesUnsignedCount === 0
+                  ? "finalisées"
+                  : `${guaranteesUnsignedCount} restantes`}
+            </Badge>
+
+            <Badge tone={edlInvMissingCount === 0 ? "success" : "warning"}>
+              4. EDL / Inventaires {edlInvMissingCount === 0 ? "prêts" : `${edlInvMissingCount} restants`}
+            </Badge>
+          </div>
         </div>
-      </div>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 2 }}>
-        <a href="#contract" style={anchorTabStyle}>
-          Contrat
-        </a>
-        <a href="#tenants" style={anchorTabStyle}>
-          Locataires
-        </a>
-        <a href="#guarantees" style={anchorTabStyle}>
-          Garanties
-        </a>
-        <a href="#edl-inv" style={anchorTabStyle}>
-          EDL & Inventaires
-        </a>
       </div>
       <style dangerouslySetInnerHTML={{ __html: `html{scroll-behavior:smooth}` }} />
-
       <div
         style={{
           display: "grid",
           gridTemplateColumns: "1fr 420px",
           gap: 16,
           alignItems: "end",
-          marginTop: 4,
+          marginTop: 10,
           marginBottom: -2,
         }}
       >
         <div
           style={{
-            fontSize: 16,
+            fontSize: 18,
             fontWeight: 800,
-            letterSpacing: 0.8,
-            color: "#334155",
+            letterSpacing: 0.02,
+            color: "#344054",
             textTransform: "uppercase",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
             fontFamily:
               'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           }}
         >
-          Documents
+          <>
+            <span
+              aria-hidden="true"
+              style={{
+                width: 10,
+                height: 10,
+                borderRadius: 999,
+                background: dossier.missing === 0 ? "#22c55e" : "#f59e0b",
+                boxShadow:
+                  dossier.missing === 0
+                    ? "0 0 0 6px rgba(34,197,94,0.10)"
+                    : "0 0 0 6px rgba(245,158,11,0.10)",
+              }}
+            />
+            Workflow
+          </>
         </div>
         <div
           style={{
-            fontSize: 16,
+            fontSize: 18,
             fontWeight: 800,
-            letterSpacing: 0.8,
-            color: "#334155",
+            letterSpacing: 0.04,
+            color: "#344054",
             textTransform: "uppercase",
             fontFamily:
               'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -1907,13 +1965,63 @@ function SummaryRow({
       </div>
 
       <div className="sign-grid" style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16, alignItems: "start" }}>
-        <div style={{ display: "grid", gap: 16 }}>
+        <div
+          style={{
+            position: "relative",
+            display: "grid",
+            gap: 18,
+            paddingLeft: 28,
+          }}
+        >
+          <div
+            aria-hidden="true"
+            style={{
+              position: "absolute",
+              left: 15,
+              top: 10,
+              bottom: 10,
+              width: 3,
+              borderRadius: 999,
+              background: "#e6edf5",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                height:
+                  workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
+                    ? "100%"
+                    : workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "current"
+                      ? "86%"
+                      : workflowStates[0] === "done" && workflowStates[1] === "current"
+                        ? "58%"
+                        : workflowStates[0] === "done"
+                          ? "38%"
+                          : workflowStates[0] === "current"
+                            ? "20%"
+                            : "0%",
+                background:
+                  workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
+                    ? "linear-gradient(180deg, #22c55e 0%, #16a34a 100%)"
+                    : "linear-gradient(180deg, #22c55e 0%, #16a34a 42%, #f59e0b 78%, #fbbf24 100%)",
+                borderRadius: 999,
+                transition: "height 240ms ease",
+              }}
+            />
+          </div>
           {/* LEFT COLUMN START */}
 
       <Card
         id="contract"
-        title="Contrat de location"
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            {stepCircle(1, contractStepState)}
+            <span>Contrat de location</span>
+          </span>
+        }
         subtitle="Document principal du bail"
+        toneStyle={{ ...workflowCardTone(contractStepState), ...workflowAccentBar(contractStepState) }}
         right={
           <button
             type="button"
@@ -1923,150 +2031,97 @@ function SummaryRow({
               setContractMenuOpen((v) => !v);
             }}
             style={{
-            border: "none",
-            background: "transparent",
-            cursor: "pointer",
-            fontSize: 18,
-            lineHeight: 1,
-            color: "#94a3b8",
-            padding: 2,
-          }}
-                    >
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
+              cursor: "pointer",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#64748b",
+              fontSize: 16,
+              lineHeight: 1,
+              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+            }}
+          >
             ⋯
           </button>
         }
       >
-          {contractMenuOpen ? (
-            <InlineMenu title="Contrat">
+        {contractMenuOpen ? (
+          <InlineMenu title="Contrat">
+            <MenuItem
+              icon="+"
+              onClick={() => {
+                setContractMenuOpen(false);
+                generateContract();
+              }}
+            >
+              Générer PDF
+            </MenuItem>
+
+            <MenuItem
+              icon="↓"
+              onClick={() => {
+                setContractMenuOpen(false);
+                downloadContractPdf();
+              }}
+              disabled={!contractDoc?.id}
+            >
+              Télécharger contrat
+            </MenuItem>
+
+            <MenuItem
+              icon="→"
+              onClick={() => {
+                setContractMenuOpen(false);
+                sendPublicLink(false);
+              }}
+              disabled={!contractDoc?.id}
+            >
+              Envoyer liens locataires
+            </MenuItem>
+
+            <MenuItem
+              icon="↻"
+              onClick={() => {
+                setContractMenuOpen(false);
+                sendPublicLink(true);
+              }}
+              disabled={!contractDoc?.id}
+            >
+              Renvoyer liens
+            </MenuItem>
+
+            {isRP ? (
+              <MenuItem
+                icon="+"
+                onClick={() => {
+                  setContractMenuOpen(false);
+                  generateNotice();
+                }}
+              >
+                Générer notice
+              </MenuItem>
+            ) : null}
+
+            {isRP ? (
               <MenuItem
                 icon="↓"
                 onClick={() => {
                   setContractMenuOpen(false);
-                  downloadContractPdf();
+                  downloadNoticePdf();
                 }}
-                disabled={!contractDoc?.id}
+                disabled={!noticeDoc?.id}
               >
-                Télécharger contrat
+                Télécharger notice
               </MenuItem>
+            ) : null}
+          </InlineMenu>
+        ) : null}
 
-              {isRP ? (
-                <MenuItem
-                  icon="+"
-                  onClick={() => {
-                    setContractMenuOpen(false);
-                    generateNotice();
-                  }}
-                >
-                  Générer notice
-                </MenuItem>
-              ) : null}
-
-              {isRP ? (
-                <MenuItem
-                  icon="↓"
-                  onClick={() => {
-                    setContractMenuOpen(false);
-                    downloadNoticePdf();
-                  }}
-                  disabled={!noticeDoc?.id}
-                >
-                  Télécharger notice
-                </MenuItem>
-              ) : null}
-            </InlineMenu>
-          ) : null}
-
-          {!sigStatus && loadingSigStatus ? (
-            <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-          ) : null}
-
-          {sigStatusError ? (
-            <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-          ) : null}
-
-          {sigStatus ? (
-            <>
-              <SignableCard
-                title="Contrat de location"
-                statusChip={contractStatusChip}
-                subtitle={
-                  <div style={{ display: "grid", gap: 6 }}>
-                    <div>{contractSignersSummary}</div>
-                  </div>
-                }
-                actions={[
-                  {
-                    label: "Générer PDF",
-                    kind: "primary",
-                    onClick: generateContract,
-                  },
-                  {
-                    label: "Télécharger",
-                    kind: "secondary",
-                    disabled: !sigStatus.contract.documentId,
-                    onClick: () =>
-                      sigStatus.contract.documentId &&
-                      downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
-                  },
-                  {
-                    label: "Télécharger signé",
-                    kind: "secondary",
-                    disabled: !sigStatus.contract.signedFinalDocumentId,
-                    onClick: () =>
-                      sigStatus.contract.signedFinalDocumentId &&
-                      downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
-                  },
-                ]}
-              />
-
-              <div style={{ marginTop: 10 }}>
-                <DetailToggle
-                  open={showContractDetails}
-                  onClick={() => setShowContractDetails((v) => !v)}
-                />
-              </div>
-
-              {showContractDetails ? (
-                <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
-                  {finalSignedDoc?.id ? (
-                    <div style={card(border)}>
-                      <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
-                      <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
-                      <button
-                        onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)}
-                        style={btnPrimarySmall()}
-                      >
-                        Télécharger PDF signé
-                      </button>
-                    </div>
-                  ) : null}
-
-                  {packFinalV2Doc?.id ? (
-                    <div style={card(border)}>
-                      <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
-                      <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
-                      <button
-                        onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
-                        style={btnPrimarySmall()}
-                      >
-                        Télécharger PACK_FINAL signé
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
-              ) : null}
-            </>
-          ) : null}
-      </Card>
-      
-      {/* ========================= */}
-      {/* Locataires (signature)    */}
-      {/* ========================= */}
-      <Card
-        id="tenants"
-        title="Suivi des signatures locataires"
-        subtitle="Envoi et relance des liens de signature"
-      >
         {!sigStatus && loadingSigStatus ? (
           <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
         ) : null}
@@ -2076,97 +2131,199 @@ function SummaryRow({
         ) : null}
 
         {sigStatus ? (
-          <SignableCard
-            title="Liens de signature"
-            statusChip={tenantsSummaryChip}
-            subtitle={
-              <div style={{ display: "grid", gap: 6 }}>
-                <div>{tenantsSummaryText}</div>
+          <>
+
+
+            {contractStepState === "current" ? (
+              <div style={{ marginBottom: 10 }}>
+                <Badge tone="warning">Étape active</Badge>
               </div>
-            }
-            actions={[
-              {
-                label: "Envoyer les liens",
-                kind: "primary",
-                disabled: !contractDoc?.id,
-                onClick: () => sendPublicLink(false),
-              },
-              {
-                label: "Renvoyer",
-                kind: "secondary",
-                disabled: !contractDoc?.id,
-                onClick: () => sendPublicLink(true),
-              },
-            ]}
-          />
-        ) : null}
+            ) : null}
 
-        <div style={{ marginTop: 10 }}>
-          <DetailToggle
-            open={showTenantsDetails}
-            onClick={() => setShowTenantsDetails((v) => !v)}
-          />
-        </div>
-
-        {showTenantsDetails ? (
-          <div style={{ marginTop: 12 }}>
-            {!sigStatus?.contract?.tenants?.length ? (
-              <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Aucun locataire.</div>
-            ) : (
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {sigStatus.contract.tenants.map((t) => (
+            <SignableCard
+              title="Contrat de location"
+              statusChip={contractStatusChip}
+              subtitle={
+                <div style={{ display: "grid", gap: 10 }}>
                   <div
-                    key={t.leaseTenantId}
-                    style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12 }}
+                    style={{
+                      fontSize: 13,
+                      color: contractStepState === "done" ? "#15803d" : "#b45309",
+                      fontWeight: 700,
+                    }}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        gap: 12,
-                        alignItems: "flex-start",
-                        flexWrap: "wrap",
-                      }}
-                    >
-                      <div style={{ minWidth: 240 }}>
-                        <div style={{ fontWeight: 800 }}>
-                          {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
-                        </div>
+                    {contractNarrative}
+                  </div>
 
-                        <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                          Statut:{" "}
-                          <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                            {humanDocStatus(t.signatureStatus)}
-                          </span>
-                          {t.lastLink?.createdAt ? (
-                            <span style={{ marginLeft: 8 }}>
-                              (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
+                  <div style={{ display: "grid", gap: 6 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ fontWeight: 700, color: textStrong }}>Statut contrat :</span>
+                      {contractStatusChip}
+                    </div>
 
-                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                        <button
-                          style={btnSecondary()}
-                          onClick={() => fetchSignatureStatus(leaseId)}
-                        >
-                          Rafraîchir statuts
-                        </button>
-                      </div>
+                    <div style={{ fontSize: 13.5, color: textSoft }}>
+                      <strong style={{ color: textStrong }}>Locataires :</strong>{" "}
+                      {tenantsSignedCount}/{tenantsTotalCount} signés
+                    </div>
+
+                    <div style={{ fontSize: 13.5, color: textSoft }}>
+                      <strong style={{ color: textStrong }}>Bailleur :</strong>{" "}
+                      {String(sigStatus.contract.landlord.signatureStatus || "").toUpperCase() === "SIGNED"
+                        ? "signé"
+                        : "à signer"}
                     </div>
                   </div>
-                ))}
+
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {tenantsPendingCount === 0 ? (
+                      <Badge tone="success">Tous signés</Badge>
+                    ) : (
+                      <Badge tone="warning">{`${tenantsPendingCount} à signer`}</Badge>
+                    )}
+
+                    <span style={{ fontSize: 13, color: textSoft }}>
+                      {tenantsPendingCount === 0
+                        ? `${tenantsSignedCount} signataire(s), tous signés`
+                        : `${tenantsPendingCount} signature(s) en attente`}
+                    </span>
+                  </div>
+                </div>
+              }
+              actions={[
+                {
+                  label: "Télécharger",
+                  kind: "primary",
+                  disabled: !sigStatus.contract.documentId,
+                  onClick: () =>
+                    sigStatus.contract.documentId &&
+                    downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
+                },
+                {
+                  label: "PDF signé",
+                  kind: "secondary",
+                  disabled: !sigStatus.contract.signedFinalDocumentId,
+                  onClick: () =>
+                    sigStatus.contract.signedFinalDocumentId &&
+                    downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
+                },
+              ]}
+            />
+
+            <div style={{ marginTop: 10 }}>
+              <DetailToggle
+                open={showContractDetails}
+                onClick={() => setShowContractDetails((v) => !v)}
+              />
+            </div>
+
+            {showContractDetails ? (
+              <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+                {finalSignedDoc?.id ? (
+                  <div style={card(border)}>
+                    <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
+                    <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
+                    <button
+                      onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)}
+                      style={btnPrimarySmall()}
+                    >
+                      Télécharger PDF signé
+                    </button>
+                  </div>
+                ) : null}
+
+                {packFinalV2Doc?.id ? (
+                  <div style={card(border)}>
+                    <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
+                    <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
+                    <button
+                      onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
+                      style={btnPrimarySmall()}
+                    >
+                      Télécharger PACK_FINAL signé
+                    </button>
+                  </div>
+                ) : null}
+
+                <div style={card(border)}>
+                  <h3 style={{ marginTop: 0, marginBottom: 10 }}>Suivi des signatures locataires</h3>
+
+                  {!sigStatus?.contract?.tenants?.length ? (
+                    <div style={{ fontSize: 13, color: muted }}>Aucun locataire.</div>
+                  ) : (
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {sigStatus.contract.tenants.map((t) => (
+                        <div
+                          key={t.leaseTenantId}
+                          style={{
+                            border: `1px solid ${border}`,
+                            borderRadius: 14,
+                            padding: 12,
+                          }}
+                        >
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              gap: 12,
+                              alignItems: "flex-start",
+                              flexWrap: "wrap",
+                            }}
+                          >
+                            <div style={{ minWidth: 240 }}>
+                              <div style={{ fontWeight: 800 }}>
+                                {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
+                              </div>
+
+                              <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                                Statut:{" "}
+                                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                                  {humanDocStatus(t.signatureStatus)}
+                                </span>
+                                {t.lastLink?.createdAt ? (
+                                  <span style={{ marginLeft: 8 }}>
+                                    (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+
+                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                              <button
+                                style={btnSecondary()}
+                                onClick={() => fetchSignatureStatus(leaseId)}
+                              >
+                                Rafraîchir statuts
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            ) : null}
+          </>
         ) : null}
       </Card>
-
+      
       <Card
         id="guarantees"
-        title="Garanties"
+        title={
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+            {stepCircle(2, guaranteesStepState)}
+            <span>Garanties</span>
+          </span>
+        }
         subtitle="Actes de caution"
+        toneStyle={{ ...workflowCardTone(guaranteesStepState), ...workflowAccentBar(guaranteesStepState) }}
         right={
           <button
             type="button"
@@ -2176,13 +2333,19 @@ function SummaryRow({
               setGuaranteesMenuOpen((v) => !v);
             }}
             style={{
-              border: "none",
-              background: "transparent",
+              width: 32,
+              height: 32,
+              borderRadius: 10,
+              border: "1px solid #e5e7eb",
+              background: "#ffffff",
               cursor: "pointer",
-              fontSize: 18,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "#64748b",
+              fontSize: 16,
               lineHeight: 1,
-              color: "#94a3b8",
-              padding: 2,
+              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
             }}
           >
             ⋯
@@ -2211,6 +2374,12 @@ function SummaryRow({
           <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
         ) : null}
 
+        {guaranteesStepState === "current" ? (
+          <div style={{ marginBottom: 10 }}>
+            <Badge tone="warning">Étape active</Badge>
+          </div>
+        ) : null}  
+
         {sigStatus ? (
           <SignableCard
             title="Garanties"
@@ -2220,8 +2389,25 @@ function SummaryRow({
               </Badge>
             }
             subtitle={
-              <div style={{ display: "grid", gap: 6 }}>
-                <div>{guaranteesSummaryText}</div>
+              <div style={{ display: "grid", gap: 8 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color:
+                      guaranteesStepState === "done"
+                        ? "#15803d"
+                        : guaranteesStepState === "current"
+                          ? "#b45309"
+                          : textSoft,
+                    fontWeight: 700,
+                  }}
+                >
+                  {guaranteesNarrative}
+                </div>
+
+                <div style={{ color: textSoft, fontSize: 13.5 }}>
+                  {guaranteesSummaryText}
+                </div>
               </div>
             }
             actions={[
@@ -2351,8 +2537,14 @@ function SummaryRow({
       {sigStatus && (
         <Card
           id="edl-inv"
-          title="EDL & Inventaires"
+          title={
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+              {stepCircle(3, edlStepState)}
+              <span>EDL & Inventaires</span>
+            </span>
+          }
           subtitle="Entrée, sortie et packs"
+          toneStyle={{ ...workflowCardTone(edlStepState), ...workflowAccentBar(edlStepState) }}
           right={
             <button
               type="button"
@@ -2362,13 +2554,19 @@ function SummaryRow({
                 setEdlMenuOpen((v) => !v);
               }}
               style={{
-                border: "none",
-                background: "transparent",
+                width: 32,
+                height: 32,
+                borderRadius: 10,
+                border: "1px solid #e5e7eb",
+                background: "#ffffff",
                 cursor: "pointer",
-                fontSize: 18,
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "#64748b",
+                fontSize: 16,
                 lineHeight: 1,
-                color: "#94a3b8",
-                padding: 2,
+                boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
               }}
             >
               ⋯
@@ -2410,14 +2608,37 @@ function SummaryRow({
             </InlineMenu>
           ) : null}
 
+          {edlStepState === "current" ? (
+            <div style={{ marginBottom: 10 }}>
+              <Badge tone="warning">Étape active</Badge>
+            </div>
+          ) : null}
+
           <SignableCard
             title="EDL & Inventaires"
             statusChip={edlInvSummaryChip}
             subtitle={
-              <div style={{ display: "grid", gap: 2 }}>
-                <SummaryRow label="Pack entrée" status={packEntryStatus} />
-                <SummaryRow label="Pack sortie" status={packExitStatus} />
-                <SummaryRow label="EDL / Inventaires" status={edlInvDocsSummaryText} />
+              <div style={{ display: "grid", gap: 8 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color:
+                      edlStepState === "done"
+                        ? "#15803d"
+                        : edlStepState === "current"
+                          ? "#b45309"
+                          : textSoft,
+                    fontWeight: 700,
+                  }}
+                >
+                  {edlNarrative}
+                </div>
+
+                <div style={{ display: "grid", gap: 2 }}>
+                  <SummaryRow label="Pack entrée" status={packEntryStatus} />
+                  <SummaryRow label="Pack sortie" status={packExitStatus} />
+                  <SummaryRow label="EDL / Inventaires" status={edlInvDocsSummaryText} />
+                </div>
               </div>
             }
             actions={[
@@ -2593,17 +2814,29 @@ function SummaryRow({
           <div
             style={{
               background: "#fff",
-              border: "1px solid #d9dee7",
-              borderRadius: 22,
-              padding: 18,
-              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+              border: `1px solid ${borderSoft}`,
+              borderRadius: 24,
+              padding: 20,
+              boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
             }}
           >
-            <div style={{ height: 2 }} />
+            <div
+              style={{
+                fontSize: 20,
+                fontWeight: 800,
+                color: textStrong,
+                letterSpacing: -0.03,
+                marginBottom: 16,
+                fontFamily:
+                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              }}
+            >
+              Poste de signature
+            </div>
 
             {/* Role */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>Signer en tant que</div>
+              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Signer en tant que</div>
               <select
                 value={role}
                 onChange={(e) => {
@@ -2612,11 +2845,13 @@ function SummaryRow({
                 }}
                 style={{
                   width: "100%",
-                  padding: "10px 12px",
+                  padding: "11px 13px",
                   borderRadius: 14,
                   border: `1px solid ${borderSoftStrong}`,
                   background: "#fff",
-                  fontWeight: 700,
+                  fontWeight: 500,
+                  fontSize: 14.5,
+                  boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
                   color: "#1f2937",
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2633,7 +2868,7 @@ function SummaryRow({
             {/* Locataire multi */}
             {role === "LOCATAIRE" && hasMultipleTenants ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>
+                <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
                   Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
                 </div>
                 <select
@@ -2641,11 +2876,13 @@ function SummaryRow({
                   onChange={(e) => setSelectedTenantId(e.target.value)}
                   style={{
                     width: "100%",
-                    padding: "10px 12px",
+                    padding: "11px 13px",
                     borderRadius: 14,
                     border: `1px solid ${borderSoftStrong}`,
                     background: "#fff",
                     fontWeight: 500,
+                    fontSize: 14.5,
+                    boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
                     color: "#1f2937",
                     fontFamily:
                       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2669,7 +2906,7 @@ function SummaryRow({
 
             {/* Document */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>Document à signer</div>
+              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Document à signer</div>
 
               {role === "GARANT" ? (
                 <select
@@ -2678,11 +2915,13 @@ function SummaryRow({
                   disabled={guarantorSignables.length === 0}
                   style={{
                     width: "100%",
-                    padding: "10px 12px",
+                    padding: "11px 13px",
                     borderRadius: 14,
                     border: `1px solid ${borderSoftStrong}`,
                     background: "#fff",
                     fontWeight: 500,
+                    fontSize: 14.5,
+                    boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
                     color: "#1f2937",
                     fontFamily:
                       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2708,11 +2947,13 @@ function SummaryRow({
                   disabled={!landlordSignables.length}
                   style={{
                     width: "100%",
-                    padding: "10px 12px",
+                    padding: "11px 13px",
                     borderRadius: 14,
                     border: `1px solid ${borderSoftStrong}`,
                     background: "#fff",
                     fontWeight: 500,
+                    fontSize: 14.5,
+                    boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
                     color: "#1f2937",
                     fontFamily:
                       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2729,7 +2970,7 @@ function SummaryRow({
               )}
 
               {role === "GARANT" && selectedGuarantor && !selectedGuarantor.documentId ? (
-                <div style={{ fontSize: 12, color: "var(--muted)", marginTop: 6 }}>
+                <div style={{ fontSize: 12, color: textSoft, marginTop: 6 }}>
                   Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
                 </div>
               ) : null}
@@ -2739,7 +2980,7 @@ function SummaryRow({
 
             {/* Nom */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12, color: textSoft, fontWeight: 600 }}>Nom signataire</div>
+              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Nom signataire</div>
               <input
                 value={role === "LOCATAIRE" ? tenantName : role === "BAILLEUR" ? landlordName : guarantorName}
                 onChange={(e) => {
@@ -2749,11 +2990,13 @@ function SummaryRow({
                 }}
                 style={{
                   width: "100%",
-                  padding: "10px 12px",
+                  padding: "11px 13px",
                   borderRadius: 14,
                   border: `1px solid ${borderSoftStrong}`,
                   background: "#fff",
                   fontWeight: 500,
+                  fontSize: 14.5,
+                  boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
                   color: "#1f2937",
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2765,15 +3008,16 @@ function SummaryRow({
             <div style={{ height: 12 }} />
 
             {/* Pad */}
-            <div style={{ fontSize: 12, color: textSoft, fontWeight: 600, marginBottom: 6 }}>Signature</div>
+            <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01, marginBottom: 6 }}>Signature</div>
 
             <div
               style={{
                 width: "100%",
-                height: 180,
-                borderRadius: 12,
+                height: 182,
+                borderRadius: 14,
                 border: `1px solid ${borderSoftStrong}`,
-                background: "white",
+                background: "#ffffff",
+                boxShadow: "inset 0 1px 2px rgba(15,23,42,0.02)",
                 overflow: "hidden",
               }}
             >
@@ -2801,11 +3045,13 @@ function SummaryRow({
                 onClick={clearCanvas}
                 style={{
                   flex: 1,
-                  padding: "10px 12px",
+                  padding: "11px 13px",
                   borderRadius: 14,
                   border: `1px solid ${borderSoftStrong}`,
                   background: "#fff",
-                  fontWeight: 700,
+                  fontWeight: 600,
+                  fontSize: 14.5,
+                  boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
                   color: "#1f2937",
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2829,8 +3075,8 @@ function SummaryRow({
                   background: brandBlue,
                   color: "white",
                   cursor: "pointer",
-                  fontWeight: 500,
-                  boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
+                  fontWeight: 600,
+                  boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
                   opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2847,11 +3093,11 @@ function SummaryRow({
                   marginTop: 12,
                   padding: 10,
                   borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: "rgba(100,116,139,0.06)",
+                  border: "1px solid rgba(148,163,184,0.18)",
+                  background: "#f8fafc",
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 12, color: "var(--muted)" }}>Statut</div>
+                <div style={{ fontWeight: 800, fontSize: 12, color: textSoft }}>Statut</div>
                 <div style={{ marginTop: 4, fontWeight: 800 }}>{status}</div>
               </div>
             ) : null}
@@ -2862,9 +3108,9 @@ function SummaryRow({
                   marginTop: 12,
                   padding: 10,
                   borderRadius: 12,
-                  border: "1px solid rgba(239,68,68,0.25)",
-                  background: "rgba(239,68,68,0.08)",
-                  color: "var(--danger)",
+                  border: "1px solid rgba(239,68,68,0.18)",
+                  background: "rgba(239,68,68,0.06)",
+                  color: "#b42318",
                   fontWeight: 800,
                 }}
               >
@@ -2877,15 +3123,62 @@ function SummaryRow({
       <style
         dangerouslySetInnerHTML={{
           __html: `
+            .workflow-card{
+              position: relative;
+            }
+
+            .workflow-card::before{
+              content: "";
+              position: absolute;
+              left: -18px;
+              top: 30px;
+              width: 14px;
+              height: 2px;
+              background: #dbe4ee;
+              border-radius: 999px;
+            }
+
+            .workflow-card:hover{
+              transform: translateY(-2px);
+              box-shadow: 0 18px 36px rgba(15,23,42,0.08), 0 4px 10px rgba(15,23,42,0.04);
+            }
+
+            #edl-inv:hover{
+              transform: translateY(-5px) !important;
+              box-shadow:
+                0 34px 70px rgba(245,158,11,0.20),
+                0 12px 28px rgba(245,158,11,0.12),
+                0 4px 10px rgba(15,23,42,0.04) !important;
+            }
+
             @media (max-width: 1100px){
               .sign-grid { grid-template-columns: 1fr !important; }
               .sign-sticky { position: static !important; top:auto !important; }
+              .workflow-card::before{ display:none; }
             }
           `,
         }}
-/>
+      />
     </div>
   );
+}
+
+function workflowAccentBar(state: "done" | "current" | "todo"): React.CSSProperties {
+  if (state === "done") {
+    return {
+      borderLeft: "4px solid #22c55e",
+    };
+  }
+
+  if (state === "current") {
+    return {
+      borderLeft: "4px solid #f59e0b",
+    };
+  }
+
+  return {
+    borderLeft: "4px solid transparent",
+  };
 }
 
 function card(border: string) {
@@ -2905,10 +3198,10 @@ function btnPrimarySmall() {
     border: `1px solid ${brandBlue}`,
     background: brandBlue,
     color: "#fff",
-    fontWeight: 700,
+    fontWeight: 600,
     cursor: "pointer",
     textAlign: "center" as const,
-    boxShadow: "0 1px 2px rgba(53,106,195,0.18)",
+    boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
@@ -2921,9 +3214,9 @@ function btnSecondary() {
     border: `1px solid ${borderSoftStrong}`,
     background: "#ffffff",
     cursor: "pointer",
-    fontWeight: 700,
-    color: "#0f172a",
-    boxShadow: "0 1px 1px rgba(15,23,42,0.03)",
+    fontWeight: 600,
+    color: "#243041",
+    boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
@@ -2936,11 +3229,11 @@ function btnAction() {
     border: `1px solid ${borderSoftStrong}`,
     background: "#ffffff",
     cursor: "pointer",
-    fontWeight: 700,
+    fontWeight: 600,
     minWidth: 160,
     textAlign: "center" as const,
-    color: "#0f172a",
-    boxShadow: "0 1px 1px rgba(15,23,42,0.03)",
+    color: "#243041",
+    boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
@@ -2950,23 +3243,23 @@ function btnAction() {
 function statusPillStyle(tone: "success" | "warning" | "neutral") {
   if (tone === "success") {
     return {
-      background: "rgba(22,163,74,0.10)",
-      color: "#15803d",
+      background: "rgba(34,197,94,0.08)",
+      color: "#1f7a57",
       border: "1px solid transparent",
     } as const;
   }
 
   if (tone === "warning") {
     return {
-      background: "rgba(217,119,6,0.10)",
+      background: "rgba(245,158,11,0.10)",
       color: "#b45309",
-      border: "1px solid transparent",
+      border: "1px solid rgba(245,158,11,0.22)",
     } as const;
   }
 
   return {
-    background: "#f1f5f9",
-    color: "#64748b",
+    background: "rgba(100,116,139,0.08)",
+    color: "#667085",
     border: "1px solid transparent",
   } as const;
 }
