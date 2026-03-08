@@ -407,6 +407,9 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
         style={{
           ...getCardSurface(task, isActive),
           padding: 14,
+          height: "100%",
+          display: "flex",
+          flexDirection: "column",
         }}
         onMouseEnter={(e) => {
           if (isActive) return;
@@ -546,6 +549,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
             paddingTop: 10,
             display: "grid",
             gap: 10,
+            flex: 1,
           }}
         >
           <div
@@ -628,8 +632,9 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
               gap: 8,
               flexWrap: "wrap",
               alignItems: "center",
+              marginTop: "auto",
             }}
-          >
+>
             {primaryAction ? (
               <button
                 type="button"
