@@ -1,7 +1,5 @@
 import React from "react";
 import type { SignerTask } from "../_types/signature-center.types";
-import { toneFromTaskStatus } from "../_lib/signature-status.helpers";
-import { taskBadgeStyle } from "../_lib/signature-ui.helpers";
 
 type SignerCardProps = {
   task: SignerTask;
@@ -13,681 +11,733 @@ type SignerCardProps = {
   onPrepare: (task: SignerTask) => void;
 };
 
-const textStrong = "#172033";
-const textSoft = "#667085";
-const borderSoft = "#dde3ec";
+type ProgressItem = {
+  label: string;
+  done: boolean;
+};
 
-function stepStyles(state: "done" | "current" | "todo") {
-  if (state === "done") {
+type HistoryItem = {
+  key: string;
+  label: string;
+};
+
+const COLORS = {
+  textStrong: "#172033",
+  textSoft: "#667085",
+  textMuted: "#98A2B3",
+  border: "#D9E2EC",
+  borderSoft: "#E9EEF5",
+  borderStrong: "#C7D3E0",
+  surface: "#FFFFFF",
+  surfaceSoft: "#FCFDFE",
+  blue: "#1D4ED8",
+  blueSoft: "#EEF4FF",
+  blueBorder: "#C7D7FE",
+  green: "#16A34A",
+  greenSoft: "#F0FDF4",
+  greenBorder: "#BBF7D0",
+  amber: "#D97706",
+  amberSoft: "#FFF7ED",
+  amberBorder: "#FED7AA",
+  red: "#DC2626",
+  redSoft: "#FEF2F2",
+  redBorder: "#FECACA",
+  purple: "#7C3AED",
+  purpleSoft: "#F5F3FF",
+  purpleBorder: "#DDD6FE",
+  graySoft: "#F8FAFC",
+};
+
+function getFirstName(name: string) {
+  const clean = name.trim();
+  if (!clean) return "";
+  return clean.split(/\s+/)[0] ?? clean;
+}
+
+function formatShortDate(input?: string | null) {
+  if (!input) return null;
+  const date = new Date(input);
+  if (Number.isNaN(date.getTime())) return null;
+
+  return new Intl.DateTimeFormat("fr-FR", {
+    day: "numeric",
+    month: "short",
+  }).format(date);
+}
+
+function getRoleChip(task: SignerTask) {
+  if (task.kind === "TENANT") {
     return {
-      dotBg: "#22c55e",
-      dotRing: "0 0 0 5px rgba(34,197,94,0.10)",
-      labelColor: "#15803d",
-      lineColor: "#22c55e",
+      label: task.roleLabel.toUpperCase(),
+      background: COLORS.blueSoft,
+      border: COLORS.blueBorder,
+      color: COLORS.blue,
     };
   }
 
-  if (state === "current") {
+  if (task.kind === "GUARANTOR") {
     return {
-      dotBg: "#f59e0b",
-      dotRing: "0 0 0 5px rgba(245,158,11,0.12)",
-      labelColor: "#b45309",
-      lineColor: "#f59e0b",
+      label: task.roleLabel.toUpperCase(),
+      background: COLORS.purpleSoft,
+      border: COLORS.purpleBorder,
+      color: COLORS.purple,
     };
   }
 
   return {
-    dotBg: "#cbd5e1",
-    dotRing: "0 0 0 5px rgba(203,213,225,0.14)",
-    labelColor: "#94a3b8",
-    lineColor: "#e2e8f0",
+    label: task.roleLabel.toUpperCase(),
+    background: "#F3F4F6",
+    border: "#E5E7EB",
+    color: "#475467",
   };
 }
 
-function cardSurfaceStyle(status: SignerTask["status"]) {
-  if (status === "SIGNED") {
+function getStatusPill(task: SignerTask) {
+  if (task.status === "SIGNED") {
     return {
-      border: "1px solid rgba(34,197,94,0.22)",
-      background: "linear-gradient(180deg, #ffffff 0%, #f6fdf8 100%)",
-      boxShadow: "0 10px 24px rgba(34,197,94,0.06), 0 2px 6px rgba(15,23,42,0.03)",
-      opacity: 0.96,
-    } as const;
+      label: "Signé",
+      background: COLORS.greenSoft,
+      border: COLORS.greenBorder,
+      color: COLORS.green,
+    };
   }
 
-  if (status === "NOT_REQUIRED") {
+  if (task.status === "LINK_SENT") {
     return {
-      border: "1px solid rgba(203,213,225,0.9)",
-      background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-      boxShadow: "0 8px 22px rgba(15,23,42,0.03), 0 2px 6px rgba(15,23,42,0.02)",
-      opacity: 0.94,
-    } as const;
+      label: "Lien envoyé",
+      background: COLORS.amberSoft,
+      border: COLORS.amberBorder,
+      color: COLORS.amber,
+    };
   }
 
-  if (status === "READY" || status === "LINK_SENT" || status === "IN_PROGRESS") {
+  if (task.status === "IN_PROGRESS") {
     return {
-      border: "1px solid rgba(245,158,11,0.28)",
-      background: "linear-gradient(180deg, #ffffff 0%, #fffaf2 100%)",
-      boxShadow: "0 16px 34px rgba(245,158,11,0.10), 0 4px 12px rgba(15,23,42,0.04)",
-      opacity: 1,
-    } as const;
+      label: "En cours",
+      background: COLORS.amberSoft,
+      border: COLORS.amberBorder,
+      color: COLORS.amber,
+    };
   }
 
-  return {
-    border: `1px solid ${borderSoft}`,
-    background: "#ffffff",
-    boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
-    opacity: 1,
-  } as const;
-}
-
-function activeSessionSurfaceStyle(isActive: boolean) {
-  if (!isActive) return {};
-
-  return {
-    border: "1px solid rgba(47,95,184,0.26)",
-    background: "linear-gradient(180deg, #ffffff 0%, #f7fbff 100%)",
-    boxShadow: "0 18px 38px rgba(47,95,184,0.12), 0 4px 12px rgba(15,23,42,0.04)",
-    transform: "translateY(-1px)",
-  } as const;
-}
-
-function roleAccentStyle(kind: SignerTask["kind"]) {
-  if (kind === "TENANT") {
+  if (task.status === "READY") {
     return {
-      background: "rgba(47,95,184,0.09)",
-      color: "#2F5FB8",
-    } as const;
+      label: "Prêt à signer",
+      background: COLORS.blueSoft,
+      border: COLORS.blueBorder,
+      color: COLORS.blue,
+    };
   }
 
-  if (kind === "GUARANTOR") {
+  if (task.status === "NOT_REQUIRED") {
     return {
-      background: "rgba(124,58,237,0.08)",
-      color: "#6d28d9",
-    } as const;
+      label: "Non requis",
+      background: COLORS.graySoft,
+      border: "#E2E8F0",
+      color: "#64748B",
+    };
   }
-
-  return {
-    background: "rgba(15,23,42,0.06)",
-    color: "#334155",
-  } as const;
-}
-
-export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(function SignerCard(
-  {
-    task,
-    isActive,
-    onStartOnSite,
-    onSendEmail,
-    onResendEmail,
-    onDownloadSigned,
-    onPrepare,
-  },
-  ref,
-) {
-  const tone = toneFromTaskStatus(task.status);
-
-  const surfaceStyle = cardSurfaceStyle(task.status);
-  const accentStyle = roleAccentStyle(task.kind);
-  const activeStyle = activeSessionSurfaceStyle(isActive);
-
-  let primaryAction: "PREPARE" | "SIGN" | "SEND" | "RESEND" | "DOWNLOAD" | null = null;
 
   if (task.requiresPreparation) {
-    primaryAction = "PREPARE";
-  } else if (task.status === "LINK_SENT") {
-    primaryAction = "RESEND";
-  } else if (task.status === "READY") {
-    primaryAction = "SIGN";
-  } else if (task.status === "SIGNED") {
-    primaryAction = "DOWNLOAD";
-  } else if (task.canSendEmailLink) {
-    primaryAction = "SEND";
+    return {
+      label: "À préparer",
+      background: COLORS.amberSoft,
+      border: COLORS.amberBorder,
+      color: COLORS.amber,
+    };
   }
 
-  const prepState: "done" | "current" | "todo" =
-    task.status === "NOT_REQUIRED"
-      ? "done"
-      : task.requiresPreparation
-        ? "current"
-        : "done";
+  return {
+    label: task.statusLabel || "En attente",
+    background: COLORS.graySoft,
+    border: "#E2E8F0",
+    color: "#64748B",
+  };
+}
 
-  const signatureState: "done" | "current" | "todo" =
-    task.status === "NOT_REQUIRED"
-      ? "done"
-      : task.status === "SIGNED"
-        ? "done"
-        : task.status === "READY" || task.status === "LINK_SENT" || task.status === "IN_PROGRESS"
-          ? "current"
-          : task.requiresPreparation
-            ? "todo"
-            : "todo";
+function buildProgressItems(task: SignerTask): ProgressItem[] {
+  if (task.status === "NOT_REQUIRED") {
+    return [{ label: "Aucune signature requise", done: true }];
+  }
 
-  const finalState: "done" | "current" | "todo" =
-    task.status === "SIGNED" || task.status === "NOT_REQUIRED" ? "done" : "todo";
+  if (task.progressLabel) {
+    const rawParts = task.progressLabel
+      .split(/•|·|\||,/g)
+      .map((part) => part.trim())
+      .filter(Boolean);
 
-  const prepUi = stepStyles(prepState);
-  const signatureUi = stepStyles(signatureState);
-  const finalUi = stepStyles(finalState);
+    if (rawParts.length > 0) {
+      return rawParts.map((part) => ({
+        label: part,
+        done: /signé|finalisé|disponible|reçu/i.test(part),
+      }));
+    }
+  }
 
-  return (
-    <div
-      ref={ref}
-      style={{
-        borderRadius: 20,
-        padding: 18,
-        display: "grid",
-        gap: 14,
-        transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
-        ...surfaceStyle,
-        ...activeStyle,
-      }}
-      onMouseEnter={(e) => {
-        if (isActive) return;
-        if (task.status === "SIGNED" || task.status === "NOT_REQUIRED") return;
-        e.currentTarget.style.transform = "translateY(-2px)";
-      }}
-      onMouseLeave={(e) => {
-        if (isActive) {
+  if (task.kind === "GUARANTOR" && task.status === "SIGNED") {
+    return [{ label: "Garant signé", done: true }];
+  }
+
+  if (task.kind === "LANDLORD" && task.status === "SIGNED") {
+    return [{ label: "Bailleur signé", done: true }];
+  }
+
+  if (task.kind === "TENANT" && task.status === "SIGNED") {
+    return [{ label: `${getFirstName(task.displayName)} signé`, done: true }];
+  }
+
+  if (task.requiresPreparation) {
+    return [
+      {
+        label: task.preparationLabel || "Document à préparer",
+        done: false,
+      },
+    ];
+  }
+
+  if (task.kind === "GUARANTOR") {
+    return [{ label: "Garant à signer", done: false }];
+  }
+
+  if (task.kind === "LANDLORD") {
+    return [{ label: "Bailleur à signer", done: false }];
+  }
+
+  return [{ label: `${getFirstName(task.displayName)} à signer`, done: false }];
+}
+
+function buildHistoryPreview(task: SignerTask): HistoryItem[] {
+  const items: HistoryItem[] = [];
+
+  if (task.activeLinkCreatedAt) {
+    items.push({
+      key: "link",
+      label: `${formatShortDate(task.activeLinkCreatedAt) ?? "—"} · lien envoyé`,
+    });
+  }
+
+  if (task.status === "SIGNED") {
+    items.push({
+      key: "signed",
+      label: "Signature reçue",
+    });
+  }
+
+  if (task.signedFinalDocumentId) {
+    items.push({
+      key: "pdf",
+      label: "PDF signé disponible",
+    });
+  }
+
+  if (items.length === 0 && task.helperLabel) {
+    items.push({
+      key: "helper",
+      label: task.helperLabel,
+    });
+  }
+
+  if (items.length === 0 && task.requiresPreparation) {
+    items.push({
+      key: "prep",
+      label: task.preparationLabel || "Document à préparer",
+    });
+  }
+
+  return items.slice(0, 2);
+}
+
+function getPrimaryAction(task: SignerTask) {
+  if (task.requiresPreparation) {
+    return {
+      key: "prepare" as const,
+      label: task.kind === "GUARANTOR" ? "Préparer l’acte" : "Préparer le document",
+    };
+  }
+
+  if (task.status === "SIGNED" && task.canDownloadSigned) {
+    return {
+      key: "download" as const,
+      label: "Télécharger signé",
+    };
+  }
+
+  if (task.canSignOnSite && task.status !== "SIGNED" && task.status !== "NOT_REQUIRED") {
+    return {
+      key: "sign" as const,
+      label: "Signer sur place",
+    };
+  }
+
+  if (task.status === "LINK_SENT" && task.canResendLink) {
+    return {
+      key: "resend" as const,
+      label: "Renvoyer un lien",
+    };
+  }
+
+  if (task.canSendEmailLink && task.status !== "SIGNED" && task.status !== "NOT_REQUIRED") {
+    return {
+      key: "send" as const,
+      label: "Envoyer un lien",
+    };
+  }
+
+  if (task.canDownloadSigned) {
+    return {
+      key: "download" as const,
+      label: "Télécharger signé",
+    };
+  }
+
+  return null;
+}
+
+function getSecondaryAction(
+  task: SignerTask,
+  primaryKey: "prepare" | "download" | "resend" | "sign" | "send" | null,
+) {
+  if (
+    primaryKey !== "sign" &&
+    task.canSignOnSite &&
+    task.status !== "SIGNED" &&
+    task.status !== "NOT_REQUIRED"
+  ) {
+    return {
+      key: "sign" as const,
+      label: "Signer sur place",
+    };
+  }
+
+  if (
+    primaryKey !== "send" &&
+    primaryKey !== "resend" &&
+    task.canSendEmailLink &&
+    task.status !== "SIGNED" &&
+    task.status !== "NOT_REQUIRED"
+  ) {
+    return {
+      key: task.canResendLink || task.hasActiveLink ? ("resend" as const) : ("send" as const),
+      label: task.canResendLink || task.hasActiveLink ? "Renvoyer un lien" : "Envoyer un lien",
+    };
+  }
+
+  if (primaryKey !== "download" && task.status === "SIGNED" && task.canDownloadSigned) {
+    return {
+      key: "download" as const,
+      label: "Télécharger signé",
+    };
+  }
+
+  return null;
+}
+
+function getCardSurface(task: SignerTask, isActive: boolean): React.CSSProperties {
+  const base: React.CSSProperties = {
+    borderRadius: 16,
+    border: `1px solid ${COLORS.border}`,
+    background: COLORS.surface,
+    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+    transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
+  };
+
+  if (task.status === "SIGNED") {
+    base.border = `1px solid ${COLORS.greenBorder}`;
+    base.background = "linear-gradient(180deg, #FFFFFF 0%, #FBFFFC 100%)";
+  } else if (task.status === "READY" || task.status === "LINK_SENT" || task.status === "IN_PROGRESS") {
+    base.border = `1px solid ${COLORS.amberBorder}`;
+    base.background = "linear-gradient(180deg, #FFFFFF 0%, #FFFDF9 100%)";
+  } else if (task.status === "NOT_REQUIRED") {
+    base.background = COLORS.graySoft;
+  }
+
+  if (isActive) {
+    base.border = "1px solid #93C5FD";
+    base.boxShadow = "0 12px 28px rgba(29, 78, 216, 0.12)";
+  }
+
+  return base;
+}
+
+function runAction(
+  actionKey: "prepare" | "download" | "resend" | "sign" | "send",
+  task: SignerTask,
+  handlers: {
+    onStartOnSite: (task: SignerTask) => void;
+    onSendEmail: (task: SignerTask) => void;
+    onResendEmail: (task: SignerTask) => void;
+    onDownloadSigned: (task: SignerTask) => void;
+    onPrepare: (task: SignerTask) => void;
+  },
+) {
+  switch (actionKey) {
+    case "prepare":
+      handlers.onPrepare(task);
+      return;
+    case "download":
+      handlers.onDownloadSigned(task);
+      return;
+    case "resend":
+      handlers.onResendEmail(task);
+      return;
+    case "sign":
+      handlers.onStartOnSite(task);
+      return;
+    case "send":
+      handlers.onSendEmail(task);
+      return;
+  }
+}
+
+export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
+  function SignerCard(
+    { task, isActive, onStartOnSite, onSendEmail, onResendEmail, onDownloadSigned, onPrepare },
+    ref,
+  ) {
+    const roleChip = getRoleChip(task);
+    const statusPill = getStatusPill(task);
+    const progressItems = buildProgressItems(task);
+    const historyItems = buildHistoryPreview(task);
+    const primaryAction = getPrimaryAction(task);
+    const secondaryAction = getSecondaryAction(task, primaryAction?.key ?? null);
+
+    return (
+      <div
+        ref={ref}
+        style={{
+          ...getCardSurface(task, isActive),
+          padding: 14,
+        }}
+        onMouseEnter={(e) => {
+          if (isActive) return;
+          if (task.status === "SIGNED" || task.status === "NOT_REQUIRED") return;
           e.currentTarget.style.transform = "translateY(-1px)";
-          return;
-        }
-        e.currentTarget.style.transform = "translateY(0)";
-      }}
-    >
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.transform = "translateY(0)";
+        }}
+      >
         <div
           style={{
             display: "flex",
-            justifyContent: "space-between",
-            gap: 16,
             alignItems: "flex-start",
-            flexWrap: "wrap",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 10,
           }}
         >
-          <div style={{ minWidth: 240 }}>
-            <span
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div
               style={{
-                display: "inline-flex",
+                display: "flex",
                 alignItems: "center",
-                width: "fit-content",
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 11.5,
-                fontWeight: 800,
-                letterSpacing: 0.3,
-                textTransform: "uppercase",
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                ...accentStyle,
+                gap: 8,
+                flexWrap: "wrap",
+                marginBottom: 8,
               }}
             >
-              {task.roleLabel}
-            </span>
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  padding: "3px 8px",
+                  borderRadius: 999,
+                  fontSize: 10,
+                  fontWeight: 800,
+                  letterSpacing: "0.03em",
+                  background: roleChip.background,
+                  border: `1px solid ${roleChip.border}`,
+                  color: roleChip.color,
+                }}
+              >
+                {roleChip.label}
+              </span>
 
+              {task.subtypeLabel ? (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    color: COLORS.textMuted,
+                  }}
+                >
+                  {task.subtypeLabel}
+                </span>
+              ) : null}
 
-            {isActive ? (
-              <div style={{ marginTop: 8 }}>
+              {isActive ? (
                 <span
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: 6,
-                    padding: "6px 10px",
+                    padding: "3px 8px",
                     borderRadius: 999,
-                    background: "rgba(47,95,184,0.09)",
-                    color: "#2F5FB8",
-                    fontSize: 11.5,
-                    fontWeight: 800,
-                    letterSpacing: 0.2,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    fontSize: 10,
+                    fontWeight: 700,
+                    background: COLORS.blueSoft,
+                    border: `1px solid ${COLORS.blueBorder}`,
+                    color: COLORS.blue,
                   }}
                 >
-                  <span
-                    aria-hidden="true"
-                    style={{
-                      width: 8,
-                      height: 8,
-                      borderRadius: 999,
-                      background: "#2F5FB8",
-                      boxShadow: "0 0 0 4px rgba(47,95,184,0.12)",
-                    }}
-                  />
                   Session active
                 </span>
-              </div>
-            ) : null}
-
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 19,
-                lineHeight: 1.2,
-                fontWeight: 800,
-                color: textStrong,
-                letterSpacing: -0.02,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              {task.displayName}
+              ) : null}
             </div>
 
-            {task.subtypeLabel ? (
-              <div
-                style={{
-                  marginTop: 6,
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                  color: "#475467",
-                  fontWeight: 700,
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                {task.subtypeLabel}
-              </div>
-            ) : null}
-
             <div
               style={{
-                marginTop: 8,
-                fontSize: 14,
-                color: "#334155",
-                lineHeight: 1.6,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                display: "flex",
+                alignItems: "baseline",
+                gap: 10,
+                flexWrap: "wrap",
+                marginBottom: 4,
               }}
             >
-              <span style={{ color: textSoft }}>Document :</span>{" "}
-              <span style={{ fontWeight: 700, color: textStrong }}>{task.documentLabel}</span>
+              <div
+                style={{
+                  fontSize: 16,
+                  lineHeight: 1.15,
+                  fontWeight: 700,
+                  color: COLORS.textStrong,
+                  letterSpacing: "-0.02em",
+                  wordBreak: "break-word",
+                }}
+              >
+                {task.displayName}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 12,
+                  color: COLORS.textSoft,
+                }}
+              >
+                Document :{" "}
+                <span style={{ color: COLORS.textSoft }}>
+                  {task.documentLabel}
+                </span>
+              </div>
             </div>
           </div>
 
-          {task.status === "SIGNED" && !(task.kind === "GUARANTOR" && task.progressLabel) ? (
-            <div
+          <div style={{ flexShrink: 0 }}>
+            <span
               style={{
                 display: "inline-flex",
                 alignItems: "center",
-                gap: 8,
-                width: "fit-content",
                 padding: "6px 10px",
                 borderRadius: 999,
-                background: "rgba(34,197,94,0.08)",
-                color: "#15803d",
-                fontSize: 12,
+                fontSize: 11,
                 fontWeight: 800,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                background: statusPill.background,
+                border: `1px solid ${statusPill.border}`,
+                color: statusPill.color,
+                whiteSpace: "nowrap",
               }}
             >
-              <span
-                aria-hidden="true"
+              {statusPill.label}
+            </span>
+          </div>
+        </div>
+
+        <div
+          style={{
+            borderTop: `1px solid ${COLORS.borderSoft}`,
+            paddingTop: 10,
+            display: "grid",
+            gap: 10,
+          }}
+        >
+          <div
+            style={{
+              display: "grid",
+              gap: 7,
+            }}
+          >
+            {progressItems.map((item, index) => (
+              <div
+                key={`${item.label}-${index}`}
                 style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: 999,
-                  background: "#22c55e",
-                  boxShadow: "0 0 0 4px rgba(34,197,94,0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: item.done ? COLORS.textStrong : "#475467",
+                  fontWeight: item.done ? 700 : 600,
+                  lineHeight: 1.35,
                 }}
-              />
-              Signature finalisée
-            </div>
-          ) : null}      
+              >
+                <span
+                  style={{
+                    width: 16,
+                    height: 16,
+                    borderRadius: 999,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexShrink: 0,
+                    border: item.done ? `1px solid ${COLORS.green}` : `1px solid #D0D5DD`,
+                    background: item.done ? COLORS.greenSoft : "#FFF",
+                    color: item.done ? COLORS.green : "#98A2B3",
+                    fontSize: 11,
+                    lineHeight: 1,
+                  }}
+                >
+                  {item.done ? "✓" : "○"}
+                </span>
 
+                <span>{item.label}</span>
+              </div>
+            ))}
+          </div>
 
-
-          {task.helperLabel ? (
+          {task.blockedReason ? (
             <div
               style={{
-                marginTop: 6,
-                fontSize: 13.5,
-                color: textSoft,
-                lineHeight: 1.55,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                padding: "6px 8px",
+                borderRadius: 10,
+                border: `1px solid ${COLORS.redBorder}`,
+                background: COLORS.redSoft,
+                fontSize: 11,
+                lineHeight: 1.4,
+                color: COLORS.red,
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ fontSize: 12, lineHeight: 1 }}>!</span>
+              <span>{task.blockedReason}</span>
+            </div>
+          ) : task.helperLabel ? (
+            <div
+              style={{
+                fontSize: 12,
+                lineHeight: 1.45,
+                color: COLORS.textSoft,
               }}
             >
               {task.helperLabel}
             </div>
           ) : null}
 
-          {task.progressLabel ? (
-            <div
-              style={{
-                marginTop: 8,
-                display: "inline-flex",
-                alignItems: "center",
-                width: "fit-content",
-                padding: "7px 11px",
-                borderRadius: 999,
-                background:
-                  task.status === "SIGNED"
-                    ? "rgba(34,197,94,0.08)"
-                    : task.status === "NOT_REQUIRED"
-                      ? "rgba(148,163,184,0.10)"
-                      : "rgba(245,158,11,0.10)",
-                color:
-                  task.status === "SIGNED"
-                    ? "#15803d"
-                    : task.status === "NOT_REQUIRED"
-                      ? "#667085"
-                      : "#b45309",
-                fontSize: 12.5,
-                fontWeight: 800,
-                lineHeight: 1.4,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              {task.progressLabel}
-            </div>
-          ) : null}
-
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "7px 12px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 700,
-              letterSpacing: -0.01,
-              whiteSpace: "nowrap",
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              ...taskBadgeStyle(tone),
-            }}
-          >
-            {task.statusLabel}
-          </span>
-        </div>
-
-        <div
-          style={{
-            display: "grid",
-            gap: 10,
-            padding: "12px 14px",
-            borderRadius: 16,
-            background: "#f8fafc",
-            border: "1px solid rgba(221,227,236,0.75)",
-            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)",
-          }}
-        >
           <div
             style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr 1fr",
-              gap: 12,
-              alignItems: "start",
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 999,
-                    background: prepUi.dotBg,
-                    boxShadow: prepUi.dotRing,
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    color: prepUi.labelColor,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  }}
-                >
-                  Préparation
-                </span>
-              </div>
-
-              <div
+            {primaryAction ? (
+              <button
+                type="button"
+                onClick={() =>
+                  runAction(primaryAction.key, task, {
+                    onStartOnSite,
+                    onSendEmail,
+                    onResendEmail,
+                    onDownloadSigned,
+                    onPrepare,
+                  })
+                }
                 style={{
-                  height: 2,
-                  borderRadius: 999,
-                  background: prepUi.lineColor,
+                  appearance: "none",
+                  border: "1px solid #1D4ED8",
+                  background: "#1D4ED8",
+                  color: "#FFF",
+                  borderRadius: 10,
+                  padding: "9px 13px",
+                  fontSize: 13,
+                  fontWeight: 800,
+                  cursor: "pointer",
+                  boxShadow: "0 5px 14px rgba(29, 78, 216, 0.16)",
                 }}
-              />
-            </div>
+              >
+                {primaryAction.label}
+              </button>
+            ) : null}
 
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 999,
-                    background: signatureUi.dotBg,
-                    boxShadow: signatureUi.dotRing,
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    color: signatureUi.labelColor,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  }}
-                >
-                  Signature
-                </span>
-              </div>
-
-              <div
+            {secondaryAction ? (
+              <button
+                type="button"
+                onClick={() =>
+                  runAction(secondaryAction.key, task, {
+                    onStartOnSite,
+                    onSendEmail,
+                    onResendEmail,
+                    onDownloadSigned,
+                    onPrepare,
+                  })
+                }
                 style={{
-                  height: 2,
-                  borderRadius: 999,
-                  background: signatureUi.lineColor,
+                  appearance: "none",
+                  border: `1px solid ${COLORS.borderStrong}`,
+                  background: "#FFF",
+                  color: COLORS.textStrong,
+                  borderRadius: 10,
+                  padding: "9px 13px",
+                  fontSize: 13,
+                  fontWeight: 700,
+                  cursor: "pointer",
                 }}
-              />
-            </div>
-
-            <div style={{ display: "grid", gap: 8 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span
-                  style={{
-                    width: 10,
-                    height: 10,
-                    borderRadius: 999,
-                    background: finalUi.dotBg,
-                    boxShadow: finalUi.dotRing,
-                    flexShrink: 0,
-                  }}
-                />
-                <span
-                  style={{
-                    fontSize: 12.5,
-                    fontWeight: 700,
-                    color: finalUi.labelColor,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  }}
-                >
-                  Finalisation
-                </span>
-              </div>
-
-              <div
-                style={{
-                  height: 2,
-                  borderRadius: 999,
-                  background: finalUi.lineColor,
-                }}
-              />
-            </div>
+              >
+                {secondaryAction.label}
+              </button>
+            ) : null}
           </div>
-        </div>
 
-        <div
-          style={{
-            display: "grid",
-            gap: 6,
-            fontSize: 13.5,
-            color: textSoft,
-            lineHeight: 1.55,
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          }}
-        >
-          {task.requiresPreparation ? (
-            <div>
-              <strong style={{ color: textStrong }}>Préparation :</strong>{" "}
-              {task.preparationLabel || "Document à préparer"}
-            </div>
-          ) : null}
-
-          {task.hasActiveLink ? (
-            <div>
-              <strong style={{ color: textStrong }}>Lien actif :</strong>{" "}
-              {task.activeLinkCreatedAt
-                ? `envoyé le ${new Date(task.activeLinkCreatedAt).toLocaleString()}`
-                : "oui"}
-            </div>
-          ) : null}
-
-          {task.signedFinalDocumentId ? (
-            <div>
-              <strong style={{ color: textStrong }}>Livrable :</strong> PDF signé disponible
-            </div>
-          ) : null}
-
-          {task.isOptional && task.status === "NOT_REQUIRED" ? (
-            <div>
-              <strong style={{ color: textStrong }}>Information :</strong> aucune signature requise
-            </div>
-          ) : null}
-
-          {task.kind === "TENANT" && !task.hasActiveLink && task.status !== "SIGNED" ? (
-            <div>
-              <strong style={{ color: textStrong }}>Envoi email :</strong>{" "}
-              l’envoi locataire utilise actuellement le flux global du bail.
-            </div>
-          ) : null}
-
-          {task.blockedReason ? (
-            <div>
-              <strong style={{ color: textStrong }}>Blocage :</strong> {task.blockedReason}
-            </div>
-          ) : null}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            alignItems: "center",
-          }}
-        >
-          {primaryAction === "PREPARE" && (
-            <button
-              onClick={() => onPrepare(task)}
+          {historyItems.length > 0 ? (
+            <div
               style={{
-                padding: "11px 16px",
-                borderRadius: 14,
-                border: "1px solid #2F5FB8",
-                background: "#2F5FB8",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: "pointer",
+                borderTop: `1px solid ${COLORS.borderSoft}`,
+                paddingTop: 10,
+                display: "grid",
+                gap: 6,
               }}
             >
-              {task.kind === "GUARANTOR" ? "Préparer l’acte" : "Préparer le document"}
-            </button>
-          )}
+              <div
+                style={{
+                  fontSize: 11,
+                  fontWeight: 800,
+                  color: COLORS.textMuted,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.03em",
+                }}
+              >
+                Historique
+              </div>
 
-          {primaryAction === "SIGN" && (
-            <button
-              onClick={() => onStartOnSite(task)}
-              style={{
-                padding: "11px 16px",
-                borderRadius: 14,
-                border: "1px solid #2F5FB8",
-                background: "#2F5FB8",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Signer sur place
-            </button>
-          )}
-
-          {primaryAction === "RESEND" && (
-            <button
-              onClick={() => onResendEmail(task)}
-              style={{
-                padding: "11px 16px",
-                borderRadius: 14,
-                border: "1px solid #2F5FB8",
-                background: "#2F5FB8",
-                color: "#fff",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Renvoyer le lien
-            </button>
-          )}
-
-          {primaryAction === "DOWNLOAD" && (
-            <button
-              onClick={() => onDownloadSigned(task)}
-              style={{
-                padding: "11px 16px",
-                borderRadius: 14,
-                border: "1px solid #cfd8e3",
-                background: "#fff",
-                color: "#243041",
-                fontWeight: 700,
-                cursor: "pointer",
-              }}
-            >
-              Télécharger signé
-            </button>
-          )}
-
-          {primaryAction !== "SEND" && task.canSendEmailLink && task.status !== "SIGNED" && (
-            <button
-              onClick={() => onSendEmail(task)}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 14,
-                border: "1px solid #cfd8e3",
-                background: "#fff",
-                color: "#243041",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Envoyer un lien
-            </button>
-          )}
-
-          {primaryAction !== "SIGN" && task.canSignOnSite && task.status !== "SIGNED" && (
-            <button
-              onClick={() => onStartOnSite(task)}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 14,
-                border: "1px solid #cfd8e3",
-                background: "#fff",
-                color: "#243041",
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
-            >
-              Signer sur place
-            </button>
-          )}
+              {historyItems.map((item) => (
+                <div
+                  key={item.key}
+                  style={{
+                    display: "flex",
+                    alignItems: "flex-start",
+                    gap: 7,
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    color: COLORS.textSoft,
+                  }}
+                >
+                  <span
+                    style={{
+                      width: 5,
+                      height: 5,
+                      borderRadius: 999,
+                      background: "#94A3B8",
+                      marginTop: 5,
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span>{item.label}</span>
+                </div>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
     );
-  });
+  },
+);

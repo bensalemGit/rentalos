@@ -11,6 +11,7 @@ import type { SignerTask } from "./_types/signature-center.types";
 import { DocumentsSection } from "./_components/DocumentsSection";
 import { HistorySection, type HistoryItem } from "./_components/HistorySection";
 
+
 const brandBlue = "#2F5FB8";
 const brandBlueHover = "#284FA0";
 const textStrong = "#172033";
@@ -227,6 +228,98 @@ function InlineMenu({
         {children}
       </div>
     </div>
+  );
+}
+
+function CollapsibleSectionHeader({
+  title,
+  subtitle,
+  open,
+  onToggle,
+}: {
+  title: string;
+  subtitle?: string;
+  open: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      style={{
+        appearance: "none",
+        width: "100%",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: 16,
+        padding: 0,
+        margin: 0,
+        border: "none",
+        background: "transparent",
+        cursor: "pointer",
+        textAlign: "left",
+      }}
+    >
+      <div>
+        <div
+          style={{
+            fontSize: 11,
+            fontWeight: 800,
+            color: "#98A2B3",
+            textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            marginBottom: 4,
+          }}
+        >
+          Actions avancées
+        </div>
+
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            color: "#172033",
+            lineHeight: 1.2,
+          }}
+        >
+          {title}
+        </div>
+
+        {subtitle ? (
+          <div
+            style={{
+              marginTop: 4,
+              fontSize: 13,
+              color: "#667085",
+              lineHeight: 1.45,
+            }}
+          >
+            {subtitle}
+          </div>
+        ) : null}
+      </div>
+
+      <div
+        style={{
+          flexShrink: 0,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          width: 36,
+          height: 36,
+          borderRadius: 999,
+          border: "1px solid #D9E2EC",
+          background: "#FFFFFF",
+          color: "#344054",
+          fontSize: 16,
+          fontWeight: 800,
+          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
+        }}
+      >
+        {open ? "−" : "+"}
+      </div>
+    </button>
   );
 }
 
@@ -564,6 +657,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     tenantId: undefined as string | undefined,
     guaranteeId: undefined as string | undefined,
   });
+
+  const [advancedOpen, setAdvancedOpen] = useState(false);
 
 
   const blue = "#1d4ed8";
@@ -2220,966 +2315,25 @@ const panelDocumentLabel = isSessionDriven
           </span>
         </Btn>
       </div>
-      <SignerSection
-        tasks={signerTasks}
-        activeTaskId={sessionDraft.signerTaskId}
-        enableAutoScroll={isWideScreen}
-        onStartOnSite={startOnSiteSignature}
-        onSendEmail={sendSignatureLink}
-        onResendEmail={resendSignatureLink}
-        onDownloadSigned={downloadSignedArtifact}
-        onPrepare={prepareSignerTask}
-      />
-      <DocumentsSection
-        documents={documents}
-        onDownloadDocument={downloadDocumentResource}
-        onDownloadSignedDocument={downloadSignedDocumentResource}
-      />
-      <HistorySection items={historyItems} />
-
-      <div
-        style={{
-          marginTop: 4,
-          marginBottom: 2,
-          paddingTop: 6,
-          borderTop: "1px solid rgba(221,227,236,0.8)",
-        }}
-      />
-
-      {pendingModeSwitchTask ? (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15,23,42,0.42)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-            zIndex: 1000,
-          }}
-        >
-          <div
-            style={{
-              width: "100%",
-              maxWidth: 520,
-              background: "#ffffff",
-              borderRadius: 22,
-              border: "1px solid #dde3ec",
-              boxShadow: "0 24px 60px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.10)",
-              padding: 24,
-              display: "grid",
-              gap: 16,
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            }}
-          >
-            <div style={{ display: "grid", gap: 8 }}>
-              <div
-                style={{
-                  fontSize: 20,
-                  fontWeight: 800,
-                  color: textStrong,
-                  letterSpacing: -0.03,
-                }}
-              >
-                Basculer en signature sur place ?
-              </div>
-
-              <div style={{ fontSize: 14.5, lineHeight: 1.65, color: "#334155" }}>
-                Un lien de signature est déjà actif pour{" "}
-                <strong style={{ color: textStrong }}>{pendingModeSwitchTask.displayName}</strong>.
-                Passer en signature sur place rendra ce lien obsolète pour ce document.
-              </div>
-
-              <div
-                style={{
-                  padding: 12,
-                  borderRadius: 14,
-                  border: "1px solid rgba(245,158,11,0.22)",
-                  background: "rgba(255,247,237,0.9)",
-                  color: "#9a3412",
-                  fontSize: 13.5,
-                  lineHeight: 1.55,
-                }}
-              >
-                Document concerné :{" "}
-                <strong style={{ color: "#7c2d12" }}>{pendingModeSwitchTask.documentLabel}</strong>
-              </div>
-            </div>
-
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                onClick={cancelModeSwitchToOnSite}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 14,
-                  border: `1px solid ${borderSoftStrong}`,
-                  background: "#ffffff",
-                  color: "#243041",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                Annuler
-              </button>
-
-              <button
-                type="button"
-                onClick={confirmModeSwitchToOnSite}
-                style={{
-                  padding: "10px 14px",
-                  borderRadius: 14,
-                  border: "1px solid #2F5FB8",
-                  background: "#2F5FB8",
-                  color: "#ffffff",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                Continuer
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      <style dangerouslySetInnerHTML={{ __html: `html{scroll-behavior:smooth}` }} />
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "1fr 420px",
-          gap: 16,
-          alignItems: "end",
-          marginTop: 6,
-          marginBottom: -4,
+          gridTemplateColumns: "minmax(0,1fr) 360px",
+          gap: 20,
+          alignItems: "start",
         }}
       >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "flex-start",
-            gap: 8,
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          }}
-        >
-          <>
-            <span
-              aria-hidden="true"
-              style={{
-                width: 10,
-                height: 10,
-                borderRadius: 999,
-                background: dossier.missing === 0 ? "#94a3b8" : "#cbd5e1",
-                boxShadow:
-                  dossier.missing === 0
-                    ? "0 0 0 6px rgba(148,163,184,0.10)"
-                    : "0 0 0 6px rgba(203,213,225,0.16)",
-                marginTop: 2,
-                flexShrink: 0,
-              }}
-            />
-            <div style={{ display: "grid", gap: 2 }}>
-              <div
-                style={{
-                  fontSize: 16,
-                  fontWeight: 800,
-                  letterSpacing: 0.02,
-                  color: "#667085",
-                  textTransform: "uppercase",
-                }}
-              >
-                Actions avancées
-              </div>
-              <div
-                style={{
-                  fontSize: 12.5,
-                  fontWeight: 600,
-                  color: "#98a2b3",
-                  letterSpacing: -0.01,
-                  textTransform: "none",
-                }}
-              >
-                Gestion documentaire détaillée du dossier
-              </div>
-            </div>
-          </>
-        </div>
-        <div
-          style={{
-            fontSize: 16,
-            fontWeight: 800,
-            letterSpacing: 0.02,
-            color: "#667085",
-            textTransform: "uppercase",
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          }}
-        >
-          Signature sur place
-        </div>
-      </div>
+        <SignerSection
+          tasks={signerTasks}
+          activeTaskId={sessionDraft.signerTaskId}
+          enableAutoScroll={isWideScreen}
+          onStartOnSite={startOnSiteSignature}
+          onSendEmail={sendSignatureLink}
+          onResendEmail={resendSignatureLink}
+          onDownloadSigned={downloadSignedArtifact}
+          onPrepare={prepareSignerTask}
+        />
 
-      <div className="sign-grid" style={{ display: "grid", gridTemplateColumns: "1fr 420px", gap: 16, alignItems: "start" }}>
-        <div
-          style={{
-            position: "relative",
-            display: "grid",
-            gap: 14,
-            paddingLeft: 22,
-            opacity: 0.92,
-          }}
-        >
-          <div
-            aria-hidden="true"
-            style={{
-              position: "absolute",
-              left: 11,
-              top: 14,
-              bottom: 14,
-              width: 2,
-              borderRadius: 999,
-              background: "#eef2f6",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                width: "100%",
-                height:
-                  workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
-                    ? "100%"
-                    : workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "current"
-                      ? "86%"
-                      : workflowStates[0] === "done" && workflowStates[1] === "current"
-                        ? "58%"
-                        : workflowStates[0] === "done"
-                          ? "38%"
-                          : workflowStates[0] === "current"
-                            ? "20%"
-                            : "0%",
-                background:
-                  workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
-                    ? "linear-gradient(180deg, #94a3b8 0%, #64748b 100%)"
-                    : "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)",
-                borderRadius: 999,
-                transition: "height 240ms ease",
-              }}
-            />
-          </div>
-          {/* LEFT COLUMN START */}
-
-      <Card
-        id="contract"
-        title={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            {stepCircle(1, contractStepState)}
-            <span>Contrat de location</span>
-          </span>
-        }
-        subtitle={undefined}
-        toneStyle={{ ...workflowCardTone(contractStepState), ...workflowAccentBar(contractStepState) }}
-        right={
-          <button
-            type="button"
-            onClick={() => {
-              setGuaranteesMenuOpen(false);
-              setEdlMenuOpen(false);
-              setContractMenuOpen((v) => !v);
-            }}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: "#ffffff",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#64748b",
-              fontSize: 16,
-              lineHeight: 1,
-              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-            }}
-          >
-            ⋯
-          </button>
-        }
-      >
-        {contractMenuOpen ? (
-          <InlineMenu title="Contrat">
-            <MenuItem
-              icon="+"
-              onClick={() => {
-                setContractMenuOpen(false);
-                generateContract();
-              }}
-            >
-              Générer PDF
-            </MenuItem>
-
-            <MenuItem
-              icon="↓"
-              onClick={() => {
-                setContractMenuOpen(false);
-                downloadContractPdf();
-              }}
-              disabled={!contractDoc?.id}
-            >
-              Télécharger contrat
-            </MenuItem>
-
-            <MenuItem
-              icon="→"
-              onClick={() => {
-                setContractMenuOpen(false);
-                sendPublicLink(false);
-              }}
-              disabled={!contractDoc?.id}
-            >
-              Envoyer liens locataires
-            </MenuItem>
-
-            <MenuItem
-              icon="↻"
-              onClick={() => {
-                setContractMenuOpen(false);
-                sendPublicLink(true);
-              }}
-              disabled={!contractDoc?.id}
-            >
-              Renvoyer liens
-            </MenuItem>
-
-            {isRP ? (
-              <MenuItem
-                icon="+"
-                onClick={() => {
-                  setContractMenuOpen(false);
-                  generateNotice();
-                }}
-              >
-                Générer notice
-              </MenuItem>
-            ) : null}
-
-            {isRP ? (
-              <MenuItem
-                icon="↓"
-                onClick={() => {
-                  setContractMenuOpen(false);
-                  downloadNoticePdf();
-                }}
-                disabled={!noticeDoc?.id}
-              >
-                Télécharger notice
-              </MenuItem>
-            ) : null}
-          </InlineMenu>
-        ) : null}
-
-        {!sigStatus && loadingSigStatus ? (
-          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-        ) : null}
-
-        {sigStatusError ? (
-          <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-        ) : null}
-
-        {sigStatus ? (
-          <>
-            <SignableCard
-              title="Contrat de location"
-              statusChip={contractStatusChip}
-              subtitle={
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontWeight: 700, color: textStrong }}>Statut :</span>
-                  {contractStatusChip}
-                </div>
-              }
-              actions={[
-                {
-                  label: "Télécharger",
-                  kind: "secondary",
-                  disabled: !sigStatus.contract.documentId,
-                  onClick: () =>
-                    sigStatus.contract.documentId &&
-                    downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
-                },
-                {
-                  label: "PDF signé",
-                  kind: "secondary",
-                  disabled: !sigStatus.contract.signedFinalDocumentId,
-                  onClick: () =>
-                    sigStatus.contract.signedFinalDocumentId &&
-                    downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
-                },
-              ]}
-            />
-
-            <div style={{ marginTop: 10 }}>
-              <DetailToggle
-                open={showContractDetails}
-                onClick={() => setShowContractDetails((v) => !v)}
-              />
-            </div>
-
-            {showContractDetails ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  paddingTop: 12,
-                  borderTop: "1px solid rgba(226,232,240,0.75)",
-                  display: "grid",
-                  gap: 12,
-                }}
-              >
-                {finalSignedDoc?.id ? (
-                  <div style={card(border)}>
-                    <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
-                    <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
-                    <button
-                      onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)}
-                      style={btnPrimarySmall()}
-                    >
-                      Télécharger PDF signé
-                    </button>
-                  </div>
-                ) : null}
-
-                {packFinalV2Doc?.id ? (
-                  <div style={card(border)}>
-                    <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
-                    <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
-                    <button
-                      onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
-                      style={btnPrimarySmall()}
-                    >
-                      Télécharger PACK_FINAL signé
-                    </button>
-                  </div>
-                ) : null}
-
-                <div style={card(border)}>
-                  <h3 style={{ marginTop: 0, marginBottom: 10 }}>Suivi des signatures locataires</h3>
-
-                  {!sigStatus?.contract?.tenants?.length ? (
-                    <div style={{ fontSize: 13, color: muted }}>Aucun locataire.</div>
-                  ) : (
-                    <div style={{ display: "grid", gap: 10 }}>
-                      {sigStatus.contract.tenants.map((t) => (
-                        <div
-                          key={t.leaseTenantId}
-                          style={{
-                            border: `1px solid ${border}`,
-                            borderRadius: 14,
-                            padding: 12,
-                          }}
-                        >
-                          <div
-                            style={{
-                              display: "flex",
-                              justifyContent: "space-between",
-                              gap: 12,
-                              alignItems: "flex-start",
-                              flexWrap: "wrap",
-                            }}
-                          >
-                            <div style={{ minWidth: 240 }}>
-                              <div style={{ fontWeight: 800 }}>
-                                {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
-                              </div>
-
-                              <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                                Statut:{" "}
-                                <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                                  {humanDocStatus(t.signatureStatus)}
-                                </span>
-                                {t.lastLink?.createdAt ? (
-                                  <span style={{ marginLeft: 8 }}>
-                                    (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
-                                  </span>
-                                ) : null}
-                              </div>
-                            </div>
-
-                            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                              <button
-                                style={btnSecondary()}
-                                onClick={() => fetchSignatureStatus(leaseId)}
-                              >
-                                Rafraîchir statuts
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : null}
-          </>
-        ) : null}
-      </Card>
-      
-      <Card
-        id="guarantees"
-        title={
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-            {stepCircle(2, guaranteesStepState)}
-            <span>Garanties</span>
-          </span>
-        }
-        subtitle={undefined}
-        toneStyle={{ ...workflowCardTone(guaranteesStepState), ...workflowAccentBar(guaranteesStepState) }}
-        right={
-          <button
-            type="button"
-            onClick={() => {
-              setContractMenuOpen(false);
-              setEdlMenuOpen(false);
-              setGuaranteesMenuOpen((v) => !v);
-            }}
-            style={{
-              width: 32,
-              height: 32,
-              borderRadius: 10,
-              border: "1px solid #e5e7eb",
-              background: "#ffffff",
-              cursor: "pointer",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              color: "#64748b",
-              fontSize: 16,
-              lineHeight: 1,
-              boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-            }}
-          >
-            ⋯
-          </button>
-        }
-      >
-        {guaranteesMenuOpen ? (
-          <InlineMenu title="Garanties">
-            <MenuItem
-              icon="→"
-              onClick={() => {
-                setGuaranteesMenuOpen(false);
-                openGuarantees();
-              }}
-            >
-              Gérer garanties
-            </MenuItem>
-          </InlineMenu>
-        ) : null}
-
-        {!sigStatus && loadingSigStatus ? (
-          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-        ) : null}
-
-        {sigStatusError ? (
-          <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-        ) : null}
-
-        {sigStatus ? (
-          <SignableCard
-            title="Garanties"
-            statusChip={
-              <Badge tone={guaranteesCount > 0 ? (guaranteesUnsignedCount === 0 ? "success" : "warning") : "neutral"}>
-                {guaranteesCount > 0 ? `${guaranteesCount} garantie(s)` : "Aucune"}
-              </Badge>
-            }
-            subtitle={undefined}
-            actions={[
-              {
-                label: "Gérer",
-                kind: "secondary",
-                onClick: openGuarantees,
-              },
-            ]}
-          />
-        ) : null}
-
-        <div style={{ marginTop: 10 }}>
-          <DetailToggle
-            open={showGuaranteesDetails}
-            onClick={() => setShowGuaranteesDetails((v) => !v)}
-          />
-        </div>
-
-        {showGuaranteesDetails ? (
-          <div
-            style={{
-              marginTop: 12,
-              paddingTop: 12,
-              borderTop: "1px solid rgba(226,232,240,0.75)",
-            }}
-          >
-            {sigStatus && sigStatus.guarantees.length === 0 ? (
-              <div style={{ marginTop: 8, fontSize: 13, color: muted }}>
-                Aucune garantie CAUTION sélectionnée.
-              </div>
-            ) : null}
-
-            {sigStatus && sigStatus.guarantees.length > 0 ? (
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {sigStatus.guarantees.map((g) => {
-                  const statusText =
-                    g.signatureStatus === "SIGNED"
-                      ? "🟢 Signé"
-                      : g.signatureStatus === "IN_PROGRESS"
-                        ? "🟡 En cours"
-                        : g.signatureStatus === "SENT"
-                          ? "🟠 Lien envoyé"
-                          : "🔵 Non envoyé";
-
-                  const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
-
-                  const ackTenant = g.tenantId;
-                  const ackRequired = Boolean(g.ack?.required);
-                  const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
-                  const ackOk = Boolean(ackInfo?.acknowledged);
-
-                  const primaryLabel =
-                    g.signatureStatus === "SIGNED"
-                      ? "📤 Partager au garant"
-                      : g.lastLink
-                        ? "Renvoyer lien signature"
-                        : "Envoyer lien signature";
-
-                  const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;
-
-                  return (
-                    <SignableCard
-                      key={g.guaranteeId}
-                      title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
-                      statusChip={
-                        <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
-                          {statusText}
-                        </span>
-                      }
-                      subtitle={
-                        <div style={{ display: "grid", gap: 6 }}>
-                          <div>
-                            <strong>Lien :</strong> {linkState}
-                            {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
-                          </div>
-                          <div>
-                            <strong>ACK locataire :</strong>{" "}
-                            {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
-                          </div>
-                        </div>
-                      }
-                      actions={[
-                        {
-                          label: primaryLabel,
-                          onClick: () => {
-                            if (g.signatureStatus === "SIGNED") {
-                              return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
-                                alert(e.message || String(e))
-                              );
-                            }
-                            return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
-                              alert(e.message || String(e))
-                            );
-                          },
-                          disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !actId,
-                        },
-                        {
-                          label: "Générer acte",
-                          kind: "secondary",
-                          disabled: Boolean(actId),
-                          onClick: async () => {
-                            await generateGuarantorActFor(g.guaranteeId);
-                            await fetchSignatureStatus(leaseId);
-                          },
-                        },
-                        {
-                          label: "Télécharger PDF",
-                          kind: "secondary",
-                          disabled: !actId,
-                          onClick: () => actId && downloadDoc(actId, "acte_caution.pdf"),
-                        },
-                        {
-                          label: "ACK : Marquer comme lu",
-                          kind: "secondary",
-                          disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
-                          onClick: () =>
-                            g.signedFinalDocumentId &&
-                            acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
-                              alert(e.message || String(e))
-                            ),
-                        },
-                      ]}
-                    />
-                  );
-                })}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-      </Card>
-
-      {sigStatus && (
-        <Card
-          id="edl-inv"
-          title={
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-              {stepCircle(3, edlStepState)}
-              <span>EDL & Inventaires</span>
-            </span>
-          }
-          subtitle={undefined}
-          toneStyle={{ ...workflowCardTone(edlStepState), ...workflowAccentBar(edlStepState) }}
-          right={
-            <button
-              type="button"
-              onClick={() => {
-                setContractMenuOpen(false);
-                setGuaranteesMenuOpen(false);
-                setEdlMenuOpen((v) => !v);
-              }}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 10,
-                border: "1px solid #e5e7eb",
-                background: "#ffffff",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "#64748b",
-                fontSize: 16,
-                lineHeight: 1,
-                boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-              }}
-            >
-              ⋯
-            </button>
-          }
-        >
-          {edlMenuOpen ? (
-            <InlineMenu title="EDL & Inventaires">
-              <MenuItem
-                icon="+"
-                onClick={() => {
-                  setEdlMenuOpen(false);
-                  generatePack();
-                }}
-              >
-                Générer pack (EDL + Inventaire)
-              </MenuItem>
-
-              <MenuItem
-                icon="↓"
-                onClick={() => {
-                  setEdlMenuOpen(false);
-                  downloadPackPdf();
-                }}
-                disabled={!packDoc?.id}
-              >
-                Télécharger pack
-              </MenuItem>
-
-              <MenuItem
-                icon="✓"
-                onClick={() => {
-                  setEdlMenuOpen(false);
-                  generatePackFinalV2();
-                }}
-              >
-                Générer PACK_FINAL signé (V2)
-              </MenuItem>
-            </InlineMenu>
-          ) : null}
-
-          <SignableCard
-            title="EDL & Inventaires"
-            statusChip={edlInvSummaryChip}
-            subtitle={undefined}
-            actions={[
-              {
-                label: "Générer PDF",
-                kind: "secondary",
-                onClick: generatePack,
-              },
-              {
-                label: "Télécharger",
-                kind: "secondary",
-                disabled: !packDoc?.id,
-                onClick: downloadPackPdf,
-              },
-            ]}
-          />
-
-          <div style={{ marginTop: 10 }}>
-            <DetailToggle
-              open={showEdlInvDetails}
-              onClick={() => setShowEdlInvDetails((v) => !v)}
-            />
-          </div>
-
-          {showEdlInvDetails ? (
-            <div
-              style={{
-                marginTop: 12,
-                paddingTop: 12,
-                borderTop: "1px solid rgba(226,232,240,0.75)",
-              }}
-            >
-              {/* ✅ Pack EDL + Inventaire (recommandé) */}
-              {[packEntry, packExit]
-                .filter(Boolean)
-                .map((p: any) => (
-                  <div
-                    key={p.key || p.label}
-                    style={{
-                      border: `1px solid ${border}`,
-                      borderRadius: 14,
-                      padding: 12,
-                      marginTop: 10,
-                      background: "rgba(248,250,252,0.9)",
-                    }}
-                  >
-                    <div style={{ fontWeight: 800 }}>
-                      {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: muted,
-                        marginTop: 6,
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                      }}
-                    >
-                      <span style={{ fontWeight: 700 }}>Statut:</span>
-                      <Badge tone={toneFromStatus(p.status)}>{humanDocStatus(p.status)}</Badge>
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                      <button
-                        style={btnAction()}
-                        disabled={Boolean(p.documentId)}
-                        onClick={() => {
-                          const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
-                          return generatePackEdlInv(phase as "entry" | "exit");
-                        }}
-                      >
-                        Générer PDF
-                      </button>
-
-                      <button
-                        style={btnSecondary()}
-                        disabled={!p.documentId}
-                        onClick={() =>
-                          p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)
-                        }
-                      >
-                        Télécharger PDF
-                      </button>
-
-                      <button
-                        style={btnSecondary()}
-                        disabled={!p.signedFinalDocumentId}
-                        onClick={() =>
-                          p.signedFinalDocumentId &&
-                          downloadDoc(p.signedFinalDocumentId, `${p.key || "pack_edl_inv"}_SIGNE.pdf`)
-                        }
-                      >
-                        Télécharger signé
-                      </button>
-                    </div>
-                  </div>
-                ))}
-
-              {[
-                sigStatus.edl?.entry,
-                sigStatus.edl?.exit,
-                sigStatus.inventory?.entry,
-                sigStatus.inventory?.exit,
-              ]
-                .filter(Boolean)
-                .map((d: any) => (
-                  <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
-                    <div style={{ fontWeight: 800 }}>{d.label}</div>
-
-                    <div
-                      style={{
-                        fontSize: 13,
-                        color: muted,
-                        marginTop: 6,
-                        display: "flex",
-                        gap: 8,
-                        alignItems: "center",
-                      }}
-                    >
-                      <span style={{ fontWeight: 700 }}>Statut:</span>
-                      <Badge tone={toneFromStatus(d.status)}>{humanDocStatus(d.status)}</Badge>
-                    </div>
-
-                    <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                      Bailleur: {d.need?.landlord?.signed ? "✅ signé" : "❌ manquant"} •
-                      Locataires:{" "}
-                      {(d.need?.tenants || []).filter((t: any) => !t.signed).length === 0
-                        ? "✅ tous signés"
-                        : "❌ manquants"}
-                    </div>
-
-                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                      <button
-                        style={btnAction()}
-                        disabled={Boolean(d.documentId)}
-                        onClick={() => {
-                          const k = String(d.key || "");
-                          if (k === "edl:entry" || k === "edl_entry") return generateEdl("entry");
-                          if (k === "edl:exit" || k === "edl_exit") return generateEdl("exit");
-                          if (k === "inv:entry" || k === "inv_entry") return generateInventory("entry");
-                          if (k === "inv:exit" || k === "inv_exit") return generateInventory("exit");
-                        }}
-                      >
-                        Générer PDF
-                      </button>
-
-                      <button
-                        style={btnSecondary()}
-                        disabled={!d.documentId}
-                        onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
-                      >
-                        Télécharger PDF
-                      </button>
-
-                      <button
-                        style={btnSecondary()}
-                        disabled={!d.signedFinalDocumentId}
-                        onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
-                      >
-                        Télécharger signé
-                      </button>
-                    </div>
-                  </div>
-                ))}
-            </div>
-          ) : null}
-        </Card>
-      )}
-      {/* LEFT COLUMN END */}
-      </div>
-
-      {/* RIGHT COLUMN START */}
         <div
           ref={signaturePanelRef}
           className="sign-sticky"
@@ -3318,18 +2472,400 @@ const panelDocumentLabel = isSessionDriven
               </div>
             ) : null}
 
-          {isSessionDriven || showManualPanel ? (
-            <>
-              {showManualPanel ? (
-                <div style={{ marginBottom: 12 }}>
+            {isSessionDriven || showManualPanel ? (
+              <>
+                {showManualPanel ? (
+                  <div style={{ marginBottom: 12 }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setShowLegacyPanelForm(false);
+                        clearCanvas();
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "10px 12px",
+                        borderRadius: 14,
+                        border: `1px solid ${borderSoftStrong}`,
+                        background: "#fff",
+                        color: "#243041",
+                        fontWeight: 600,
+                        cursor: "pointer",
+                        fontFamily:
+                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      }}
+                    >
+                      Quitter le mode manuel
+                    </button>
+                  </div>
+                ) : null}
+
+                {!isSessionDriven ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                      Signer en tant que
+                    </div>
+                    <select
+                      value={panelRoleValue}
+                      disabled={isSessionDriven}
+                      onChange={(e) => {
+                        if (isSessionDriven) return;
+                        setRole(e.target.value as any);
+                        clearCanvas();
+                      }}
+                      style={{
+                        width: "100%",
+                        padding: "11px 13px",
+                        borderRadius: 14,
+                        border: `1px solid ${borderSoftStrong}`,
+                        background: "#fff",
+                        fontWeight: 500,
+                        fontSize: 14.5,
+                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                        color: "#1f2937",
+                        fontFamily:
+                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      }}
+                    >
+                      <option value="LOCATAIRE">Locataire</option>
+                      <option value="BAILLEUR">Bailleur</option>
+                      <option value="GARANT">Garant</option>
+                    </select>
+                  </div>
+                ) : null}
+
+                <div style={{ height: 10 }} />
+
+                {!isSessionDriven && role === "LOCATAIRE" && hasMultipleTenants ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                      Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
+                    </div>
+                    <select
+                      value={selectedTenantId}
+                      onChange={(e) => setSelectedTenantId(e.target.value)}
+                      style={{
+                        width: "100%",
+                        padding: "11px 13px",
+                        borderRadius: 14,
+                        border: `1px solid ${borderSoftStrong}`,
+                        background: "#fff",
+                        fontWeight: 500,
+                        fontSize: 14.5,
+                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                        color: "#1f2937",
+                        fontFamily:
+                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      }}
+                    >
+                      <option value="">— Sélectionner —</option>
+                      {tenants.map((t) => {
+                        const id = normalizeTenantId(t);
+                        const label = `${normalizeTenantName(t)}${t.role ? ` (${t.role})` : ""}`;
+                        return (
+                          <option key={id || label} value={id}>
+                            {label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                ) : null}
+
+                <div style={{ height: 10 }} />
+
+                {!isSessionDriven ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                      Document à signer
+                    </div>
+
+                    {role === "GARANT" ? (
+                      <select
+                        value={isSessionDriven ? sessionDraft.guaranteeId || "" : selectedGuaranteeId}
+                        onChange={(e) => {
+                          if (isSessionDriven) return;
+                          setSelectedGuaranteeId(e.target.value);
+                        }}
+                        disabled={isSessionDriven || guarantorSignables.length === 0}
+                        style={{
+                          width: "100%",
+                          padding: "11px 13px",
+                          borderRadius: 14,
+                          border: `1px solid ${borderSoftStrong}`,
+                          background: "#fff",
+                          fontWeight: 500,
+                          fontSize: 14.5,
+                          boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                          color: "#1f2937",
+                          fontFamily:
+                            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                          cursor: guarantorSignables.length ? "pointer" : "not-allowed",
+                        }}
+                      >
+                        {guarantorSignables.length === 0 ? <option value="">— Aucun garant —</option> : null}
+                        {guarantorSignables.map((g) => (
+                          <option key={g.key} value={g.guaranteeId}>
+                            {g.label}
+                            {g.hasAct ? "" : " — (acte non généré)"}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <select
+                        value={
+                          isSessionDriven
+                            ? sessionDraft.signerKind === "TENANT"
+                              ? sessionDraft.signerTaskId || ""
+                              : sessionDraft.signerKind === "LANDLORD"
+                                ? sessionDraft.signerTaskId || ""
+                                : ""
+                            : role === "LOCATAIRE"
+                              ? selectedTenantDocKey
+                              : selectedLandlordDocKey
+                        }
+                        onChange={(e) => {
+                          if (isSessionDriven) return;
+                          if (role === "LOCATAIRE") setSelectedTenantDocKey(e.target.value);
+                          else setSelectedLandlordDocKey(e.target.value);
+                          clearCanvas();
+                        }}
+                        disabled={isSessionDriven || !landlordSignables.length}
+                        style={{
+                          width: "100%",
+                          padding: "11px 13px",
+                          borderRadius: 14,
+                          border: `1px solid ${borderSoftStrong}`,
+                          background: "#fff",
+                          fontWeight: 500,
+                          fontSize: 14.5,
+                          boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                          color: "#1f2937",
+                          fontFamily:
+                            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                          cursor: landlordSignables.length ? "pointer" : "not-allowed",
+                        }}
+                      >
+                        {landlordSignables.length === 0 ? <option value="">— Aucun document —</option> : null}
+                        {landlordSignables.map((d) => (
+                          <option key={d.key} value={d.key}>
+                            {d.label}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    {role === "GARANT" && selectedGuarantor && !selectedGuarantor.documentId ? (
+                      <div style={{ fontSize: 12, color: textSoft, marginTop: 6 }}>
+                        Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <div style={{ height: 10 }} />
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                    Nom affiché sur la signature
+                  </div>
+                  <input
+                    value={panelSignerNameValue}
+                    onChange={(e) => {
+                      if (isSessionDriven) {
+                        setSessionDraft((prev) => ({
+                          ...prev,
+                          signerName: e.target.value,
+                        }));
+                        return;
+                      }
+
+                      if (role === "LOCATAIRE") setTenantName(e.target.value);
+                      else if (role === "BAILLEUR") setLandlordName(e.target.value);
+                      else setGuarantorName(e.target.value);
+                    }}
+                    style={{
+                      width: "100%",
+                      padding: "11px 13px",
+                      borderRadius: 14,
+                      border: `1px solid ${borderSoftStrong}`,
+                      background: "#fff",
+                      fontWeight: 500,
+                      fontSize: 14.5,
+                      boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                      color: "#1f2937",
+                      fontFamily:
+                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+
+                <div style={{ height: 12 }} />
+
+                <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01, marginBottom: 6 }}>
+                  Signature manuscrite
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+                  <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                    Document concerné
+                  </div>
+                  <div
+                    style={{
+                      padding: "11px 13px",
+                      borderRadius: 14,
+                      border: `1px solid ${borderSoftStrong}`,
+                      background: "#f8fafc",
+                      fontWeight: 600,
+                      fontSize: 14.5,
+                      color: "#1f2937",
+                      fontFamily:
+                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    }}
+                  >
+                    {panelDocumentLabel}
+                  </div>
+                </div>
+
+                <div
+                  style={{
+                    position: "relative",
+                    width: "100%",
+                    height: 182,
+                    borderRadius: 14,
+                    border: isSessionDriven ? "1px solid rgba(47,95,184,0.22)" : `1px solid ${borderSoftStrong}`,
+                    background: isSessionDriven ? "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)" : "#ffffff",
+                    boxShadow: isSessionDriven
+                      ? "0 10px 24px rgba(47,95,184,0.06), inset 0 1px 2px rgba(15,23,42,0.02)"
+                      : "inset 0 1px 2px rgba(15,23,42,0.02)",
+                    overflow: "hidden",
+                  }}
+                >
+                  {!signatureDirty.current ? (
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 0,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none",
+                        color: "#94a3b8",
+                        fontSize: 14,
+                        fontWeight: 600,
+                        zIndex: 1,
+                        fontFamily:
+                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      }}
+                    >
+                      Le signataire signe ici
+                    </div>
+                  ) : null}
+                  <canvas
+                    ref={canvasRef}
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      display: "block",
+                      position: "relative",
+                      zIndex: 2,
+                      touchAction: "none",
+                    }}
+                    onPointerDown={onPointerDown}
+                    onPointerMove={onPointerMove}
+                    onPointerUp={onPointerUp}
+                    onPointerCancel={onPointerUp}
+                    onPointerLeave={onPointerUp}
+                  />
+                </div>
+
+                <div style={{ height: 12 }} />
+
+                <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+                  <button
+                    onClick={clearCanvas}
+                    style={{
+                      flex: 1,
+                      padding: "11px 13px",
+                      borderRadius: 14,
+                      border: `1px solid ${borderSoftStrong}`,
+                      background: "#fff",
+                      fontWeight: 600,
+                      fontSize: 14.5,
+                      boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
+                      color: "#1f2937",
+                      fontFamily:
+                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    }}
+                  >
+                    Effacer
+                  </button>
+
+                  <button
+                    onClick={async () => {
+                      if (isSessionDriven) {
+                        await confirmSessionDraftSignature();
+                        return;
+                      }
+
+                      if (role === "LOCATAIRE") await signTenantOnPlace();
+                      else if (role === "BAILLEUR") await signLandlordOnPlace();
+                      else await signGuarantorOnPlace();
+                    }}
+                    disabled={role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId}
+                    style={{
+                      flex: 1,
+                      padding: "10px 12px",
+                      borderRadius: 14,
+                      border: `1px solid ${brandBlue}`,
+                      background: brandBlue,
+                      color: "white",
+                      cursor: "pointer",
+                      fontWeight: 600,
+                      boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
+                      opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
+                      fontFamily:
+                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    }}
+                  >
+                    {isSessionDriven ? "Confirmer la signature" : "Signer"}
+                  </button>
+                </div>
+
+                <div
+                  style={{
+                    marginTop: 10,
+                    fontSize: 12.5,
+                    lineHeight: 1.55,
+                    color: textSoft,
+                    fontFamily:
+                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  }}
+                >
+                  La signature sera horodatée et enregistrée dans le dossier locatif.
+                </div>
+
+                {isSessionDriven ? (
                   <button
                     type="button"
                     onClick={() => {
-                      setShowLegacyPanelForm(false);
+                      setSessionDraft({
+                        open: false,
+                        signerTaskId: null,
+                        signerKind: null,
+                        signerName: "",
+                        roleLabel: "",
+                        documentId: null,
+                        documentLabel: "",
+                        tenantId: undefined,
+                        guaranteeId: undefined,
+                      });
                       clearCanvas();
                     }}
                     style={{
                       width: "100%",
+                      marginTop: 10,
                       padding: "10px 12px",
                       borderRadius: 14,
                       border: `1px solid ${borderSoftStrong}`,
@@ -3341,394 +2877,12 @@ const panelDocumentLabel = isSessionDriven
                         'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                     }}
                   >
-                    Quitter le mode manuel
+                    Terminer cette session
                   </button>
-                </div>
-              ) : null}
-
-              {/* Role */}
-              {!isSessionDriven ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
-                Signer en tant que
-              </div>
-              <select
-                value={panelRoleValue}
-                disabled={isSessionDriven}
-                onChange={(e) => {
-                  if (isSessionDriven) return;
-                  setRole(e.target.value as any);
-                  clearCanvas();
-                }}
-                style={{
-                  width: "100%",
-                  padding: "11px 13px",
-                  borderRadius: 14,
-                  border: `1px solid ${borderSoftStrong}`,
-                  background: "#fff",
-                  fontWeight: 500,
-                  fontSize: 14.5,
-                  boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                  color: "#1f2937",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                <option value="LOCATAIRE">Locataire</option>
-                <option value="BAILLEUR">Bailleur</option>
-                <option value="GARANT">Garant</option>
-              </select>
-            </div>
-          ) : null}
-
-            <div style={{ height: 10 }} />
-            {/* Locataire multi */}
-            {!isSessionDriven && role === "LOCATAIRE" && hasMultipleTenants ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
-                  Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
-                </div>
-                <select
-                  value={selectedTenantId}
-                  onChange={(e) => setSelectedTenantId(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "11px 13px",
-                    borderRadius: 14,
-                    border: `1px solid ${borderSoftStrong}`,
-                    background: "#fff",
-                    fontWeight: 500,
-                    fontSize: 14.5,
-                    boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                    color: "#1f2937",
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  }}
-                >
-                  <option value="">— Sélectionner —</option>
-                  {tenants.map((t) => {
-                    const id = normalizeTenantId(t);
-                    const label = `${normalizeTenantName(t)}${t.role ? ` (${t.role})` : ""}`;
-                    return (
-                      <option key={id || label} value={id}>
-                        {label}
-                      </option>
-                    );
-                  })}
-                </select>
-              </div>
-            ) : null}
-
-            <div style={{ height: 10 }} />
-
-            {/* Document */}
-          {!isSessionDriven ? (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Document à signer</div>
-
-              {role === "GARANT" ? (
-                <select
-                  value={isSessionDriven ? sessionDraft.guaranteeId || "" : selectedGuaranteeId}
-                  onChange={(e) => {
-                    if (isSessionDriven) return;
-                    setSelectedGuaranteeId(e.target.value);
-                  }}
-                  disabled={isSessionDriven || guarantorSignables.length === 0}
-                  style={{
-                    width: "100%",
-                    padding: "11px 13px",
-                    borderRadius: 14,
-                    border: `1px solid ${borderSoftStrong}`,
-                    background: "#fff",
-                    fontWeight: 500,
-                    fontSize: 14.5,
-                    boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                    color: "#1f2937",
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                    cursor: guarantorSignables.length ? "pointer" : "not-allowed",
-                  }}
-                >
-                  {guarantorSignables.length === 0 ? <option value="">— Aucun garant —</option> : null}
-                  {guarantorSignables.map((g) => (
-                    <option key={g.key} value={g.guaranteeId}>
-                      {g.label}
-                      {g.hasAct ? "" : " — (acte non généré)"}
-                    </option>
-                  ))}
-                </select>
-              ) : (
-                <select
-                  value={
-                    isSessionDriven
-                      ? sessionDraft.signerKind === "TENANT"
-                        ? sessionDraft.signerTaskId || ""
-                        : sessionDraft.signerKind === "LANDLORD"
-                          ? sessionDraft.signerTaskId || ""
-                          : ""
-                      : role === "LOCATAIRE"
-                        ? selectedTenantDocKey
-                        : selectedLandlordDocKey
-                  }
-                  onChange={(e) => {
-                    if (isSessionDriven) return;
-                    if (role === "LOCATAIRE") setSelectedTenantDocKey(e.target.value);
-                    else setSelectedLandlordDocKey(e.target.value);
-                    clearCanvas();
-                  }}
-                  disabled={isSessionDriven || !landlordSignables.length}
-                  style={{
-                    width: "100%",
-                    padding: "11px 13px",
-                    borderRadius: 14,
-                    border: `1px solid ${borderSoftStrong}`,
-                    background: "#fff",
-                    fontWeight: 500,
-                    fontSize: 14.5,
-                    boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                    color: "#1f2937",
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                    cursor: landlordSignables.length ? "pointer" : "not-allowed",
-                  }}
-                >
-                  {landlordSignables.length === 0 ? <option value="">— Aucun document —</option> : null}
-                  {landlordSignables.map((d) => (
-                    <option key={d.key} value={d.key}>
-                      {d.label}
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              {role === "GARANT" && selectedGuarantor && !selectedGuarantor.documentId ? (
-                <div style={{ fontSize: 12, color: textSoft, marginTop: 6 }}>
-                  Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-
-            <div style={{ height: 10 }} />
-
-            {/* Nom */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Nom affiché sur la signature</div>
-              <input
-                value={panelSignerNameValue}
-                onChange={(e) => {
-                  if (isSessionDriven) {
-                    setSessionDraft((prev) => ({
-                      ...prev,
-                      signerName: e.target.value,
-                    }));
-                    return;
-                  }
-
-                  if (role === "LOCATAIRE") setTenantName(e.target.value);
-                  else if (role === "BAILLEUR") setLandlordName(e.target.value);
-                  else setGuarantorName(e.target.value);
-                }}
-                style={{
-                  width: "100%",
-                  padding: "11px 13px",
-                  borderRadius: 14,
-                  border: `1px solid ${borderSoftStrong}`,
-                  background: "#fff",
-                  fontWeight: 500,
-                  fontSize: 14.5,
-                  boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                  color: "#1f2937",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  boxSizing: "border-box",
-                }}
-              />
-            </div>
-
-            <div style={{ height: 12 }} />
-
-            {/* Pad */}
-            <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01, marginBottom: 6 }}>Signature manuscrite</div>
-
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
-                Document concerné
-              </div>
-              <div
-                style={{
-                  padding: "11px 13px",
-                  borderRadius: 14,
-                  border: `1px solid ${borderSoftStrong}`,
-                  background: "#f8fafc",
-                  fontWeight: 600,
-                  fontSize: 14.5,
-                  color: "#1f2937",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                {panelDocumentLabel}
-              </div>
-            </div>
-
-            <div
-              style={{
-                position: "relative",
-                width: "100%",
-                height: 182,
-                borderRadius: 14,
-                border: isSessionDriven ? "1px solid rgba(47,95,184,0.22)" : `1px solid ${borderSoftStrong}`,
-                background: isSessionDriven ? "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)" : "#ffffff",
-                boxShadow: isSessionDriven
-                  ? "0 10px 24px rgba(47,95,184,0.06), inset 0 1px 2px rgba(15,23,42,0.02)"
-                  : "inset 0 1px 2px rgba(15,23,42,0.02)",
-                overflow: "hidden",
-              }}
-            >
-              {!signatureDirty.current ? (
-                <div
-                  style={{
-                    position: "absolute",
-                    inset: 0,
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    pointerEvents: "none",
-                    color: "#94a3b8",
-                    fontSize: 14,
-                    fontWeight: 600,
-                    zIndex: 1,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                  }}
-                >
-                  Le signataire signe ici
-                </div>
-              ) : null}
-              <canvas
-                ref={canvasRef}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  display: "block",
-                  position: "relative",
-                  zIndex: 2,
-                  touchAction: "none",
-                }}
-                onPointerDown={onPointerDown}
-                onPointerMove={onPointerMove}
-                onPointerUp={onPointerUp}
-                onPointerCancel={onPointerUp}
-                onPointerLeave={onPointerUp}
-              />
-            </div>
-
-            <div style={{ height: 12 }} />
-
-            {/* Actions */}
-            <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
-              <button
-                onClick={clearCanvas}
-                style={{
-                  flex: 1,
-                  padding: "11px 13px",
-                  borderRadius: 14,
-                  border: `1px solid ${borderSoftStrong}`,
-                  background: "#fff",
-                  fontWeight: 600,
-                  fontSize: 14.5,
-                  boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
-                  color: "#1f2937",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                Effacer
-              </button>
-
-              <button
-                onClick={async () => {
-                  if (isSessionDriven) {
-                    await confirmSessionDraftSignature();
-                    return;
-                  }
-
-                  if (role === "LOCATAIRE") await signTenantOnPlace();
-                  else if (role === "BAILLEUR") await signLandlordOnPlace();
-                  else await signGuarantorOnPlace();
-                }}
-                disabled={role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId}
-                style={{
-                  flex: 1,
-                  padding: "10px 12px",
-                  borderRadius: 14,
-                  border: `1px solid ${brandBlue}`,
-                  background: brandBlue,
-                  color: "white",
-                  cursor: "pointer",
-                  fontWeight: 600,
-                  boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
-                  opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                {isSessionDriven ? "Confirmer la signature" : "Signer"}
-              </button>
-            </div>
-
-            <div
-              style={{
-                marginTop: 10,
-                fontSize: 12.5,
-                lineHeight: 1.55,
-                color: textSoft,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              La signature sera horodatée et enregistrée dans le dossier locatif.
-            </div>
-
-            {isSessionDriven ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setSessionDraft({
-                    open: false,
-                    signerTaskId: null,
-                    signerKind: null,
-                    signerName: "",
-                    roleLabel: "",
-                    documentId: null,
-                    documentLabel: "",
-                    tenantId: undefined,
-                    guaranteeId: undefined,
-                  });
-                  clearCanvas();
-                }}
-                style={{
-                  width: "100%",
-                  marginTop: 10,
-                  padding: "10px 12px",
-                  borderRadius: 14,
-                  border: `1px solid ${borderSoftStrong}`,
-                  background: "#fff",
-                  color: "#243041",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                }}
-              >
-                Terminer cette session
-              </button>
-            ) : null}
+                ) : null}
               </>
             ) : null}
 
-          {/* Feedback */}
             {status ? (
               <div
                 style={{
@@ -3763,10 +2917,964 @@ const panelDocumentLabel = isSessionDriven
                 <div style={{ fontWeight: 700, lineHeight: 1.5 }}>{error}</div>
               </div>
             ) : null}
-
           </div>
         </div>
       </div>
+      <DocumentsSection
+        documents={documents}
+        onDownloadDocument={downloadDocumentResource}
+        onDownloadSignedDocument={downloadSignedDocumentResource}
+      />
+      <HistorySection items={historyItems} />
+
+      <div
+        style={{
+          marginTop: 4,
+          marginBottom: 2,
+          paddingTop: 6,
+          borderTop: "1px solid rgba(221,227,236,0.8)",
+        }}
+      />
+
+      {pendingModeSwitchTask ? (
+        <div
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15,23,42,0.42)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 20,
+            zIndex: 1000,
+          }}
+        >
+          <div
+            style={{
+              width: "100%",
+              maxWidth: 520,
+              background: "#ffffff",
+              borderRadius: 22,
+              border: "1px solid #dde3ec",
+              boxShadow: "0 24px 60px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.10)",
+              padding: 24,
+              display: "grid",
+              gap: 16,
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            <div style={{ display: "grid", gap: 8 }}>
+              <div
+                style={{
+                  fontSize: 20,
+                  fontWeight: 800,
+                  color: textStrong,
+                  letterSpacing: -0.03,
+                }}
+              >
+                Basculer en signature sur place ?
+              </div>
+
+              <div style={{ fontSize: 14.5, lineHeight: 1.65, color: "#334155" }}>
+                Un lien de signature est déjà actif pour{" "}
+                <strong style={{ color: textStrong }}>{pendingModeSwitchTask.displayName}</strong>.
+                Passer en signature sur place rendra ce lien obsolète pour ce document.
+              </div>
+
+              <div
+                style={{
+                  padding: 12,
+                  borderRadius: 14,
+                  border: "1px solid rgba(245,158,11,0.22)",
+                  background: "rgba(255,247,237,0.9)",
+                  color: "#9a3412",
+                  fontSize: 13.5,
+                  lineHeight: 1.55,
+                }}
+              >
+                Document concerné :{" "}
+                <strong style={{ color: "#7c2d12" }}>{pendingModeSwitchTask.documentLabel}</strong>
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                onClick={cancelModeSwitchToOnSite}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 14,
+                  border: `1px solid ${borderSoftStrong}`,
+                  background: "#ffffff",
+                  color: "#243041",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                }}
+              >
+                Annuler
+              </button>
+
+              <button
+                type="button"
+                onClick={confirmModeSwitchToOnSite}
+                style={{
+                  padding: "10px 14px",
+                  borderRadius: 14,
+                  border: "1px solid #2F5FB8",
+                  background: "#2F5FB8",
+                  color: "#ffffff",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                }}
+              >
+                Continuer
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      <style dangerouslySetInnerHTML={{ __html: `html{scroll-behavior:smooth}` }} />
+
+
+      <section
+        style={{
+          marginTop: 28,
+          paddingTop: 20,
+          borderTop: "1px solid #E9EEF5",
+        }}
+      >
+        <div
+          style={{
+            borderRadius: 18,
+            border: "1px solid #D9E2EC",
+            background: "#FFFFFF",
+            boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+            padding: 16,
+          }}
+        >
+          <CollapsibleSectionHeader
+            title="Gestion documentaire détaillée du dossier"
+            subtitle="Conservez ici les outils de workflow avancé, hors du cockpit principal."
+            open={advancedOpen}
+            onToggle={() => setAdvancedOpen((value) => !value)}
+          />
+
+          {!advancedOpen ? (
+            <div
+              style={{
+                marginTop: 14,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                flexWrap: "wrap",
+                paddingTop: 14,
+                borderTop: "1px solid #E9EEF5",
+              }}
+            >
+              <div
+                style={{
+                  fontSize: 13,
+                  color: "#667085",
+                  lineHeight: 1.45,
+                }}
+              >
+                Le cockpit principal reste focalisé sur les signatures. Les outils détaillés
+                de préparation documentaire et de workflow restent disponibles ici si besoin.
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen(true)}
+                style={{
+                  appearance: "none",
+                  border: "1px solid #C7D3E0",
+                  background: "#FFFFFF",
+                  color: "#172033",
+                  borderRadius: 10,
+                  padding: "7px 12px",
+                  fontSize: 12,
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                Ouvrir les actions avancées
+              </button>
+            </div>
+          ) : null}
+
+          {advancedOpen ? (
+            <div
+              style={{
+                marginTop: 18,
+                paddingTop: 18,
+                borderTop: "1px solid #E9EEF5",
+              }}
+            >
+              <div style={{ minWidth: 0 }}>
+                {/* LEFT COLUMN START */}
+                <div
+                  style={{
+                    position: "relative",
+                    display: "grid",
+                    gap: 14,
+                    paddingLeft: 22,
+                    opacity: 0.92,
+                  }}
+                >
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: "absolute",
+                      left: 11,
+                      top: 14,
+                      bottom: 14,
+                      width: 2,
+                      borderRadius: 999,
+                      background: "#eef2f6",
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        width: "100%",
+                        height:
+                          workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
+                            ? "100%"
+                            : workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "current"
+                              ? "86%"
+                              : workflowStates[0] === "done" && workflowStates[1] === "current"
+                                ? "58%"
+                                : workflowStates[0] === "done"
+                                  ? "38%"
+                                  : workflowStates[0] === "current"
+                                    ? "20%"
+                                    : "0%",
+                        background:
+                          workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
+                            ? "linear-gradient(180deg, #94a3b8 0%, #64748b 100%)"
+                            : "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)",
+                        borderRadius: 999,
+                        transition: "height 240ms ease",
+                      }}
+                    />
+                  </div>
+
+                  <Card
+                    id="contract"
+                    title={
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                        {stepCircle(1, contractStepState)}
+                        <span>Contrat de location</span>
+                      </span>
+                    }
+                    subtitle={undefined}
+                    toneStyle={{ ...workflowCardTone(contractStepState), ...workflowAccentBar(contractStepState) }}
+                    right={
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setGuaranteesMenuOpen(false);
+                          setEdlMenuOpen(false);
+                          setContractMenuOpen((v) => !v);
+                        }}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 10,
+                          border: "1px solid #e5e7eb",
+                          background: "#ffffff",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#64748b",
+                          fontSize: 16,
+                          lineHeight: 1,
+                          boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+                        }}
+                      >
+                        ⋯
+                      </button>
+                    }
+                  >
+                    {contractMenuOpen ? (
+                      <InlineMenu title="Contrat">
+                        <MenuItem
+                          icon="+"
+                          onClick={() => {
+                            setContractMenuOpen(false);
+                            generateContract();
+                          }}
+                        >
+                          Générer PDF
+                        </MenuItem>
+
+                        <MenuItem
+                          icon="↓"
+                          onClick={() => {
+                            setContractMenuOpen(false);
+                            downloadContractPdf();
+                          }}
+                          disabled={!contractDoc?.id}
+                        >
+                          Télécharger contrat
+                        </MenuItem>
+
+                        <MenuItem
+                          icon="→"
+                          onClick={() => {
+                            setContractMenuOpen(false);
+                            sendPublicLink(false);
+                          }}
+                          disabled={!contractDoc?.id}
+                        >
+                          Envoyer liens locataires
+                        </MenuItem>
+
+                        <MenuItem
+                          icon="↻"
+                          onClick={() => {
+                            setContractMenuOpen(false);
+                            sendPublicLink(true);
+                          }}
+                          disabled={!contractDoc?.id}
+                        >
+                          Renvoyer liens
+                        </MenuItem>
+
+                        {isRP ? (
+                          <MenuItem
+                            icon="+"
+                            onClick={() => {
+                              setContractMenuOpen(false);
+                              generateNotice();
+                            }}
+                          >
+                            Générer notice
+                          </MenuItem>
+                        ) : null}
+
+                        {isRP ? (
+                          <MenuItem
+                            icon="↓"
+                            onClick={() => {
+                              setContractMenuOpen(false);
+                              downloadNoticePdf();
+                            }}
+                            disabled={!noticeDoc?.id}
+                          >
+                            Télécharger notice
+                          </MenuItem>
+                        ) : null}
+                      </InlineMenu>
+                    ) : null}
+
+                    {!sigStatus && loadingSigStatus ? (
+                      <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
+                    ) : null}
+
+                    {sigStatusError ? (
+                      <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
+                    ) : null}
+
+                    {sigStatus ? (
+                      <>
+                        <SignableCard
+                          title="Contrat de location"
+                          statusChip={contractStatusChip}
+                          subtitle={
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                              <span style={{ fontWeight: 700, color: textStrong }}>Statut :</span>
+                              {contractStatusChip}
+                            </div>
+                          }
+                          actions={[
+                            {
+                              label: "Télécharger",
+                              kind: "secondary",
+                              disabled: !sigStatus.contract.documentId,
+                              onClick: () =>
+                                sigStatus.contract.documentId &&
+                                downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
+                            },
+                            {
+                              label: "PDF signé",
+                              kind: "secondary",
+                              disabled: !sigStatus.contract.signedFinalDocumentId,
+                              onClick: () =>
+                                sigStatus.contract.signedFinalDocumentId &&
+                                downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
+                            },
+                          ]}
+                        />
+
+                        <div style={{ marginTop: 10 }}>
+                          <DetailToggle
+                            open={showContractDetails}
+                            onClick={() => setShowContractDetails((v) => !v)}
+                          />
+                        </div>
+
+                        {showContractDetails ? (
+                          <div
+                            style={{
+                              marginTop: 12,
+                              paddingTop: 12,
+                              borderTop: "1px solid rgba(226,232,240,0.75)",
+                              display: "grid",
+                              gap: 12,
+                            }}
+                          >
+                            {finalSignedDoc?.id ? (
+                              <div style={card(border)}>
+                                <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
+                                <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
+                                <button
+                                  onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)}
+                                  style={btnPrimarySmall()}
+                                >
+                                  Télécharger PDF signé
+                                </button>
+                              </div>
+                            ) : null}
+
+                            {packFinalV2Doc?.id ? (
+                              <div style={card(border)}>
+                                <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
+                                <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
+                                <button
+                                  onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
+                                  style={btnPrimarySmall()}
+                                >
+                                  Télécharger PACK_FINAL signé
+                                </button>
+                              </div>
+                            ) : null}
+
+                            <div style={card(border)}>
+                              <h3 style={{ marginTop: 0, marginBottom: 10 }}>Suivi des signatures locataires</h3>
+
+                              {!sigStatus?.contract?.tenants?.length ? (
+                                <div style={{ fontSize: 13, color: muted }}>Aucun locataire.</div>
+                              ) : (
+                                <div style={{ display: "grid", gap: 10 }}>
+                                  {sigStatus.contract.tenants.map((t) => (
+                                    <div
+                                      key={t.leaseTenantId}
+                                      style={{
+                                        border: `1px solid ${border}`,
+                                        borderRadius: 14,
+                                        padding: 12,
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          gap: 12,
+                                          alignItems: "flex-start",
+                                          flexWrap: "wrap",
+                                        }}
+                                      >
+                                        <div style={{ minWidth: 240 }}>
+                                          <div style={{ fontWeight: 800 }}>
+                                            {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
+                                          </div>
+
+                                          <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                                            Statut:{" "}
+                                            <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
+                                              {humanDocStatus(t.signatureStatus)}
+                                            </span>
+                                            {t.lastLink?.createdAt ? (
+                                              <span style={{ marginLeft: 8 }}>
+                                                (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
+                                              </span>
+                                            ) : null}
+                                          </div>
+                                        </div>
+
+                                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                                          <button
+                                            style={btnSecondary()}
+                                            onClick={() => fetchSignatureStatus(leaseId)}
+                                          >
+                                            Rafraîchir statuts
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                  </Card>
+
+                  <Card
+                    id="guarantees"
+                    title={
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                        {stepCircle(2, guaranteesStepState)}
+                        <span>Garanties</span>
+                      </span>
+                    }
+                    subtitle={undefined}
+                    toneStyle={{ ...workflowCardTone(guaranteesStepState), ...workflowAccentBar(guaranteesStepState) }}
+                    right={
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setContractMenuOpen(false);
+                          setEdlMenuOpen(false);
+                          setGuaranteesMenuOpen((v) => !v);
+                        }}
+                        style={{
+                          width: 32,
+                          height: 32,
+                          borderRadius: 10,
+                          border: "1px solid #e5e7eb",
+                          background: "#ffffff",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          color: "#64748b",
+                          fontSize: 16,
+                          lineHeight: 1,
+                          boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+                        }}
+                      >
+                        ⋯
+                      </button>
+                    }
+                  >
+                    {guaranteesMenuOpen ? (
+                      <InlineMenu title="Garanties">
+                        <MenuItem
+                          icon="→"
+                          onClick={() => {
+                            setGuaranteesMenuOpen(false);
+                            openGuarantees();
+                          }}
+                        >
+                          Gérer garanties
+                        </MenuItem>
+                      </InlineMenu>
+                    ) : null}
+
+                    {!sigStatus && loadingSigStatus ? (
+                      <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
+                    ) : null}
+
+                    {sigStatusError ? (
+                      <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
+                    ) : null}
+
+                    {sigStatus ? (
+                      <SignableCard
+                        title="Garanties"
+                        statusChip={
+                          <Badge tone={guaranteesCount > 0 ? (guaranteesUnsignedCount === 0 ? "success" : "warning") : "neutral"}>
+                            {guaranteesCount > 0 ? `${guaranteesCount} garantie(s)` : "Aucune"}
+                          </Badge>
+                        }
+                        subtitle={undefined}
+                        actions={[
+                          {
+                            label: "Gérer",
+                            kind: "secondary",
+                            onClick: openGuarantees,
+                          },
+                        ]}
+                      />
+                    ) : null}
+
+                    <div style={{ marginTop: 10 }}>
+                      <DetailToggle
+                        open={showGuaranteesDetails}
+                        onClick={() => setShowGuaranteesDetails((v) => !v)}
+                      />
+                    </div>
+
+                    {showGuaranteesDetails ? (
+                      <div
+                        style={{
+                          marginTop: 12,
+                          paddingTop: 12,
+                          borderTop: "1px solid rgba(226,232,240,0.75)",
+                        }}
+                      >
+                        {sigStatus && sigStatus.guarantees.length === 0 ? (
+                          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>
+                            Aucune garantie CAUTION sélectionnée.
+                          </div>
+                        ) : null}
+
+                        {sigStatus && sigStatus.guarantees.length > 0 ? (
+                          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+                            {sigStatus.guarantees.map((g) => {
+                              const statusText =
+                                g.signatureStatus === "SIGNED"
+                                  ? "🟢 Signé"
+                                  : g.signatureStatus === "IN_PROGRESS"
+                                    ? "🟡 En cours"
+                                    : g.signatureStatus === "SENT"
+                                      ? "🟠 Lien envoyé"
+                                      : "🔵 Non envoyé";
+
+                              const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
+
+                              const ackTenant = g.tenantId;
+                              const ackRequired = Boolean(g.ack?.required);
+                              const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
+                              const ackOk = Boolean(ackInfo?.acknowledged);
+
+                              const primaryLabel =
+                                g.signatureStatus === "SIGNED"
+                                  ? "📤 Partager au garant"
+                                  : g.lastLink
+                                    ? "Renvoyer lien signature"
+                                    : "Envoyer lien signature";
+
+                              const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;
+
+                              return (
+                                <SignableCard
+                                  key={g.guaranteeId}
+                                  title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
+                                  statusChip={
+                                    <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
+                                      {statusText}
+                                    </span>
+                                  }
+                                  subtitle={
+                                    <div style={{ display: "grid", gap: 6 }}>
+                                      <div>
+                                        <strong>Lien :</strong> {linkState}
+                                        {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
+                                      </div>
+                                      <div>
+                                        <strong>ACK locataire :</strong>{" "}
+                                        {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
+                                      </div>
+                                    </div>
+                                  }
+                                  actions={[
+                                    {
+                                      label: primaryLabel,
+                                      onClick: () => {
+                                        if (g.signatureStatus === "SIGNED") {
+                                          return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
+                                            alert(e.message || String(e))
+                                          );
+                                        }
+                                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
+                                          alert(e.message || String(e))
+                                        );
+                                      },
+                                      disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !actId,
+                                    },
+                                    {
+                                      label: "Générer acte",
+                                      kind: "secondary",
+                                      disabled: Boolean(actId),
+                                      onClick: async () => {
+                                        await generateGuarantorActFor(g.guaranteeId);
+                                        await fetchSignatureStatus(leaseId);
+                                      },
+                                    },
+                                    {
+                                      label: "Télécharger PDF",
+                                      kind: "secondary",
+                                      disabled: !actId,
+                                      onClick: () => actId && downloadDoc(actId, "acte_caution.pdf"),
+                                    },
+                                    {
+                                      label: "ACK : Marquer comme lu",
+                                      kind: "secondary",
+                                      disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
+                                      onClick: () =>
+                                        g.signedFinalDocumentId &&
+                                        acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
+                                          alert(e.message || String(e))
+                                        ),
+                                    },
+                                  ]}
+                                />
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </Card>
+
+                  {sigStatus && (
+                    <Card
+                      id="edl-inv"
+                      title={
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
+                          {stepCircle(3, edlStepState)}
+                          <span>EDL & Inventaires</span>
+                        </span>
+                      }
+                      subtitle={undefined}
+                      toneStyle={{ ...workflowCardTone(edlStepState), ...workflowAccentBar(edlStepState) }}
+                      right={
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setContractMenuOpen(false);
+                            setGuaranteesMenuOpen(false);
+                            setEdlMenuOpen((v) => !v);
+                          }}
+                          style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 10,
+                            border: "1px solid #e5e7eb",
+                            background: "#ffffff",
+                            cursor: "pointer",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            color: "#64748b",
+                            fontSize: 16,
+                            lineHeight: 1,
+                            boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
+                          }}
+                        >
+                          ⋯
+                        </button>
+                      }
+                    >
+                      {edlMenuOpen ? (
+                        <InlineMenu title="EDL & Inventaires">
+                          <MenuItem
+                            icon="+"
+                            onClick={() => {
+                              setEdlMenuOpen(false);
+                              generatePack();
+                            }}
+                          >
+                            Générer pack (EDL + Inventaire)
+                          </MenuItem>
+
+                          <MenuItem
+                            icon="↓"
+                            onClick={() => {
+                              setEdlMenuOpen(false);
+                              downloadPackPdf();
+                            }}
+                            disabled={!packDoc?.id}
+                          >
+                            Télécharger pack
+                          </MenuItem>
+
+                          <MenuItem
+                            icon="✓"
+                            onClick={() => {
+                              setEdlMenuOpen(false);
+                              generatePackFinalV2();
+                            }}
+                          >
+                            Générer PACK_FINAL signé (V2)
+                          </MenuItem>
+                        </InlineMenu>
+                      ) : null}
+
+                      <SignableCard
+                        title="EDL & Inventaires"
+                        statusChip={edlInvSummaryChip}
+                        subtitle={undefined}
+                        actions={[
+                          {
+                            label: "Générer PDF",
+                            kind: "secondary",
+                            onClick: generatePack,
+                          },
+                          {
+                            label: "Télécharger",
+                            kind: "secondary",
+                            disabled: !packDoc?.id,
+                            onClick: downloadPackPdf,
+                          },
+                        ]}
+                      />
+
+                      <div style={{ marginTop: 10 }}>
+                        <DetailToggle
+                          open={showEdlInvDetails}
+                          onClick={() => setShowEdlInvDetails((v) => !v)}
+                        />
+                      </div>
+
+                      {showEdlInvDetails ? (
+                        <div
+                          style={{
+                            marginTop: 12,
+                            paddingTop: 12,
+                            borderTop: "1px solid rgba(226,232,240,0.75)",
+                          }}
+                        >
+                          {[packEntry, packExit]
+                            .filter(Boolean)
+                            .map((p: any) => (
+                              <div
+                                key={p.key || p.label}
+                                style={{
+                                  border: `1px solid ${border}`,
+                                  borderRadius: 14,
+                                  padding: 12,
+                                  marginTop: 10,
+                                  background: "rgba(248,250,252,0.9)",
+                                }}
+                              >
+                                <div style={{ fontWeight: 800 }}>
+                                  {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
+                                </div>
+
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    color: muted,
+                                    marginTop: 6,
+                                    display: "flex",
+                                    gap: 8,
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 700 }}>Statut:</span>
+                                  <Badge tone={toneFromStatus(p.status)}>{humanDocStatus(p.status)}</Badge>
+                                </div>
+
+                                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                                  <button
+                                    style={btnAction()}
+                                    disabled={Boolean(p.documentId)}
+                                    onClick={() => {
+                                      const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
+                                      return generatePackEdlInv(phase as "entry" | "exit");
+                                    }}
+                                  >
+                                    Générer PDF
+                                  </button>
+
+                                  <button
+                                    style={btnSecondary()}
+                                    disabled={!p.documentId}
+                                    onClick={() =>
+                                      p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)
+                                    }
+                                  >
+                                    Télécharger PDF
+                                  </button>
+
+                                  <button
+                                    style={btnSecondary()}
+                                    disabled={!p.signedFinalDocumentId}
+                                    onClick={() =>
+                                      p.signedFinalDocumentId &&
+                                      downloadDoc(p.signedFinalDocumentId, `${p.key || "pack_edl_inv"}_SIGNE.pdf`)
+                                    }
+                                  >
+                                    Télécharger signé
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+
+                          {[
+                            sigStatus.edl?.entry,
+                            sigStatus.edl?.exit,
+                            sigStatus.inventory?.entry,
+                            sigStatus.inventory?.exit,
+                          ]
+                            .filter(Boolean)
+                            .map((d: any) => (
+                              <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
+                                <div style={{ fontWeight: 800 }}>{d.label}</div>
+
+                                <div
+                                  style={{
+                                    fontSize: 13,
+                                    color: muted,
+                                    marginTop: 6,
+                                    display: "flex",
+                                    gap: 8,
+                                    alignItems: "center",
+                                  }}
+                                >
+                                  <span style={{ fontWeight: 700 }}>Statut:</span>
+                                  <Badge tone={toneFromStatus(d.status)}>{humanDocStatus(d.status)}</Badge>
+                                </div>
+
+                                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
+                                  Bailleur: {d.need?.landlord?.signed ? "✅ signé" : "❌ manquant"} •
+                                  Locataires:{" "}
+                                  {(d.need?.tenants || []).filter((t: any) => !t.signed).length === 0
+                                    ? "✅ tous signés"
+                                    : "❌ manquants"}
+                                </div>
+
+                                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
+                                  <button
+                                    style={btnAction()}
+                                    disabled={Boolean(d.documentId)}
+                                    onClick={() => {
+                                      const k = String(d.key || "");
+                                      if (k === "edl:entry" || k === "edl_entry") return generateEdl("entry");
+                                      if (k === "edl:exit" || k === "edl_exit") return generateEdl("exit");
+                                      if (k === "inv:entry" || k === "inv_entry") return generateInventory("entry");
+                                      if (k === "inv:exit" || k === "inv_exit") return generateInventory("exit");
+                                    }}
+                                  >
+                                    Générer PDF
+                                  </button>
+
+                                  <button
+                                    style={btnSecondary()}
+                                    disabled={!d.documentId}
+                                    onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
+                                  >
+                                    Télécharger PDF
+                                  </button>
+
+                                  <button
+                                    style={btnSecondary()}
+                                    disabled={!d.signedFinalDocumentId}
+                                    onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
+                                  >
+                                    Télécharger signé
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      ) : null}
+                    </Card>
+                  )}
+                </div>
+                {/* LEFT COLUMN END */}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      </section>
+
       <style
         dangerouslySetInnerHTML={{
           __html: `
