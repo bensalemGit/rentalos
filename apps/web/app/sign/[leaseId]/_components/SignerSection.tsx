@@ -1,9 +1,11 @@
-import React from "react";
+import React, { useEffect, useRef } from "react";
 import type { SignerTask } from "../_types/signature-center.types";
 import { SignerCard } from "./SignerCard";
 
 type SignerSectionProps = {
   tasks: SignerTask[];
+  activeTaskId: string | null;
+  enableAutoScroll: boolean;
   onStartOnSite: (task: SignerTask) => void;
   onSendEmail: (task: SignerTask) => void;
   onResendEmail: (task: SignerTask) => void;
@@ -16,12 +18,34 @@ const textSoft = "#667085";
 
 export function SignerSection({
   tasks,
+  activeTaskId,
+  enableAutoScroll,
   onStartOnSite,
   onSendEmail,
   onResendEmail,
   onDownloadSigned,
   onPrepare,
 }: SignerSectionProps) {
+  
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  
+  useEffect(() => {
+    if (!enableAutoScroll) return;
+    if (!activeTaskId) return;
+
+    const node = cardRefs.current[activeTaskId];
+    if (!node) return;
+
+    const id = window.setTimeout(() => {
+      node.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }, 60);
+
+    return () => window.clearTimeout(id);
+  }, [activeTaskId, enableAutoScroll]);
+
   return (
     <section style={{ display: "grid", gap: 14 }}>
       <div
@@ -74,7 +98,11 @@ export function SignerSection({
           {tasks.map((task) => (
             <SignerCard
               key={task.id}
+              ref={(node) => {
+                cardRefs.current[task.id] = node;
+              }}
               task={task}
+              isActive={activeTaskId === task.id}
               onStartOnSite={onStartOnSite}
               onSendEmail={onSendEmail}
               onResendEmail={onResendEmail}

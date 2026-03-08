@@ -18,6 +18,11 @@ export type SignerTask = {
   displayName: string;
   roleLabel: string;
 
+  subtypeLabel?: string | null;
+  helperLabel?: string | null;
+  progressLabel?: string | null;
+  counterpartySigned?: boolean | null;
+
   documentId: string | null;
   documentLabel: string;
   documentFilename?: string | null;
@@ -49,6 +54,7 @@ export type SignerTask = {
   isOptional?: boolean;
   isBlocked?: boolean;
   blockedReason?: string | null;
+
 };
 
 export type SignatureOverview = {
