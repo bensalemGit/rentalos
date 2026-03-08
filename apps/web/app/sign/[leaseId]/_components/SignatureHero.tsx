@@ -1,7 +1,6 @@
 import React from "react";
 import type { SignatureOverview } from "../_types/signature-center.types";
 
-
 type SignatureHeroProps = {
   overview: SignatureOverview;
   recommendedActionLabel: string;
@@ -11,32 +10,83 @@ type SignatureHeroProps = {
   onStartNextOnSite: () => void;
 };
 
-const textStrong = "#172033";
-const textSoft = "#667085";
-const borderSoft = "#dde3ec";
+const COLORS = {
+  textStrong: "#172033",
+  textSoft: "#667085",
+  textMuted: "#98A2B3",
+  border: "#D9E2EC",
+  borderStrong: "#C7D3E0",
+  surface: "#FFFFFF",
+  blue: "#1D4ED8",
+  blueSoft: "#EEF4FF",
+  blueBorder: "#C7D7FE",
+  green: "#16A34A",
+  greenSoft: "#F0FDF4",
+  greenBorder: "#BBF7D0",
+  amber: "#D97706",
+  amberSoft: "#FFF7ED",
+  amberBorder: "#FED7AA",
+  slateSoft: "#F8FAFC",
+};
 
-function pillStyle(tone: "success" | "warning" | "neutral") {
+function getProgressTone(progressPercent: number, remainingCount: number) {
+  if (remainingCount === 0) {
+    return {
+      bar: "linear-gradient(90deg, #22C55E 0%, #16A34A 100%)",
+      chipBg: COLORS.greenSoft,
+      chipBorder: COLORS.greenBorder,
+      chipColor: COLORS.green,
+    };
+  }
+
+  if (progressPercent >= 50) {
+    return {
+      bar: "linear-gradient(90deg, #F59E0B 0%, #D97706 100%)",
+      chipBg: COLORS.amberSoft,
+      chipBorder: COLORS.amberBorder,
+      chipColor: COLORS.amber,
+    };
+  }
+
+  return {
+    bar: "linear-gradient(90deg, #3B82F6 0%, #1D4ED8 100%)",
+    chipBg: COLORS.blueSoft,
+    chipBorder: COLORS.blueBorder,
+    chipColor: COLORS.blue,
+  };
+}
+
+function statPill(label: string, tone: "neutral" | "success" | "warning" = "neutral") {
   if (tone === "success") {
     return {
-      background: "rgba(34,197,94,0.08)",
-      color: "#1f7a57",
-      border: "1px solid transparent",
-    } as const;
+      label,
+      style: {
+        background: COLORS.greenSoft,
+        border: `1px solid ${COLORS.greenBorder}`,
+        color: COLORS.green,
+      },
+    };
   }
 
   if (tone === "warning") {
     return {
-      background: "rgba(245,158,11,0.10)",
-      color: "#b45309",
-      border: "1px solid rgba(245,158,11,0.22)",
-    } as const;
+      label,
+      style: {
+        background: COLORS.amberSoft,
+        border: `1px solid ${COLORS.amberBorder}`,
+        color: COLORS.amber,
+      },
+    };
   }
 
   return {
-    background: "rgba(100,116,139,0.08)",
-    color: "#667085",
-    border: "1px solid transparent",
-  } as const;
+    label,
+    style: {
+      background: "#F8FAFC",
+      border: "1px solid #E2E8F0",
+      color: "#475467",
+    },
+  };
 }
 
 export function SignatureHero({
@@ -47,109 +97,136 @@ export function SignatureHero({
   onSendAllRemainingLinks,
   onStartNextOnSite,
 }: SignatureHeroProps) {
-  const progressWidth = `${Math.max(6, Math.min(100, overview.progressPercent || 0))}%`;
-  const remainingTone =
-    overview.remainingCount === 0 ? "success" : overview.progressPercent >= 50 ? "warning" : "neutral";
-
+  const progressPercent = Math.max(0, Math.min(100, overview.progressPercent || 0));
+  const progressWidth = `${Math.max(progressPercent, progressPercent > 0 ? 8 : 0)}%`;
   const isCompleted = overview.remainingCount === 0;
+  const progressTone = getProgressTone(progressPercent, overview.remainingCount);
+
+  const tenantPill =
+    overview.tenants.total > 0
+      ? statPill(
+          `Locataires ${overview.tenants.signed}/${overview.tenants.total}`,
+          overview.tenants.signed === overview.tenants.total ? "success" : "warning",
+        )
+      : statPill("Aucun locataire");
+
+  const guarantorPill =
+    overview.guarantors.total > 0
+      ? statPill(
+          `Garanties ${overview.guarantors.signed}/${overview.guarantors.total}`,
+          overview.guarantors.signed === overview.guarantors.total ? "success" : "warning",
+        )
+      : statPill("Aucune garantie");
+
+  const landlordPill = statPill(
+    `Bailleur ${overview.landlord.signed ? "signé" : "à signer"}`,
+    overview.landlord.signed ? "success" : "warning",
+  );
 
   return (
-    <div
+    <section
       style={{
-        background: isCompleted
-          ? "linear-gradient(180deg, #ffffff 0%, #f7fcf8 100%)"
-          : "#ffffff",
-        border: isCompleted
-          ? "1px solid rgba(34,197,94,0.20)"
-          : `1px solid ${borderSoft}`,
-        borderRadius: 24,
-        padding: "28px 30px",
-        boxShadow: isCompleted
-          ? "0 16px 36px rgba(34,197,94,0.08), 0 2px 6px rgba(15,23,42,0.03)"
-          : "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
-        display: "grid",
-        gap: 18,
+        borderRadius: 22,
+        border: `1px solid ${COLORS.border}`,
+        background: COLORS.surface,
+        boxShadow: "0 12px 32px rgba(15, 23, 42, 0.05)",
+        padding: 16,
       }}
     >
       <div
         style={{
           display: "flex",
-          justifyContent: "space-between",
-          gap: 20,
           alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 18,
           flexWrap: "wrap",
+          marginBottom: 16,
         }}
       >
-        <div style={{ minWidth: 280 }}>
+        <div style={{ minWidth: 0 }}>
           <div
             style={{
-              fontSize: 28,
-              lineHeight: 1.05,
-              fontWeight: 800,
-              letterSpacing: -0.04,
-              color: textStrong,
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              fontSize: 15,
+              fontWeight: 700,
+              color: COLORS.blue,
+              marginBottom: 8,
             }}
           >
-            Centre de signature
+            Signature du bail
           </div>
+
+          <h1
+            style={{
+              margin: 0,
+              fontSize: 28,
+              lineHeight: 1.02,
+              letterSpacing: "-0.03em",
+              fontWeight: 800,
+              color: COLORS.textStrong,
+            }}
+          >
+            {overview.leaseLabel}
+          </h1>
 
           <div
             style={{
-              marginTop: 10,
-              fontSize: 15.5,
-              lineHeight: 1.65,
-              color: "#334155",
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              marginTop: 8,
+              fontSize: 15,
+              color: COLORS.textSoft,
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
+              alignItems: "center",
             }}
           >
-            <span style={{ color: textSoft }}>Dossier :</span>{" "}
-            <span style={{ fontWeight: 700, color: textStrong }}>{overview.leaseLabel}</span>
-            {" — "}
-            <span style={{ color: textSoft }}>Locataire principal :</span>{" "}
-            <span style={{ fontWeight: 700, color: textStrong }}>{overview.primaryTenantName}</span>
+            <span>Locataire principal :</span>
+            <span style={{ color: COLORS.textStrong, fontWeight: 700 }}>
+              {overview.primaryTenantName}
+            </span>
           </div>
         </div>
 
-        <div
-          style={{
-            display: "inline-flex",
-            alignItems: "center",
-            padding: "8px 12px",
-            borderRadius: 999,
-            fontSize: 12,
-            fontWeight: 700,
-            letterSpacing: -0.01,
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            whiteSpace: "nowrap",
-            ...pillStyle(remainingTone),
-          }}
-        >
-          {overview.remainingCount === 0
-            ? "Dossier prêt"
-            : `${overview.remainingCount} signature(s) restante(s)`}
+        <div style={{ flexShrink: 0 }}>
+          <span
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              padding: "8px 12px",
+              borderRadius: 999,
+              fontSize: 12,
+              fontWeight: 800,
+              background: progressTone.chipBg,
+              border: `1px solid ${progressTone.chipBorder}`,
+              color: progressTone.chipColor,
+              whiteSpace: "nowrap",
+            }}
+          >
+            {isCompleted
+              ? "Dossier finalisé"
+              : `${overview.remainingCount} signature(s) restante(s)`}
+          </span>
         </div>
       </div>
 
-      <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ marginBottom: 16 }}>
         <div
           style={{
-            height: 8,
+            width: "100%",
+            height: 10,
             borderRadius: 999,
-            background: "#eef3f8",
+            background: "#E9EEF5",
             overflow: "hidden",
+            marginBottom: 10,
           }}
         >
           <div
             style={{
               width: progressWidth,
+              minWidth: progressPercent > 0 ? 10 : 0,
               height: "100%",
               borderRadius: 999,
-              background: overview.remainingCount === 0 ? "#66a884" : "#d49447",
-              transition: "width 180ms ease",
+              background: progressTone.bar,
+              transition: "width 220ms ease",
             }}
           />
         </div>
@@ -157,153 +234,167 @@ export function SignatureHero({
         <div
           style={{
             display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
             alignItems: "center",
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            justifyContent: "space-between",
+            gap: 12,
+            flexWrap: "wrap",
           }}
         >
-          <span
+          <div
             style={{
-              display: "inline-flex",
+              display: "flex",
+              gap: 8,
+              flexWrap: "wrap",
               alignItems: "center",
-              padding: "7px 12px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 700,
-              ...pillStyle(overview.tenants.pending === 0 && overview.tenants.total > 0 ? "success" : "warning"),
             }}
           >
-            Locataires {overview.tenants.signed}/{overview.tenants.total}
-          </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 700,
+                ...tenantPill.style,
+              }}
+            >
+              {tenantPill.label}
+            </span>
 
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "7px 12px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 700,
-              ...pillStyle(
-                overview.guarantors.total === 0 || overview.guarantors.pending === 0 ? "success" : "warning",
-              ),
-            }}
-          >
-            Garanties {overview.guarantors.signed}/{overview.guarantors.total}
-          </span>
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 700,
+                ...guarantorPill.style,
+              }}
+            >
+              {guarantorPill.label}
+            </span>
 
-          <span
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                padding: "6px 10px",
+                borderRadius: 999,
+                fontSize: 12,
+                fontWeight: 700,
+                ...landlordPill.style,
+              }}
+            >
+              {landlordPill.label}
+            </span>
+          </div>
+
+          <div
             style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "7px 12px",
-              borderRadius: 999,
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: 700,
-              ...pillStyle(overview.landlord.signed ? "success" : "warning"),
+              color: COLORS.textSoft,
+              whiteSpace: "nowrap",
             }}
           >
-            Bailleur {overview.landlord.signed ? "signé" : "à signer"}
-          </span>
+            Progression : {progressPercent}%
+          </div>
         </div>
       </div>
 
       <div
         style={{
-          display: "grid",
-          gap: 8,
-          padding: "14px 16px",
-          borderRadius: 16,
-          border: isCompleted
-            ? "1px solid rgba(34,197,94,0.18)"
-            : "1px solid rgba(47,95,184,0.14)",
-          background: isCompleted
-            ? "rgba(34,197,94,0.05)"
-            : "rgba(47,95,184,0.04)",
+          borderTop: `1px solid ${COLORS.border}`,
+          paddingTop: 16,
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
         }}
       >
-        <div
-          style={{
-            fontSize: 11.5,
-            fontWeight: 800,
-            letterSpacing: 0.3,
-            textTransform: "uppercase",
-            color: isCompleted ? "#15803d" : "#2F5FB8",
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          }}
-        >
-          {isCompleted ? "Dossier finalisé" : "Prochaine action recommandée"}
-        </div>
-        <div
-          style={{
-            fontSize: 15,
-            lineHeight: 1.55,
-            color: textStrong,
-            fontWeight: 700,
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          }}
-        >
-          {isCompleted
-            ? "Toutes les signatures requises ont été recueillies. Les documents finaux sont disponibles au téléchargement."
-            : recommendedActionLabel}
-        </div>
-
-        {!isCompleted ? (    
-        <div
-          style={{
-            display: "flex",
-            gap: 10,
-            flexWrap: "wrap",
-            marginTop: 4,
-          }}
-        >
-          <button
-            type="button"
-            onClick={onSendAllRemainingLinks}
-            disabled={!canSendAllRemainingLinks}
+        <div style={{ minWidth: 280, flex: "1 1 380px" }}>
+          <div
             style={{
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: "1px solid #2F5FB8",
-              background: "#2F5FB8",
-              color: "#ffffff",
-              fontWeight: 700,
-              cursor: canSendAllRemainingLinks ? "pointer" : "not-allowed",
-              opacity: canSendAllRemainingLinks ? 1 : 0.55,
-              boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: "0.03em",
+              textTransform: "uppercase",
+              color: COLORS.textMuted,
+              marginBottom: 8,
             }}
           >
-            Envoyer tous les liens restants
-          </button>
+            {isCompleted ? "Résumé dossier" : "Prochaine action recommandée"}
+          </div>
 
-          <button
-            type="button"
-            onClick={onStartNextOnSite}
-            disabled={!canStartNextOnSite}
+          <div
             style={{
-              padding: "10px 14px",
-              borderRadius: 14,
-              border: "1px solid #cfd8e3",
-              background: "#ffffff",
-              color: "#243041",
+              fontSize: 15,
+              lineHeight: 1.5,
+              color: COLORS.textStrong,
               fontWeight: 700,
-              cursor: canStartNextOnSite ? "pointer" : "not-allowed",
-              opacity: canStartNextOnSite ? 1 : 0.55,
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
           >
-            Lancer la prochaine signature sur place
-          </button>
+            {isCompleted
+              ? "Toutes les signatures requises ont été recueillies. Les documents finaux sont disponibles au téléchargement."
+              : recommendedActionLabel}
+          </div>
         </div>
-      ) : null}
+
+        {!isCompleted ? (
+          <div
+            style={{
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <button
+              type="button"
+              onClick={onSendAllRemainingLinks}
+              disabled={!canSendAllRemainingLinks}
+              style={{
+                appearance: "none",
+                border: `1px solid ${canSendAllRemainingLinks ? "#1D4ED8" : "#D0D5DD"}`,
+                background: canSendAllRemainingLinks ? "#1D4ED8" : "#F2F4F7",
+                color: canSendAllRemainingLinks ? "#FFFFFF" : "#98A2B3",
+                borderRadius: 12,
+                padding: "11px 16px",
+                fontSize: 14,
+                fontWeight: 800,
+                cursor: canSendAllRemainingLinks ? "pointer" : "not-allowed",
+                boxShadow: canSendAllRemainingLinks
+                  ? "0 6px 16px rgba(29, 78, 216, 0.18)"
+                  : "none",
+              }}
+            >
+              Envoyer tous les liens restants
+            </button>
+
+            <button
+              type="button"
+              onClick={onStartNextOnSite}
+              disabled={!canStartNextOnSite}
+              style={{
+                appearance: "none",
+                border: `1px solid ${canStartNextOnSite ? COLORS.borderStrong : "#D0D5DD"}`,
+                background: canStartNextOnSite ? "#FFFFFF" : "#F9FAFB",
+                color: canStartNextOnSite ? COLORS.textStrong : "#98A2B3",
+                borderRadius: 12,
+                padding: "11px 16px",
+                fontSize: 14,
+                fontWeight: 700,
+                cursor: canStartNextOnSite ? "pointer" : "not-allowed",
+              }}
+            >
+              Lancer la prochaine signature sur place
+            </button>
+          </div>
+        ) : null}
       </div>
-    </div>
+    </section>
   );
 }

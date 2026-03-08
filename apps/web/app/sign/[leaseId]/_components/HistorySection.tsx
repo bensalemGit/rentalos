@@ -11,145 +11,168 @@ type HistorySectionProps = {
   items: HistoryItem[];
 };
 
-const textStrong = "#172033";
-const textSoft = "#667085";
-const borderSoft = "#dde3ec";
+const COLORS = {
+  textStrong: "#172033",
+  textSoft: "#667085",
+  textMuted: "#98A2B3",
+  border: "#D9E2EC",
+  borderSoft: "#E9EEF5",
+  surface: "#FFFFFF",
+  graySoft: "#F8FAFC",
+  blue: "#1D4ED8",
+};
 
 export function HistorySection({ items }: HistorySectionProps) {
+  const visibleItems = items.slice(0, 5);
+
   return (
-    <section style={{ display: "grid", gap: 14 }}>
+    <section
+      style={{
+        borderRadius: 18,
+        border: `1px solid ${COLORS.border}`,
+        background: COLORS.surface,
+        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
+        overflow: "hidden",
+      }}
+    >
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          padding: "14px 16px 10px 16px",
+          borderBottom: `1px solid ${COLORS.borderSoft}`,
         }}
       >
         <div
           style={{
-            width: 10,
-            height: 10,
-            borderRadius: 999,
-            background: "#94a3b8",
-            boxShadow: "0 0 0 6px rgba(148,163,184,0.10)",
-          }}
-        />
-        <div
-          style={{
-            fontSize: 16,
+            fontSize: 11,
             fontWeight: 800,
-            letterSpacing: 0.02,
-            color: "#667085",
+            color: COLORS.textMuted,
             textTransform: "uppercase",
+            letterSpacing: "0.04em",
+            marginBottom: 4,
           }}
         >
           Historique récent
         </div>
+
+        <div
+          style={{
+            fontSize: 15,
+            fontWeight: 800,
+            color: COLORS.textStrong,
+          }}
+        >
+          {visibleItems.length === 0
+            ? "Aucun événement"
+            : `$Activité du dossier${visibleItems.length > 1 ? "s" : ""}`}
+        </div>
       </div>
 
-      <div
-        style={{
-          background: "#ffffff",
-          border: `1px solid ${borderSoft}`,
-          borderRadius: 20,
-          padding: 18,
-          boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
-          display: "grid",
-          gap: 0,
-        }}
-      >
-        {items.length === 0 ? (
+      {visibleItems.length === 0 ? (
+        <div
+          style={{
+            padding: "16px",
+            display: "grid",
+            gap: 4,
+          }}
+        >
           <div
             style={{
-              display: "grid",
-              gap: 8,
-              padding: "6px 2px",
-              color: textSoft,
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              fontSize: 14,
+              fontWeight: 700,
+              color: COLORS.textStrong,
             }}
           >
-            <div
-              style={{
-                fontSize: 15,
-                fontWeight: 800,
-                color: textStrong,
-                letterSpacing: -0.01,
-              }}
-            >
-              Aucun événement récent
-            </div>
-
-            <div
-              style={{
-                fontSize: 13.5,
-                lineHeight: 1.6,
-                color: textSoft,
-              }}
-            >
-              Les envois de liens, préparations de documents et signatures apparaîtront ici au fil de l’avancement du dossier.
-            </div>
+            Aucun événement récent
           </div>
-        ) : (
-          items.map((item, index) => (
+
+          <div
+            style={{
+              fontSize: 13,
+              lineHeight: 1.5,
+              color: COLORS.textSoft,
+            }}
+          >
+            Les envois de liens, préparations de documents et signatures
+            apparaîtront ici au fil de l’avancement du dossier.
+          </div>
+        </div>
+      ) : (
+        <div>
+          {visibleItems.map((item, index) => (
             <div
               key={item.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "120px 1fr",
-                gap: 16,
-                padding: "14px 0",
-                borderBottom: index === items.length - 1 ? "none" : "1px solid rgba(226,232,240,0.7)",
+                gridTemplateColumns: "90px minmax(0, 1fr)",
+                gap: 12,
+                padding: "10px 16px",
+                borderTop: index === 0 ? "none" : `1px solid ${COLORS.borderSoft}`,
                 alignItems: "start",
               }}
             >
               <div
                 style={{
-                  fontSize: 12.5,
+                  fontSize: 12,
                   fontWeight: 700,
-                  color: "#98a2b3",
-                  paddingTop: 2,
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  color: COLORS.textMuted,
+                  lineHeight: 1.4,
+                  whiteSpace: "nowrap",
                 }}
               >
                 {item.dateLabel}
               </div>
 
-              <div style={{ display: "grid", gap: 4 }}>
-                <div
+              <div
+                style={{
+                  minWidth: 0,
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 9,
+                }}
+              >
+                <span
                   style={{
-                    fontSize: 15,
-                    fontWeight: 800,
-                    color: textStrong,
-                    letterSpacing: -0.01,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    width: 8,
+                    height: 8,
+                    borderRadius: 999,
+                    background: COLORS.blue,
+                    marginTop: 5,
+                    flexShrink: 0,
                   }}
-                >
-                  {item.title}
-                </div>
+                />
 
-                {item.subtitle ? (
+                <div style={{ minWidth: 0 }}>
                   <div
                     style={{
-                      fontSize: 13.5,
-                      color: textSoft,
-                      lineHeight: 1.55,
-                      fontFamily:
-                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      fontSize: 14,
+                      fontWeight: 700,
+                      color: COLORS.textStrong,
+                      lineHeight: 1.4,
+                      wordBreak: "break-word",
                     }}
                   >
-                    {item.subtitle}
+                    {item.title}
                   </div>
-                ) : null}
+
+                  {item.subtitle ? (
+                    <div
+                      style={{
+                        marginTop: 2,
+                        fontSize: 12,
+                        lineHeight: 1.45,
+                        color: COLORS.textSoft,
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {item.subtitle}
+                    </div>
+                  ) : null}
+                </div>
               </div>
             </div>
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      )}
     </section>
   );
 }
