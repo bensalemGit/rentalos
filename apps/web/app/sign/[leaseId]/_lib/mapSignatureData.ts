@@ -310,10 +310,18 @@ function mapDocuments(args: {
   signerTasks: SignerTask[];
 }): DocumentResource[] {
   const items: DocumentResource[] = [];
+  const seen = new Set<string>();
+
+  function pushDoc(doc: DocumentResource) {
+    const key = `${doc.type}:${doc.id}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    items.push(doc);
+  }
 
   const contract = args.sigStatus?.contract;
   if (contract?.documentId) {
-    items.push({
+    pushDoc({
       id: contract.documentId,
       label: "Contrat de location",
       type: "CONTRACT",
@@ -327,20 +335,32 @@ function mapDocuments(args: {
   args.signerTasks
     .filter((t) => t.kind === "GUARANTOR" && t.documentId)
     .forEach((t) => {
-      items.push({
+      pushDoc({
         id: t.documentId as string,
         label: `${t.documentLabel} — ${t.displayName}`,
         type: "GUARANTOR_ACT",
         filename: t.documentFilename || null,
-        statusLabel: t.statusLabel,
+        statusLabel: t.signedFinalDocumentId ? "Signé" : t.statusLabel,
         downloadable: true,
         signedFinalDocumentId: t.signedFinalDocumentId || null,
       });
     });
 
+  const noticeDoc = args.docs.find((d) => d.type === "NOTICE");
+  if (noticeDoc) {
+    pushDoc({
+      id: noticeDoc.id,
+      label: "Notice",
+      type: "NOTICE",
+      filename: noticeDoc.filename || null,
+      statusLabel: "Généré",
+      downloadable: true,
+    });
+  }
+
   const packDoc = args.docs.find((d) => d.type === "PACK");
   if (packDoc) {
-    items.push({
+    pushDoc({
       id: packDoc.id,
       label: "Pack documents",
       type: "PACK",
@@ -352,7 +372,7 @@ function mapDocuments(args: {
 
   const packFinalDoc = args.docs.find((d) => d.type === "PACK_FINAL");
   if (packFinalDoc) {
-    items.push({
+    pushDoc({
       id: packFinalDoc.id,
       label: "Pack final",
       type: "PACK_FINAL",
@@ -361,6 +381,30 @@ function mapDocuments(args: {
       downloadable: true,
     });
   }
+
+  const edlDocs = args.docs.filter((d) => d.type === "EDL");
+  edlDocs.forEach((doc, index) => {
+    pushDoc({
+      id: doc.id,
+      label: `EDL ${index + 1}`,
+      type: "EDL",
+      filename: doc.filename || null,
+      statusLabel: "Généré",
+      downloadable: true,
+    });
+  });
+
+  const inventoryDocs = args.docs.filter((d) => d.type === "INVENTORY");
+  inventoryDocs.forEach((doc, index) => {
+    pushDoc({
+      id: doc.id,
+      label: `Inventaire ${index + 1}`,
+      type: "INVENTORY",
+      filename: doc.filename || null,
+      statusLabel: "Généré",
+      downloadable: true,
+    });
+  });
 
   return items;
 }

@@ -1,8 +1,12 @@
 import React from "react";
 import type { SignatureOverview } from "../_types/signature-center.types";
 
+
 type SignatureHeroProps = {
   overview: SignatureOverview;
+  recommendedActionLabel: string;
+  onSendAllRemainingLinks: () => void;
+  onStartNextOnSite: () => void;
 };
 
 const textStrong = "#172033";
@@ -33,7 +37,12 @@ function pillStyle(tone: "success" | "warning" | "neutral") {
   } as const;
 }
 
-export function SignatureHero({ overview }: SignatureHeroProps) {
+export function SignatureHero({
+  overview,
+  recommendedActionLabel,
+  onSendAllRemainingLinks,
+  onStartNextOnSite,
+}: SignatureHeroProps) {
   const progressWidth = `${Math.max(6, Math.min(100, overview.progressPercent || 0))}%`;
   const remainingTone =
     overview.remainingCount === 0 ? "success" : overview.progressPercent >= 50 ? "warning" : "neutral";
@@ -188,6 +197,98 @@ export function SignatureHero({ overview }: SignatureHeroProps) {
           </span>
         </div>
       </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: 8,
+          padding: "14px 16px",
+          borderRadius: 16,
+          border: "1px solid rgba(47,95,184,0.14)",
+          background: "rgba(47,95,184,0.04)",
+        }}
+      >
+        <div
+          style={{
+            fontSize: 11.5,
+            fontWeight: 800,
+            letterSpacing: 0.3,
+            textTransform: "uppercase",
+            color: "#2F5FB8",
+            fontFamily:
+              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          }}
+        >
+          Prochaine action recommandée  
+        </div>
+
+
+        
+
+        <div
+          style={{
+            fontSize: 15,
+            lineHeight: 1.55,
+            color: textStrong,
+            fontWeight: 700,
+            fontFamily:
+              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+          }}
+        >
+          {recommendedActionLabel}
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            marginTop: 4,
+          }}
+        >
+          <button
+            type="button"
+            onClick={onSendAllRemainingLinks}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 14,
+              border: "1px solid #2F5FB8",
+              background: "#2F5FB8",
+              color: "#ffffff",
+              fontWeight: 700,
+              cursor: "pointer",
+              boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            Envoyer tous les liens restants
+          </button>
+
+          <button
+            type="button"
+            onClick={onStartNextOnSite}
+            style={{
+              padding: "10px 14px",
+              borderRadius: 14,
+              border: "1px solid #cfd8e3",
+              background: "#ffffff",
+              color: "#243041",
+              fontWeight: 700,
+              cursor: "pointer",
+              fontFamily:
+                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            }}
+          >
+            Lancer la prochaine signature sur place
+          </button>
+        </div>
+
+
+
+      </div>
+
+
     </div>
   );
 }
