@@ -409,6 +409,13 @@ const finalUi = stepStyles(finalState);
           </div>
         ) : null}
 
+        {task.kind === "TENANT" && !task.hasActiveLink && task.status !== "SIGNED" ? (
+          <div>
+            <strong style={{ color: textStrong }}>Envoi email :</strong>{" "}
+            l’envoi locataire utilise actuellement le flux global du bail.
+          </div>
+        ) : null}
+
         {task.blockedReason ? (
           <div>
             <strong style={{ color: textStrong }}>Blocage :</strong> {task.blockedReason}

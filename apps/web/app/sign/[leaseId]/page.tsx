@@ -9,6 +9,7 @@ import { SignatureHero } from "./_components/SignatureHero";
 import { SignerSection } from "./_components/SignerSection";
 import type { SignerTask } from "./_types/signature-center.types";
 import { DocumentsSection } from "./_components/DocumentsSection";
+import { HistorySection, type HistoryItem } from "./_components/HistorySection";
 
 const brandBlue = "#2F5FB8";
 const brandBlueHover = "#284FA0";
@@ -148,17 +149,17 @@ function Card({
     <section
       id={id}
       className="workflow-card"
-      style={{ ...ui.card, ...toneStyle, padding: 22 }}
+      style={{ ...ui.card, ...toneStyle, padding: 20 }}
     >
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
         <div>
           <div
             style={{
               fontWeight: 800,
-              fontSize: 15,
+              fontSize: 14,
               display: "flex",
               alignItems: "center",
-              gap: 9,
+              gap: 8,
               color: textStrong,
               letterSpacing: -0.01,
               fontFamily:
@@ -312,22 +313,22 @@ function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
   const styles =
     state === "done"
       ? {
-          background: "linear-gradient(180deg, #f0fdf4 0%, #dcfce7 100%)",
-          border: "2px solid #22c55e",
-          color: "#15803d",
-          boxShadow: "0 0 0 6px rgba(34,197,94,0.10)",
+          background: "linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%)",
+          border: "2px solid #94a3b8",
+          color: "#475467",
+          boxShadow: "0 0 0 6px rgba(148,163,184,0.10)",
         }
       : state === "current"
         ? {
-            background: "linear-gradient(180deg, #fff7ed 0%, #ffedd5 100%)",
-            border: "2px solid #f59e0b",
-            color: "#b45309",
-            boxShadow: "0 0 0 6px rgba(245,158,11,0.12)",
+            background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+            border: "2px solid #64748b",
+            color: "#334155",
+            boxShadow: "0 0 0 6px rgba(148,163,184,0.10)",
           }
         : {
             background: "#ffffff",
             border: `2px solid ${borderSoftStrong}`,
-            color: "#667085",
+            color: "#98a2b3",
             boxShadow: "0 0 0 4px rgba(148,163,184,0.08)",
           };
 
@@ -357,28 +358,25 @@ function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
 function workflowCardTone(state: "done" | "current" | "todo"): React.CSSProperties {
   if (state === "done") {
     return {
-      border: "1px solid rgba(34,197,94,0.24)",
-      background: "linear-gradient(180deg, #ffffff 0%, #f6fdf8 100%)",
-      boxShadow:
-        "0 16px 34px rgba(34,197,94,0.07), 0 2px 6px rgba(15,23,42,0.03)",
+      border: "1px solid rgba(203,213,225,0.9)",
+      background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+      boxShadow: "0 10px 24px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
     };
   }
 
   if (state === "current") {
     return {
-      border: "1px solid rgba(245,158,11,0.44)",
-      background: "linear-gradient(180deg, #fffdf8 0%, #fff7ed 100%)",
-      boxShadow:
-        "0 24px 50px rgba(245,158,11,0.16), 0 6px 18px rgba(245,158,11,0.10), 0 2px 6px rgba(15,23,42,0.03)",
-      transform: "translateY(-3px)",
+      border: "1px solid rgba(203,213,225,0.9)",
+      background: "#ffffff",
+      boxShadow: "0 12px 28px rgba(15,23,42,0.05), 0 2px 6px rgba(15,23,42,0.03)",
     };
   }
 
   return {
     border: `1px solid ${borderSoft}`,
     background: "#ffffff",
-    boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
-    opacity: 0.96,
+    boxShadow: "0 8px 22px rgba(15,23,42,0.03), 0 2px 6px rgba(15,23,42,0.02)",
+    opacity: 0.94,
   };
 }
 
@@ -428,6 +426,72 @@ type GuarantorSignable = {
   defaultName: string;       // guarantorFullName
   hasAct: boolean;           // actDocumentId != null
 };
+
+type HistoryDocument = {
+  id: string;
+  label: string;
+  filename?: string | null;
+  signedFinalDocumentId?: string | null;
+};
+
+
+function buildHistoryItems(tasks: SignerTask[], docs: HistoryDocument[]): HistoryItem[] {
+  const items: Array<HistoryItem & { sortKey: number }> = [];
+
+  tasks.forEach((task) => {
+    if (task.hasActiveLink && task.activeLinkCreatedAt) {
+      const time = new Date(task.activeLinkCreatedAt).getTime();
+
+      items.push({
+        id: `link:${task.id}`,
+        dateLabel: new Date(task.activeLinkCreatedAt).toLocaleDateString(),
+        title: `Lien envoyé à ${task.displayName}`,
+        subtitle: `${task.documentLabel} • ${task.roleLabel}`,
+        sortKey: Number.isNaN(time) ? 0 : time,
+      });
+    }
+
+    if (task.status === "SIGNED") {
+      items.push({
+        id: `signed:${task.id}`,
+        dateLabel: "Récent",
+        title: `${task.displayName} a signé`,
+        subtitle: `${task.documentLabel} • ${task.roleLabel}`,
+        sortKey: 8_000_000_000_000,
+      });
+    }
+
+    if (task.requiresPreparation) {
+      items.push({
+        id: `prepare:${task.id}`,
+        dateLabel: "À faire",
+        title:
+          task.kind === "GUARANTOR"
+            ? `Acte à préparer pour ${task.displayName}`
+            : `Contrat à préparer pour ${task.displayName}`,
+        subtitle: task.preparationLabel || undefined,
+        sortKey: 9_000_000_000_000,
+      });
+    }
+  });
+
+  docs.forEach((doc) => {
+    if (doc.signedFinalDocumentId) {
+      items.push({
+        id: `doc:${doc.id}`,
+        dateLabel: "Disponible",
+        title: `${doc.label} signé disponible`,
+        subtitle: doc.filename || undefined,
+        sortKey: 7_000_000_000_000,
+      });
+    }
+  });
+
+  return items
+    .sort((a, b) => b.sortKey - a.sortKey)
+    .slice(0, 8)
+    .map(({ sortKey, ...item }) => item);
+}
 
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
@@ -998,35 +1062,95 @@ useEffect(() => {
   }
 
 async function sendSignatureLink(task: SignerTask) {
+  setError("");
+
   if (task.kind === "TENANT") {
+    setStatus(`Envoi des liens locataires depuis le bail… (${task.displayName})`);
     await sendPublicLink(false);
     return;
   }
 
   if (task.kind === "GUARANTOR" && task.guaranteeId) {
+    setStatus(`Envoi du lien garant… (${task.displayName})`);
     await sendGuarantorLinkByGuarantee(task.guaranteeId, false, "SIGN");
     return;
   }
 
   if (task.kind === "LANDLORD") {
-    setError("Envoi lien bailleur non encore branché côté nouvelle UI.");
+    await sendLandlordLink(false);
+    return;
   }
 }
-
 async function resendSignatureLink(task: SignerTask) {
+  setError("");
+
   if (task.kind === "TENANT") {
+    setStatus(`Renvoi des liens locataires depuis le bail… (${task.displayName})`);
     await sendPublicLink(true);
     return;
   }
 
   if (task.kind === "GUARANTOR" && task.guaranteeId) {
+    setStatus(`Renvoi du lien garant… (${task.displayName})`);
     await sendGuarantorLinkByGuarantee(task.guaranteeId, true, "SIGN");
     return;
   }
 
   if (task.kind === "LANDLORD") {
-    setError("Renvoi lien bailleur non encore branché côté nouvelle UI.");
+    await sendLandlordLink(true);
+    return;
   }
+}
+
+
+
+async function sendAllRemainingLinks() {
+  setError("");
+  setStatus("Envoi des liens restants…");
+  const remainingTasks = signerTasks.filter(
+    (task) =>
+      task.status !== "SIGNED" &&
+      task.status !== "NOT_REQUIRED" &&
+      !task.requiresPreparation
+  );
+
+  const hasTenantTasks = remainingTasks.some((task) => task.kind === "TENANT");
+  const guarantorTasks = remainingTasks.filter(
+    (task) => task.kind === "GUARANTOR" && task.guaranteeId
+  );
+  const hasLandlordTask = remainingTasks.some((task) => task.kind === "LANDLORD");
+
+  if (hasTenantTasks) {
+    await sendPublicLink(false);
+  }
+
+  for (const task of guarantorTasks) {
+    if (task.guaranteeId) {
+      await sendGuarantorLinkByGuarantee(task.guaranteeId, false, "SIGN");
+    }
+  }
+
+  if (hasLandlordTask) {
+    await sendLandlordLink(false);
+  }
+
+  setStatus("Liens envoyés ✅");
+  await refreshAll();
+}
+
+function startNextOnSite() {
+  const nextTask =
+    signerTasks.find((task) => task.status === "READY" && task.kind === "TENANT") ||
+    signerTasks.find((task) => task.status === "READY" && task.kind === "GUARANTOR") ||
+    signerTasks.find((task) => task.status === "READY" && task.kind === "LANDLORD") ||
+    null;
+
+  if (!nextTask) {
+    setError("Aucune signature sur place disponible pour le moment.");
+    return;
+  }
+
+  startOnSiteSignature(nextTask);
 }
 
 async function downloadSignedArtifact(task: SignerTask) {
@@ -1149,6 +1273,42 @@ async function confirmSessionDraftSignature() {
     await fetchSignatureStatus(leaseId);
   }
 
+
+  async function sendLandlordLink(force = false) {
+    setError("");
+    setStatus(force ? "Renvoi du lien bailleur…" : "Envoi du lien bailleur…");
+
+    try {
+      const r = await fetch(`${API}/public-links/landlord-sign/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          leaseId,
+          ttlHours: 48,
+          force,
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      setStatus(force ? "Lien bailleur renvoyé ✅" : "Lien bailleur envoyé ✅");
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+
   async function acknowledgeDoc(documentId: string, tenantId: string) {
     const res = await fetch(`${API}/documents/${documentId}/acknowledge`, {
       method: "POST",
@@ -1236,6 +1396,7 @@ function onPointerUp(e: any) {
 
   drawing.current = false;
 }
+
   const signatureCenter = useMemo(() => {
     return mapSignatureData({
       leaseId,
@@ -1248,10 +1409,17 @@ function onPointerUp(e: any) {
 
   const { overview, signerTasks, documents } = signatureCenter;
 
+  const historyItems = useMemo(() => {
+  return buildHistoryItems(signerTasks, documents);
+}, [signerTasks, documents]);
+
   const isRP = useMemo(() => {
     const k = String(leaseKind || "").toUpperCase();
     return k === "MEUBLE_RP" || k === "NU_RP";
   }, [leaseKind]);
+
+
+
 
 
   const hasMultipleTenants = useMemo(() => (tenants?.length || 0) > 1, [tenants]);
@@ -1883,6 +2051,34 @@ const isSessionDriven = sessionDraft.open;
 const showManualPanel = !isSessionDriven && showLegacyPanelForm;
 const showPanelEmptyState = !isSessionDriven && !showLegacyPanelForm;
 
+function getRecommendedActionLabel(tasks: SignerTask[]): string {
+  const firstToPrepare = tasks.find((task) => task.requiresPreparation);
+  if (firstToPrepare) {
+    return firstToPrepare.kind === "GUARANTOR"
+      ? `Préparer l’acte de caution pour ${firstToPrepare.displayName}`
+      : `Préparer le contrat pour ${firstToPrepare.displayName}`;
+  }
+
+  const firstLinkSent = tasks.find((task) => task.status === "LINK_SENT");
+  if (firstLinkSent) {
+    return `Relancer ou finaliser la signature de ${firstLinkSent.displayName}`;
+  }
+
+  const firstReady = tasks.find((task) => task.status === "READY");
+  if (firstReady) {
+    return `Faire signer ${firstReady.displayName} sur place ou lui envoyer un lien sécurisé`;
+  }
+
+  const firstInProgress = tasks.find((task) => task.status === "IN_PROGRESS");
+  if (firstInProgress) {
+    return `Suivre la signature en cours de ${firstInProgress.displayName}`;
+  }
+
+  return "Le dossier est entièrement prêt et signé.";
+}
+
+const recommendedActionLabel = getRecommendedActionLabel(signerTasks);
+
 const panelRoleValue = isSessionDriven
   ? sessionDraft.signerKind === "TENANT"
     ? "LOCATAIRE"
@@ -1909,8 +2105,13 @@ const panelDocumentLabel = isSessionDriven
       
   return (
     <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
-      <SignatureHero overview={overview} />
-      <div
+      <SignatureHero
+        overview={overview}
+        recommendedActionLabel={recommendedActionLabel}
+        onSendAllRemainingLinks={sendAllRemainingLinks}
+        onStartNextOnSite={startNextOnSite}
+      />
+            <div
         style={{
           display: "flex",
           justifyContent: "flex-end",
@@ -1963,6 +2164,7 @@ const panelDocumentLabel = isSessionDriven
         onDownloadDocument={downloadDocumentResource}
         onDownloadSignedDocument={downloadSignedDocumentResource}
       />
+      <HistorySection items={historyItems} />
 
       <div
         style={{
@@ -2159,20 +2361,21 @@ const panelDocumentLabel = isSessionDriven
           style={{
             position: "relative",
             display: "grid",
-            gap: 18,
-            paddingLeft: 28,
+            gap: 16,
+            paddingLeft: 22,
+            opacity: 0.92,
           }}
         >
           <div
             aria-hidden="true"
             style={{
               position: "absolute",
-              left: 15,
-              top: 10,
-              bottom: 10,
-              width: 3,
+              left: 11,
+              top: 14,
+              bottom: 14,
+              width: 2,
               borderRadius: 999,
-              background: "#e6edf5",
+              background: "#eef2f6",
               overflow: "hidden",
             }}
           >
@@ -2193,8 +2396,8 @@ const panelDocumentLabel = isSessionDriven
                             : "0%",
                 background:
                   workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
-                    ? "linear-gradient(180deg, #22c55e 0%, #16a34a 100%)"
-                    : "linear-gradient(180deg, #22c55e 0%, #16a34a 42%, #f59e0b 78%, #fbbf24 100%)",
+                    ? "linear-gradient(180deg, #94a3b8 0%, #64748b 100%)"
+                    : "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)",
                 borderRadius: 999,
                 transition: "height 240ms ease",
               }}
@@ -2322,14 +2525,6 @@ const panelDocumentLabel = isSessionDriven
 
         {sigStatus ? (
           <>
-
-
-            {contractStepState === "current" ? (
-              <div style={{ marginBottom: 10 }}>
-                <Badge tone="warning">Étape active</Badge>
-              </div>
-            ) : null}
-
             <SignableCard
               title="Contrat de location"
               statusChip={contractStatusChip}
@@ -2528,12 +2723,6 @@ const panelDocumentLabel = isSessionDriven
         {sigStatusError ? (
           <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
         ) : null}
-
-        {guaranteesStepState === "current" ? (
-          <div style={{ marginBottom: 10 }}>
-            <Badge tone="warning">Étape active</Badge>
-          </div>
-        ) : null}  
 
         {sigStatus ? (
           <SignableCard
@@ -2759,12 +2948,6 @@ const panelDocumentLabel = isSessionDriven
             </InlineMenu>
           ) : null}
 
-          {edlStepState === "current" ? (
-            <div style={{ marginBottom: 10 }}>
-              <Badge tone="warning">Étape active</Badge>
-            </div>
-          ) : null}
-
           <SignableCard
             title="EDL & Inventaires"
             statusChip={edlInvSummaryChip}
@@ -2976,7 +3159,7 @@ const panelDocumentLabel = isSessionDriven
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}
             >
-              {isSessionDriven ? "Session de signature" : "Poste de signature"}
+              {isSessionDriven ? "Session de signature sécurisée" : "Poste de signature"}
             </div>
 
             <div
@@ -2991,8 +3174,8 @@ const panelDocumentLabel = isSessionDriven
               }}
             >
               {isSessionDriven
-                ? "La signature sera appliquée au document sélectionné pour ce signataire."
-                : "Sélectionnez un rôle et un document, ou démarrez une session depuis une carte signataire."}
+                ? "Vérifiez l’identité du signataire puis recueillez sa signature manuscrite."
+                : "Démarrez de préférence depuis une carte signataire pour ouvrir une session guidée."}
             </div>
 
             {showPanelEmptyState ? (
@@ -3018,7 +3201,7 @@ const panelDocumentLabel = isSessionDriven
                       letterSpacing: -0.02,
                     }}
                   >
-                    Démarrez depuis une carte signataire
+                    Commencez par choisir un signataire
                   </div>
 
                   <div
@@ -3048,7 +3231,7 @@ const panelDocumentLabel = isSessionDriven
                       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                   }}
                 >
-                  Utiliser le mode manuel
+                  Ouvrir le mode manuel
                 </button>
               </div>
             ) : null}
@@ -3076,7 +3259,7 @@ const panelDocumentLabel = isSessionDriven
                     letterSpacing: 0.3,
                   }}
                 >
-                  Signataire sélectionné
+                  Signataire active
                 </div>
 
                 <div style={{ fontSize: 16, fontWeight: 800, color: textStrong }}>
@@ -3084,7 +3267,7 @@ const panelDocumentLabel = isSessionDriven
                 </div>
 
                 <div style={{ fontSize: 13.5, color: textSoft }}>
-                  {sessionDraft.roleLabel} — {sessionDraft.documentLabel}
+                  Document : {sessionDraft.documentLabel} • Rôle : {sessionDraft.roleLabel}
                 </div>
               </div>
             ) : null}
@@ -3112,7 +3295,7 @@ const panelDocumentLabel = isSessionDriven
                         'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                     }}
                   >
-                    Revenir au mode guidé
+                    Quitter le mode manuel
                   </button>
                 </div>
               ) : null}
@@ -3153,7 +3336,6 @@ const panelDocumentLabel = isSessionDriven
           ) : null}
 
             <div style={{ height: 10 }} />
-
             {/* Locataire multi */}
             {!isSessionDriven && role === "LOCATAIRE" && hasMultipleTenants ? (
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -3285,7 +3467,7 @@ const panelDocumentLabel = isSessionDriven
 
             {/* Nom */}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Nom signataire</div>
+              <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>Nom affiché sur la signature</div>
               <input
                 value={panelSignerNameValue}
                 onChange={(e) => {
@@ -3321,11 +3503,11 @@ const panelDocumentLabel = isSessionDriven
             <div style={{ height: 12 }} />
 
             {/* Pad */}
-            <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01, marginBottom: 6 }}>Signature</div>
+            <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01, marginBottom: 6 }}>Signature manuscrite</div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
               <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
-                Document sélectionné
+                Document concerné
               </div>
               <div
                 style={{
@@ -3375,7 +3557,7 @@ const panelDocumentLabel = isSessionDriven
                       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                   }}
                 >
-                  Signez ici
+                  Le signataire signe ici
                 </div>
               ) : null}
               <canvas
@@ -3460,7 +3642,7 @@ const panelDocumentLabel = isSessionDriven
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}
             >
-              La signature est horodatée et enregistrée dans le dossier.
+              La signature sera horodatée et enregistrée dans le dossier locatif.
             </div>
 
             {isSessionDriven ? (
@@ -3494,11 +3676,13 @@ const panelDocumentLabel = isSessionDriven
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
-                Fermer la session
+                Terminer cette session
               </button>
             ) : null}
+              </>
+            ) : null}
 
-            {/* Feedback */}
+          {/* Feedback */}
             {status ? (
               <div
                 style={{
@@ -3528,9 +3712,9 @@ const panelDocumentLabel = isSessionDriven
               >
                 {error}
               </div>
-            ) : null}
-              </>
-            ) : null}
+            ) : null}    
+
+
           </div>
         </div>
       </div>
@@ -3553,16 +3737,15 @@ const panelDocumentLabel = isSessionDriven
             }
 
             .workflow-card:hover{
-              transform: translateY(-2px);
-              box-shadow: 0 18px 36px rgba(15,23,42,0.08), 0 4px 10px rgba(15,23,42,0.04);
+              transform: translateY(-1px);
+              box-shadow: 0 12px 24px rgba(15,23,42,0.05), 0 3px 8px rgba(15,23,42,0.03);
             }
 
             #edl-inv:hover{
-              transform: translateY(-5px) !important;
+              transform: translateY(-2px) !important;
               box-shadow:
-                0 34px 70px rgba(245,158,11,0.20),
-                0 12px 28px rgba(245,158,11,0.12),
-                0 4px 10px rgba(15,23,42,0.04) !important;
+                0 16px 30px rgba(15,23,42,0.06),
+                0 4px 10px rgba(15,23,42,0.03) !important;
             }
 
             @media (max-width: 1100px){
@@ -3577,21 +3760,9 @@ const panelDocumentLabel = isSessionDriven
   );
 }
 
-function workflowAccentBar(state: "done" | "current" | "todo"): React.CSSProperties {
-  if (state === "done") {
-    return {
-      borderLeft: "4px solid #22c55e",
-    };
-  }
-
-  if (state === "current") {
-    return {
-      borderLeft: "4px solid #f59e0b",
-    };
-  }
-
+function workflowAccentBar(_state: "done" | "current" | "todo"): React.CSSProperties {
   return {
-    borderLeft: "4px solid transparent",
+    borderLeft: "4px solid rgba(226,232,240,0.9)",
   };
 }
 
