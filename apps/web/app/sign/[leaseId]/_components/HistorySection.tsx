@@ -63,13 +63,34 @@ export function HistorySection({ items }: HistorySectionProps) {
         {items.length === 0 ? (
           <div
             style={{
+              display: "grid",
+              gap: 8,
+              padding: "6px 2px",
               color: textSoft,
-              fontSize: 14,
               fontFamily:
                 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
           >
-            Aucun événement récent à afficher.
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 800,
+                color: textStrong,
+                letterSpacing: -0.01,
+              }}
+            >
+              Aucun événement récent
+            </div>
+
+            <div
+              style={{
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                color: textSoft,
+              }}
+            >
+              Les envois de liens, préparations de documents et signatures apparaîtront ici au fil de l’avancement du dossier.
+            </div>
           </div>
         ) : (
           items.map((item, index) => (

@@ -63,13 +63,34 @@ export function DocumentsSection({
         {documents.length === 0 ? (
           <div
             style={{
+              display: "grid",
+              gap: 8,
+              padding: "6px 2px",
               color: textSoft,
-              fontSize: 14,
               fontFamily:
                 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
           >
-            Aucun document à afficher pour le moment.
+            <div
+              style={{
+                fontSize: 15,
+                fontWeight: 800,
+                color: textStrong,
+                letterSpacing: -0.01,
+              }}
+            >
+              Aucun document disponible pour le moment
+            </div>
+
+            <div
+              style={{
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                color: textSoft,
+              }}
+            >
+              Les documents apparaîtront ici dès que le contrat, les actes ou les packs auront été générés.
+            </div>
           </div>
         ) : (
           documents.map((doc) => (

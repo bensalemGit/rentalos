@@ -39,6 +39,7 @@ type GuaranteeRow = {
   guarantee_id: string;
   lease_tenant_id: string;
   guarantee_status: string | null;
+  type: string | null;
   rank: number | null;
   guarantor_full_name: string | null;
   guarantor_email: string | null;
@@ -230,6 +231,7 @@ export class SignatureStatusService {
         g.id as guarantee_id,
         g.lease_tenant_id,
         g.status as guarantee_status,
+        g.type,
         g.rank,
         g.guarantor_full_name,
         g.guarantor_email,
@@ -241,7 +243,9 @@ export class SignatureStatusService {
       FROM lease_guarantees g
       JOIN lease_tenants lt ON lt.id = g.lease_tenant_id
       JOIN tenants t ON t.id = lt.tenant_id
-      WHERE g.lease_id=$1 AND g.type='CAUTION' AND g.selected=true
+      WHERE g.lease_id=$1
+        AND g.selected=true
+        AND g.type IN ('CAUTION', 'VISALE')
       ORDER BY g.rank NULLS LAST, g.created_at ASC
       `,
       [cleanLeaseId],
@@ -372,6 +376,8 @@ export class SignatureStatusService {
 
     const guaranteesOut = guarantees.map((g: GuaranteeRow) => {
       const guaranteeId = String(g.guarantee_id);
+      const guaranteeType = String(g.type || '').toUpperCase();
+      const isVisale = guaranteeType === 'VISALE';
       const actDocumentId = g.guarantor_act_document_id ? String(g.guarantor_act_document_id) : null;
 
       const signedFinalDocumentId =
@@ -386,12 +392,22 @@ export class SignatureStatusService {
       const hasGuarantSig = sigs.some((s) => s.signer_role === 'GARANT');
       const hasLandlordSig = sigs.some((s) => s.signer_role === 'BAILLEUR');
 
-      const need = signedFinalDocumentId
+      const need = isVisale
         ? { guarantor: false, landlord: false }
-        : { guarantor: !hasGuarantSig, landlord: !hasLandlordSig };
+        : signedFinalDocumentId
+          ? { guarantor: false, landlord: false }
+          : { guarantor: !hasGuarantSig, landlord: !hasLandlordSig };
 
       const signatureStatus: GuaranteeSigStatus =
-        signedFinalDocumentId ? 'SIGNED' : hasAnySig ? 'IN_PROGRESS' : sent ? 'SENT' : 'NOT_SENT';
+        isVisale
+          ? 'NOT_SENT'
+          : signedFinalDocumentId
+            ? 'SIGNED'
+            : hasAnySig
+              ? 'IN_PROGRESS'
+              : sent
+                ? 'SENT'
+                : 'NOT_SENT';
 
       const ack = (() => {
       // ACK n'a de sens que si le SIGNED_FINAL existe
@@ -427,6 +443,7 @@ export class SignatureStatusService {
         leaseTenantId: String(g.lease_tenant_id),
         tenantId: String(g.tenant_id),
         tenantFullName: g.tenant_full_name || '',
+        type: guaranteeType,
         guarantorFullName: g.guarantor_full_name || '',
         guarantorEmail: g.guarantor_email || null,
         guarantorPhone: g.guarantor_phone || null,

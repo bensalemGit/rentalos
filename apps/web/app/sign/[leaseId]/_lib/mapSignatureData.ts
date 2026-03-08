@@ -24,6 +24,7 @@ type SignatureStatusPayloadLite = {
     };
     tenants?: Array<{
       leaseTenantId: string;
+      tenantId: string;
       fullName?: string | null;
       role?: string | null;
       signatureStatus?: string | null;
@@ -160,7 +161,7 @@ function mapTenantTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTas
       canDownloadSigned: Boolean(contract?.signedFinalDocumentId),
       signedFinalDocumentId: contract?.signedFinalDocumentId || null,
       signedFinalFilename: contract?.signedFinalDocumentId ? "contrat_SIGNE.pdf" : null,
-      tenantId: t.leaseTenantId,
+      tenantId: t.tenantId,
       hasActiveLink,
       activeLinkCreatedAt: t.lastLink?.createdAt || null,
       requiresPreparation: !contract?.documentId,
@@ -177,6 +178,9 @@ function mapGuarantorTasks(
   guaranteeActOverride: Record<string, string>,
 ): SignerTask[] {
   const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
+  const landlordSigned =
+  String(sigStatus?.contract?.landlord?.signatureStatus || "").toUpperCase() === "SIGNED";
+
 
   return guarantees.map((g) => {
     const type = String(g.type || "").toUpperCase();
@@ -191,11 +195,35 @@ function mapGuarantorTasks(
       hasActiveLink,
     });
 
+    const guarantorSigned = String(g.signatureStatus || "").toUpperCase() === "SIGNED";
+
+    const progressLabel = isVisale
+      ? "Aucune signature garant requise"
+      : guarantorSigned && landlordSigned
+        ? "Signature finalisée"
+        : guarantorSigned && !landlordSigned
+          ? "Garant signé • Bailleur à signer"
+          : !guarantorSigned && landlordSigned
+            ? "Bailleur signé • Garant à signer"
+            : !effectiveActId
+              ? "Acte de caution à préparer"
+              : "Garant et bailleur doivent signer";
+
     return {
       id: `guarantor:${g.guaranteeId}`,
       kind: "GUARANTOR",
-      displayName: String(g.guarantorFullName || "").trim() || "Garant",
+      displayName: isVisale
+        ? String(g.tenantFullName || "").trim() || "VISALE"
+        : String(g.guarantorFullName || "").trim() || "Garant",
       roleLabel: "Garant",
+      subtypeLabel: isVisale ? "Garantie VISALE" : "Caution personnelle",
+      helperLabel: isVisale
+        ? "Aucune signature garant requise"
+        : !effectiveActId
+          ? "Acte de caution à préparer"
+          : "Signature garant requise",
+      progressLabel,
+      counterpartySigned: isVisale ? null : landlordSigned,
       documentId: isVisale ? null : effectiveActId,
       documentLabel: isVisale ? "Garantie VISALE" : "Acte de caution",
       documentFilename: null,

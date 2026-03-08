@@ -5,6 +5,8 @@ import type { SignatureOverview } from "../_types/signature-center.types";
 type SignatureHeroProps = {
   overview: SignatureOverview;
   recommendedActionLabel: string;
+  canSendAllRemainingLinks: boolean;
+  canStartNextOnSite: boolean;
   onSendAllRemainingLinks: () => void;
   onStartNextOnSite: () => void;
 };
@@ -40,6 +42,8 @@ function pillStyle(tone: "success" | "warning" | "neutral") {
 export function SignatureHero({
   overview,
   recommendedActionLabel,
+  canSendAllRemainingLinks,
+  canStartNextOnSite,
   onSendAllRemainingLinks,
   onStartNextOnSite,
 }: SignatureHeroProps) {
@@ -47,14 +51,22 @@ export function SignatureHero({
   const remainingTone =
     overview.remainingCount === 0 ? "success" : overview.progressPercent >= 50 ? "warning" : "neutral";
 
+  const isCompleted = overview.remainingCount === 0;
+
   return (
     <div
       style={{
-        background: "#ffffff",
-        border: `1px solid ${borderSoft}`,
+        background: isCompleted
+          ? "linear-gradient(180deg, #ffffff 0%, #f7fcf8 100%)"
+          : "#ffffff",
+        border: isCompleted
+          ? "1px solid rgba(34,197,94,0.20)"
+          : `1px solid ${borderSoft}`,
         borderRadius: 24,
         padding: "28px 30px",
-        boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
+        boxShadow: isCompleted
+          ? "0 16px 36px rgba(34,197,94,0.08), 0 2px 6px rgba(15,23,42,0.03)"
+          : "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
         display: "grid",
         gap: 18,
       }}
@@ -204,8 +216,12 @@ export function SignatureHero({
           gap: 8,
           padding: "14px 16px",
           borderRadius: 16,
-          border: "1px solid rgba(47,95,184,0.14)",
-          background: "rgba(47,95,184,0.04)",
+          border: isCompleted
+            ? "1px solid rgba(34,197,94,0.18)"
+            : "1px solid rgba(47,95,184,0.14)",
+          background: isCompleted
+            ? "rgba(34,197,94,0.05)"
+            : "rgba(47,95,184,0.04)",
         }}
       >
         <div
@@ -214,17 +230,13 @@ export function SignatureHero({
             fontWeight: 800,
             letterSpacing: 0.3,
             textTransform: "uppercase",
-            color: "#2F5FB8",
+            color: isCompleted ? "#15803d" : "#2F5FB8",
             fontFamily:
               'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           }}
         >
-          Prochaine action recommandée  
+          {isCompleted ? "Dossier finalisé" : "Prochaine action recommandée"}
         </div>
-
-
-        
-
         <div
           style={{
             fontSize: 15,
@@ -235,9 +247,12 @@ export function SignatureHero({
               'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
           }}
         >
-          {recommendedActionLabel}
+          {isCompleted
+            ? "Toutes les signatures requises ont été recueillies. Les documents finaux sont disponibles au téléchargement."
+            : recommendedActionLabel}
         </div>
 
+        {!isCompleted ? (    
         <div
           style={{
             display: "flex",
@@ -249,6 +264,7 @@ export function SignatureHero({
           <button
             type="button"
             onClick={onSendAllRemainingLinks}
+            disabled={!canSendAllRemainingLinks}
             style={{
               padding: "10px 14px",
               borderRadius: 14,
@@ -256,7 +272,8 @@ export function SignatureHero({
               background: "#2F5FB8",
               color: "#ffffff",
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: canSendAllRemainingLinks ? "pointer" : "not-allowed",
+              opacity: canSendAllRemainingLinks ? 1 : 0.55,
               boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
               fontFamily:
                 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -268,6 +285,7 @@ export function SignatureHero({
           <button
             type="button"
             onClick={onStartNextOnSite}
+            disabled={!canStartNextOnSite}
             style={{
               padding: "10px 14px",
               borderRadius: 14,
@@ -275,7 +293,8 @@ export function SignatureHero({
               background: "#ffffff",
               color: "#243041",
               fontWeight: 700,
-              cursor: "pointer",
+              cursor: canStartNextOnSite ? "pointer" : "not-allowed",
+              opacity: canStartNextOnSite ? 1 : 0.55,
               fontFamily:
                 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
@@ -283,12 +302,8 @@ export function SignatureHero({
             Lancer la prochaine signature sur place
           </button>
         </div>
-
-
-
+      ) : null}
       </div>
-
-
     </div>
   );
 }

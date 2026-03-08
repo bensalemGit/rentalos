@@ -533,11 +533,14 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [showEdlInvDetails, setShowEdlInvDetails] = useState(false);
 
   const [showLegacyPanelForm, setShowLegacyPanelForm] = useState(false);
+  const [isWideScreen, setIsWideScreen] = useState(true);
 
   // canvas unique
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const signatureDirty = useRef(false);
+  const signaturePanelRef = useRef<HTMLDivElement | null>(null);
+
 
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
@@ -614,6 +617,35 @@ useEffect(() => {
   window.addEventListener("resize", onResize);
 
   return () => window.removeEventListener("resize", onResize);
+}, []);
+
+
+useEffect(() => {
+  if (!sessionDraft.open) return;
+  if (!signaturePanelRef.current) return;
+
+  if (isWideScreen) return;
+
+  const id = window.setTimeout(() => {
+    signaturePanelRef.current?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, 80);
+
+  return () => window.clearTimeout(id);
+}, [sessionDraft.open, sessionDraft.signerTaskId, isWideScreen]);
+
+
+useEffect(() => {
+  const apply = () => {
+    setIsWideScreen(window.innerWidth >= 1100);
+  };
+
+  apply();
+  window.addEventListener("resize", apply);
+
+  return () => window.removeEventListener("resize", apply);
 }, []);
 
   function normalizeTenantId(t: LeaseTenant): string {
@@ -1062,16 +1094,14 @@ useEffect(() => {
   }
 
 async function sendSignatureLink(task: SignerTask) {
-  setError("");
-
   if (task.kind === "TENANT") {
-    setStatus(`Envoi des liens locataires depuis le bail… (${task.displayName})`);
+    setUiInfo(`Envoi des liens locataires depuis le bail… (${task.displayName})`);
     await sendPublicLink(false);
     return;
   }
 
   if (task.kind === "GUARANTOR" && task.guaranteeId) {
-    setStatus(`Envoi du lien garant… (${task.displayName})`);
+    setUiInfo(`Envoi du lien garant… (${task.displayName})`);
     await sendGuarantorLinkByGuarantee(task.guaranteeId, false, "SIGN");
     return;
   }
@@ -1081,17 +1111,16 @@ async function sendSignatureLink(task: SignerTask) {
     return;
   }
 }
-async function resendSignatureLink(task: SignerTask) {
-  setError("");
 
+async function resendSignatureLink(task: SignerTask) {
   if (task.kind === "TENANT") {
-    setStatus(`Renvoi des liens locataires depuis le bail… (${task.displayName})`);
+    setUiInfo(`Renvoi des liens locataires depuis le bail… (${task.displayName})`);
     await sendPublicLink(true);
     return;
   }
 
   if (task.kind === "GUARANTOR" && task.guaranteeId) {
-    setStatus(`Renvoi du lien garant… (${task.displayName})`);
+    setUiInfo(`Renvoi du lien garant… (${task.displayName})`);
     await sendGuarantorLinkByGuarantee(task.guaranteeId, true, "SIGN");
     return;
   }
@@ -1103,10 +1132,19 @@ async function resendSignatureLink(task: SignerTask) {
 }
 
 
+function setUiInfo(message: string) {
+  setError("");
+  setStatus(message);
+}
+
+function setUiError(message: string) {
+  setStatus("");
+  setError(message);
+}
+
 
 async function sendAllRemainingLinks() {
-  setError("");
-  setStatus("Envoi des liens restants…");
+  setUiInfo("Envoi des liens restants…");
   const remainingTasks = signerTasks.filter(
     (task) =>
       task.status !== "SIGNED" &&
@@ -1134,7 +1172,7 @@ async function sendAllRemainingLinks() {
     await sendLandlordLink(false);
   }
 
-  setStatus("Liens envoyés ✅");
+  setUiInfo("Liens envoyés ✅");
   await refreshAll();
 }
 
@@ -1146,7 +1184,7 @@ function startNextOnSite() {
     null;
 
   if (!nextTask) {
-    setError("Aucune signature sur place disponible pour le moment.");
+    setUiError("Aucune signature sur place disponible pour le moment.");
     return;
   }
 
@@ -1154,7 +1192,10 @@ function startNextOnSite() {
 }
 
 async function downloadSignedArtifact(task: SignerTask) {
-  if (!task.signedFinalDocumentId) return;
+  if (!task.signedFinalDocumentId) {
+    setUiError("Aucun document signé disponible.");
+    return;
+  }
 
   await downloadDoc(
     task.signedFinalDocumentId,
@@ -1164,12 +1205,14 @@ async function downloadSignedArtifact(task: SignerTask) {
 
 async function prepareSignerTask(task: SignerTask) {
   if (task.kind === "GUARANTOR" && task.guaranteeId) {
+    setUiInfo(`Préparation de l’acte pour ${task.displayName}…`);
     await generateGuarantorActFor(task.guaranteeId);
     await refreshAll();
     return;
   }
 
   if (task.kind === "TENANT" || task.kind === "LANDLORD") {
+    setUiInfo("Préparation du contrat…");
     await generateContract();
     await refreshAll();
   }
@@ -1436,19 +1479,6 @@ function onPointerUp(e: any) {
     if (selectedTenant) setTenantName(normalizeTenantName(selectedTenant));
   }, [selectedTenant]);
 
-    useEffect(() => {
-    if (!sigStatus) return;
-    if (dossier.missing === 0) return;
-
-    const el = document.getElementById(dossier.firstAnchor);
-    if (!el) return;
-
-    const id = window.setTimeout(() => {
-      el.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 250);
-
-    return () => window.clearTimeout(id);
-  }, [sigStatus, dossier]);
 
 
   // ✅ Patch 4.A — documents signables par le bailleur (contrat + actes caution)
@@ -1847,10 +1877,10 @@ function DetailToggle({
     style={{
       border: "none",
       background: "transparent",
-      color: brandBlue,
+      color: "#667085",
       cursor: "pointer",
-      fontWeight: 600,
-      fontSize: 13,
+      fontWeight: 700,
+      fontSize: 12.5,
       padding: 0,
       display: "inline-flex",
       alignItems: "center",
@@ -2054,30 +2084,67 @@ const showPanelEmptyState = !isSessionDriven && !showLegacyPanelForm;
 function getRecommendedActionLabel(tasks: SignerTask[]): string {
   const firstToPrepare = tasks.find((task) => task.requiresPreparation);
   if (firstToPrepare) {
-    return firstToPrepare.kind === "GUARANTOR"
-      ? `Préparer l’acte de caution pour ${firstToPrepare.displayName}`
-      : `Préparer le contrat pour ${firstToPrepare.displayName}`;
+    if (firstToPrepare.kind === "GUARANTOR") {
+      return `Préparez l’acte de caution pour ${firstToPrepare.displayName}.`;
+    }
+
+    return "Préparez le contrat pour lancer les signatures locataires et bailleur.";
+  }
+
+  const firstReadyTenant = tasks.find(
+    (task) => task.kind === "TENANT" && task.status === "READY" && task.canSignOnSite
+  );
+  if (firstReadyTenant) {
+    return `Lancez la signature sur place de ${firstReadyTenant.displayName} ou envoyez-lui un lien sécurisé.`;
+  }
+
+  const firstReadyGuarantor = tasks.find(
+    (task) => task.kind === "GUARANTOR" && task.status === "READY" && task.canSignOnSite
+  );
+  if (firstReadyGuarantor) {
+    return `Faites signer ${firstReadyGuarantor.displayName} pour finaliser la caution.`;
+  }
+
+  const firstReadyLandlord = tasks.find(
+    (task) => task.kind === "LANDLORD" && task.status === "READY" && task.canSignOnSite
+  );
+  if (firstReadyLandlord) {
+    return "La signature du bailleur peut être lancée sur place ou par lien sécurisé.";
   }
 
   const firstLinkSent = tasks.find((task) => task.status === "LINK_SENT");
   if (firstLinkSent) {
-    return `Relancer ou finaliser la signature de ${firstLinkSent.displayName}`;
-  }
-
-  const firstReady = tasks.find((task) => task.status === "READY");
-  if (firstReady) {
-    return `Faire signer ${firstReady.displayName} sur place ou lui envoyer un lien sécurisé`;
+    return `Envoyez ou relancez le lien de signature de ${firstLinkSent.displayName}.`;
   }
 
   const firstInProgress = tasks.find((task) => task.status === "IN_PROGRESS");
   if (firstInProgress) {
-    return `Suivre la signature en cours de ${firstInProgress.displayName}`;
+    return `Suivez la signature en cours de ${firstInProgress.displayName}.`;
+  }
+
+  const remainingActionable = tasks.find(
+    (task) => task.status !== "SIGNED" && task.status !== "NOT_REQUIRED"
+  );
+  if (remainingActionable) {
+    return "Le dossier est prêt : finalisez les dernières signatures en attente.";
   }
 
   return "Le dossier est entièrement prêt et signé.";
 }
 
 const recommendedActionLabel = getRecommendedActionLabel(signerTasks);
+
+const canSendAllRemainingLinks = signerTasks.some(
+  (task) =>
+    task.status !== "SIGNED" &&
+    task.status !== "NOT_REQUIRED" &&
+    !task.requiresPreparation &&
+    task.canSendEmailLink
+);
+
+const canStartNextOnSite = signerTasks.some(
+  (task) => task.status === "READY" && task.canSignOnSite
+);
 
 const panelRoleValue = isSessionDriven
   ? sessionDraft.signerKind === "TENANT"
@@ -2108,6 +2175,8 @@ const panelDocumentLabel = isSessionDriven
       <SignatureHero
         overview={overview}
         recommendedActionLabel={recommendedActionLabel}
+        canSendAllRemainingLinks={canSendAllRemainingLinks}
+        canStartNextOnSite={canStartNextOnSite}
         onSendAllRemainingLinks={sendAllRemainingLinks}
         onStartNextOnSite={startNextOnSite}
       />
@@ -2153,6 +2222,8 @@ const panelDocumentLabel = isSessionDriven
       </div>
       <SignerSection
         tasks={signerTasks}
+        activeTaskId={sessionDraft.signerTaskId}
+        enableAutoScroll={isWideScreen}
         onStartOnSite={startOnSiteSignature}
         onSendEmail={sendSignatureLink}
         onResendEmail={resendSignatureLink}
@@ -2286,8 +2357,8 @@ const panelDocumentLabel = isSessionDriven
           gridTemplateColumns: "1fr 420px",
           gap: 16,
           alignItems: "end",
-          marginTop: 10,
-          marginBottom: -2,
+          marginTop: 6,
+          marginBottom: -4,
         }}
       >
         <div
@@ -2361,7 +2432,7 @@ const panelDocumentLabel = isSessionDriven
           style={{
             position: "relative",
             display: "grid",
-            gap: 16,
+            gap: 14,
             paddingLeft: 22,
             opacity: 0.92,
           }}
@@ -2413,7 +2484,7 @@ const panelDocumentLabel = isSessionDriven
             <span>Contrat de location</span>
           </span>
         }
-        subtitle="Document principal du bail"
+        subtitle={undefined}
         toneStyle={{ ...workflowCardTone(contractStepState), ...workflowAccentBar(contractStepState) }}
         right={
           <button
@@ -2529,27 +2600,15 @@ const panelDocumentLabel = isSessionDriven
               title="Contrat de location"
               statusChip={contractStatusChip}
               subtitle={
-                <div style={{ display: "grid", gap: 8 }}>
-                  <div
-                    style={{
-                      fontSize: 13,
-                      color: contractStepState === "done" ? "#15803d" : "#b45309",
-                      fontWeight: 700,
-                    }}
-                  >
-                    {contractNarrative}
-                  </div>
-
-                  <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                    <span style={{ fontWeight: 700, color: textStrong }}>Statut :</span>
-                    {contractStatusChip}
-                  </div>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontWeight: 700, color: textStrong }}>Statut :</span>
+                  {contractStatusChip}
                 </div>
               }
               actions={[
                 {
                   label: "Télécharger",
-                  kind: "primary",
+                  kind: "secondary",
                   disabled: !sigStatus.contract.documentId,
                   onClick: () =>
                     sigStatus.contract.documentId &&
@@ -2574,7 +2633,15 @@ const panelDocumentLabel = isSessionDriven
             </div>
 
             {showContractDetails ? (
-              <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
+              <div
+                style={{
+                  marginTop: 12,
+                  paddingTop: 12,
+                  borderTop: "1px solid rgba(226,232,240,0.75)",
+                  display: "grid",
+                  gap: 12,
+                }}
+              >
                 {finalSignedDoc?.id ? (
                   <div style={card(border)}>
                     <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
@@ -2672,7 +2739,7 @@ const panelDocumentLabel = isSessionDriven
             <span>Garanties</span>
           </span>
         }
-        subtitle="Actes de caution"
+        subtitle={undefined}
         toneStyle={{ ...workflowCardTone(guaranteesStepState), ...workflowAccentBar(guaranteesStepState) }}
         right={
           <button
@@ -2732,28 +2799,11 @@ const panelDocumentLabel = isSessionDriven
                 {guaranteesCount > 0 ? `${guaranteesCount} garantie(s)` : "Aucune"}
               </Badge>
             }
-            subtitle={
-              <div style={{ display: "grid", gap: 8 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color:
-                      guaranteesStepState === "done"
-                        ? "#15803d"
-                        : guaranteesStepState === "current"
-                          ? "#b45309"
-                          : textSoft,
-                    fontWeight: 700,
-                  }}
-                >
-                  {guaranteesNarrative}
-                </div>
-              </div>
-            }
+            subtitle={undefined}
             actions={[
               {
                 label: "Gérer",
-                kind: "primary",
+                kind: "secondary",
                 onClick: openGuarantees,
               },
             ]}
@@ -2768,7 +2818,13 @@ const panelDocumentLabel = isSessionDriven
         </div>
 
         {showGuaranteesDetails ? (
-          <div style={{ marginTop: 12 }}>
+          <div
+            style={{
+              marginTop: 12,
+              paddingTop: 12,
+              borderTop: "1px solid rgba(226,232,240,0.75)",
+            }}
+          >
             {sigStatus && sigStatus.guarantees.length === 0 ? (
               <div style={{ marginTop: 8, fontSize: 13, color: muted }}>
                 Aucune garantie CAUTION sélectionnée.
@@ -2883,7 +2939,7 @@ const panelDocumentLabel = isSessionDriven
               <span>EDL & Inventaires</span>
             </span>
           }
-          subtitle="Entrée, sortie et packs"
+          subtitle={undefined}
           toneStyle={{ ...workflowCardTone(edlStepState), ...workflowAccentBar(edlStepState) }}
           right={
             <button
@@ -2951,28 +3007,11 @@ const panelDocumentLabel = isSessionDriven
           <SignableCard
             title="EDL & Inventaires"
             statusChip={edlInvSummaryChip}
-            subtitle={
-              <div style={{ display: "grid", gap: 8 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    color:
-                      edlStepState === "done"
-                        ? "#15803d"
-                        : edlStepState === "current"
-                          ? "#b45309"
-                          : textSoft,
-                    fontWeight: 700,
-                  }}
-                >
-                  {edlNarrative}
-                </div>
-              </div>
-            }
+            subtitle={undefined}
             actions={[
               {
                 label: "Générer PDF",
-                kind: "primary",
+                kind: "secondary",
                 onClick: generatePack,
               },
               {
@@ -2992,7 +3031,13 @@ const panelDocumentLabel = isSessionDriven
           </div>
 
           {showEdlInvDetails ? (
-            <div style={{ marginTop: 12 }}>
+            <div
+              style={{
+                marginTop: 12,
+                paddingTop: 12,
+                borderTop: "1px solid rgba(226,232,240,0.75)",
+              }}
+            >
               {/* ✅ Pack EDL + Inventaire (recommandé) */}
               {[packEntry, packExit]
                 .filter(Boolean)
@@ -3136,6 +3181,7 @@ const panelDocumentLabel = isSessionDriven
 
       {/* RIGHT COLUMN START */}
         <div
+          ref={signaturePanelRef}
           className="sign-sticky"
           style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 12 }}
         >
@@ -3693,7 +3739,7 @@ const panelDocumentLabel = isSessionDriven
                   background: "#f8fafc",
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 12, color: textSoft }}>Statut</div>
+                <div style={{ fontWeight: 800, fontSize: 12, color: textSoft }}>Information</div>
                 <div style={{ marginTop: 4, fontWeight: 800 }}>{status}</div>
               </div>
             ) : null}
@@ -3702,18 +3748,21 @@ const panelDocumentLabel = isSessionDriven
               <div
                 style={{
                   marginTop: 12,
-                  padding: 10,
+                  padding: 12,
                   borderRadius: 12,
                   border: "1px solid rgba(239,68,68,0.18)",
                   background: "rgba(239,68,68,0.06)",
                   color: "#b42318",
-                  fontWeight: 800,
+                  display: "grid",
+                  gap: 4,
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
-                {error}
+                <div style={{ fontWeight: 800, fontSize: 12 }}>Erreur</div>
+                <div style={{ fontWeight: 700, lineHeight: 1.5 }}>{error}</div>
               </div>
-            ) : null}    
-
+            ) : null}
 
           </div>
         </div>
