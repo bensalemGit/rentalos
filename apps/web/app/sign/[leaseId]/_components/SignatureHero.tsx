@@ -8,6 +8,7 @@ type SignatureHeroProps = {
   canStartNextOnSite: boolean;
   onSendAllRemainingLinks: () => void;
   onStartNextOnSite: () => void;
+  onRefresh?: () => void;
 };
 
 const COLORS = {
@@ -96,6 +97,7 @@ export function SignatureHero({
   canStartNextOnSite,
   onSendAllRemainingLinks,
   onStartNextOnSite,
+  onRefresh,
 }: SignatureHeroProps) {
   const progressPercent = Math.max(0, Math.min(100, overview.progressPercent || 0));
   const progressWidth = `${Math.max(progressPercent, progressPercent > 0 ? 8 : 0)}%`;
@@ -186,7 +188,15 @@ export function SignatureHero({
           </div>
         </div>
 
-        <div style={{ flexShrink: 0 }}>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            flexWrap: "wrap",
+            justifyContent: "flex-end",
+          }}
+        >
           <span
             style={{
               display: "inline-flex",
@@ -205,6 +215,26 @@ export function SignatureHero({
               ? "Dossier finalisé"
               : `${overview.remainingCount} signature(s) restante(s)`}
           </span>
+
+          {onRefresh ? (
+            <button
+              type="button"
+              onClick={onRefresh}
+              style={{
+                appearance: "none",
+                border: "1px solid #D9E2EC",
+                background: "#FFFFFF",
+                borderRadius: 10,
+                padding: "7px 10px",
+                fontSize: 12,
+                fontWeight: 700,
+                cursor: "pointer",
+                color: COLORS.textStrong,
+              }}
+            >
+              Rafraîchir
+            </button>
+          ) : null}
         </div>
       </div>
 

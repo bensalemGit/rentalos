@@ -48,37 +48,6 @@ export function SignerSection({
 
   return (
     <section style={{ display: "grid", gap: 14 }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        }}
-      >
-        <div
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: 999,
-            background: "#2F5FB8",
-            boxShadow: "0 0 0 6px rgba(47,95,184,0.10)",
-          }}
-        />
-        <div
-          style={{
-            fontSize: 18,
-            fontWeight: 800,
-            letterSpacing: 0.02,
-            color: "#344054",
-            textTransform: "uppercase",
-          }}
-        >
-          Signataires
-        </div>
-      </div>
-
       {tasks.length === 0 ? (
         <div
           style={{
@@ -94,7 +63,14 @@ export function SignerSection({
           Aucun signataire à afficher.
         </div>
       ) : (
-        <div style={{ display: "grid", gap: 12 }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gap: 18,
+            alignItems: "start",
+          }}
+        >
           {tasks.map((task) => (
             <SignerCard
               key={task.id}

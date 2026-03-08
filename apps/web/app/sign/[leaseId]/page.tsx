@@ -2274,51 +2274,44 @@ const panelDocumentLabel = isSessionDriven
         canStartNextOnSite={canStartNextOnSite}
         onSendAllRemainingLinks={sendAllRemainingLinks}
         onStartNextOnSite={startNextOnSite}
+        onRefresh={refreshAll}
       />
-            <div
+      <div
         style={{
           display: "flex",
-          justifyContent: "flex-end",
-          marginTop: -2,
-          marginBottom: 2,
+          alignItems: "center",
+          gap: 8,
+          marginTop: 6,
+          marginBottom: 12,
+          fontFamily:
+            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         }}
       >
-        <Btn
-          variant="secondary"
-          onClick={refreshAll}
-          disabled={loadingSigStatus}
+        <div
           style={{
-            borderRadius: 16,
-            padding: "10px 16px",
-            background: "#f8fafc",
+            width: 10,
+            height: 10,
+            borderRadius: 999,
+            background: "#2F5FB8",
+            boxShadow: "0 0 0 6px rgba(47,95,184,0.10)",
+          }}
+        />
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 800,
+            letterSpacing: 0.02,
+            color: "#344054",
+            textTransform: "uppercase",
           }}
         >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
-            <span aria-hidden="true" style={{ display: "inline-flex", lineHeight: 0 }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M20 12a8 8 0 1 1-2.34-5.66"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                />
-                <path
-                  d="M20 4v6h-6"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </span>
-            Rafraîchir
-          </span>
-        </Btn>
+          Signataires
+        </div>
       </div>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "minmax(0,1fr) 360px",
+          gridTemplateColumns: isWideScreen ? "minmax(0, 1fr) 340px" : "1fr",
           gap: 20,
           alignItems: "start",
         }}
@@ -2337,20 +2330,27 @@ const panelDocumentLabel = isSessionDriven
         <div
           ref={signaturePanelRef}
           className="sign-sticky"
-          style={{ position: "sticky", top: 24, display: "flex", flexDirection: "column", gap: 12 }}
+          style={{
+            position: isWideScreen ? "sticky" : "static",
+            top: isWideScreen ? 8 : "auto",
+            display: "flex",
+            flexDirection: "column",
+            gap: 12,
+            alignSelf: "start",
+          }}
         >
           <div
             style={{
               background: "#fff",
               border: `1px solid ${borderSoft}`,
-              borderRadius: 24,
-              padding: 20,
+              borderRadius: 22,
+              padding: 18,
               boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
             }}
           >
             <div
               style={{
-                fontSize: 20,
+                fontSize: 16,
                 fontWeight: 800,
                 color: textStrong,
                 letterSpacing: -0.03,
@@ -2366,7 +2366,7 @@ const panelDocumentLabel = isSessionDriven
               style={{
                 marginTop: -4,
                 marginBottom: 10,
-                fontSize: 13,
+                fontSize: 12.5,
                 lineHeight: 1.55,
                 color: textSoft,
                 fontFamily:
@@ -2381,13 +2381,13 @@ const panelDocumentLabel = isSessionDriven
             {showPanelEmptyState ? (
               <div
                 style={{
-                  marginBottom: 16,
-                  padding: 16,
-                  borderRadius: 16,
-                  border: "1px solid rgba(47,95,184,0.14)",
-                  background: "rgba(47,95,184,0.04)",
+                  marginBottom: 14,
+                  padding: 14,
+                  borderRadius: 14,
+                  border: "1px solid rgba(47,95,184,0.12)",
+                  background: "rgba(47,95,184,0.035)",
                   display: "grid",
-                  gap: 12,
+                  gap: 10,
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
@@ -2395,7 +2395,7 @@ const panelDocumentLabel = isSessionDriven
                 <div style={{ display: "grid", gap: 6 }}>
                   <div
                     style={{
-                      fontSize: 15,
+                      fontSize: 14,
                       fontWeight: 800,
                       color: textStrong,
                       letterSpacing: -0.02,
@@ -2406,8 +2406,8 @@ const panelDocumentLabel = isSessionDriven
 
                   <div
                     style={{
-                      fontSize: 13.5,
-                      lineHeight: 1.6,
+                      fontSize: 13,
+                      lineHeight: 1.55,
                       color: textSoft,
                     }}
                   >
