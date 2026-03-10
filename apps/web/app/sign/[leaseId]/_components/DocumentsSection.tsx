@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import type { DocumentResource } from "../_types/signature-center.types";
 
 type DocumentsSectionProps = {
@@ -7,24 +7,20 @@ type DocumentsSectionProps = {
   onDownloadSignedDocument: (doc: DocumentResource) => void;
 };
 
+const FONT =
+  '"Inter", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+
 const COLORS = {
-  textStrong: "#172033",
+  textStrong: "#1B2740",
   textSoft: "#667085",
   textMuted: "#98A2B3",
-  border: "#D9E2EC",
-  borderSoft: "#E9EEF5",
-  borderStrong: "#C7D3E0",
-  surface: "#FFFFFF",
-  blue: "#1D4ED8",
-  blueSoft: "#EEF4FF",
-  blueBorder: "#C7D7FE",
-  green: "#16A34A",
-  greenSoft: "#F0FDF4",
-  greenBorder: "#BBF7D0",
-  amber: "#D97706",
-  amberSoft: "#FFF7ED",
-  amberBorder: "#FED7AA",
-  graySoft: "#F8FAFC",
+  line: "rgba(26,39,66,0.06)",
+  lineSoft: "rgba(26,39,66,0.045)",
+  blue: "#4F6FD3",
+  blueHover: "#3F60C5",
+  green: "#2FA35B",
+  orange: "#C97E14",
+  neutral: "#7B879C",
 };
 
 function getStatusTone(doc: DocumentResource) {
@@ -32,9 +28,8 @@ function getStatusTone(doc: DocumentResource) {
 
   if (doc.signedFinalDocumentId || value.includes("signé")) {
     return {
-      background: COLORS.greenSoft,
-      border: COLORS.greenBorder,
       color: COLORS.green,
+      dot: "rgba(47,163,91,0.95)",
     };
   }
 
@@ -45,16 +40,14 @@ function getStatusTone(doc: DocumentResource) {
     value.includes("brouillon")
   ) {
     return {
-      background: COLORS.amberSoft,
-      border: COLORS.amberBorder,
-      color: COLORS.amber,
+      color: COLORS.orange,
+      dot: "rgba(201,126,20,0.95)",
     };
   }
 
   return {
-    background: COLORS.graySoft,
-    border: "#E2E8F0",
-    color: "#64748B",
+    color: COLORS.neutral,
+    dot: "rgba(123,135,156,0.95)",
   };
 }
 
@@ -72,35 +65,79 @@ function getDocumentIcon(doc: DocumentResource) {
   return "📄";
 }
 
+function DownloadLink({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        appearance: "none",
+        border: "none",
+        background: "transparent",
+        padding: 0,
+        margin: 0,
+        fontFamily: FONT,
+        fontSize: 13.5,
+        lineHeight: 1.4,
+        fontWeight: 500,
+        color: disabled ? "#A7B0C0" : COLORS.blue,
+        cursor: disabled ? "not-allowed" : "pointer",
+        textDecoration: "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) e.currentTarget.style.color = COLORS.blueHover;
+      }}
+      onMouseLeave={(e) => {
+        if (!disabled) e.currentTarget.style.color = COLORS.blue;
+      }}
+    >
+      {label}
+    </button>
+  );
+}
+
 export function DocumentsSection({
   documents,
   onDownloadDocument,
   onDownloadSignedDocument,
 }: DocumentsSectionProps) {
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setIsMobile(window.innerWidth < 720);
+    sync();
+    window.addEventListener("resize", sync);
+    return () => window.removeEventListener("resize", sync);
+  }, []);
+
   return (
     <section
       style={{
-        borderRadius: 18,
-        border: `1px solid ${COLORS.border}`,
-        background: COLORS.surface,
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
-        overflow: "hidden",
+        fontFamily: FONT,
       }}
     >
       <div
         style={{
-          padding: "14px 16px 10px 16px",
-          borderBottom: `1px solid ${COLORS.borderSoft}`,
+          marginBottom: 8,
         }}
       >
         <div
           style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: COLORS.textMuted,
+            fontSize: 11.5,
+            fontWeight: 700,
+            color: "#A4AEBD",
             textTransform: "uppercase",
-            letterSpacing: "0.04em",
-            marginBottom: 4,
+            letterSpacing: "0.1em",
+            marginBottom: 6,
           }}
         >
           Documents du dossier
@@ -109,8 +146,9 @@ export function DocumentsSection({
         <div
           style={{
             fontSize: 15,
-            fontWeight: 800,
+            fontWeight: 600,
             color: COLORS.textStrong,
+            letterSpacing: "-0.01em",
           }}
         >
           {documents.length === 0
@@ -122,16 +160,16 @@ export function DocumentsSection({
       {documents.length === 0 ? (
         <div
           style={{
-            padding: "16px",
-            display: "grid",
-            gap: 4,
+            padding: "10px 0 4px 0",
+            borderTop: `1px solid ${COLORS.line}`,
           }}
         >
           <div
             style={{
               fontSize: 14,
-              fontWeight: 700,
+              fontWeight: 600,
               color: COLORS.textStrong,
+              marginBottom: 4,
             }}
           >
             Aucun document disponible pour le moment
@@ -140,8 +178,9 @@ export function DocumentsSection({
           <div
             style={{
               fontSize: 13,
-              lineHeight: 1.5,
+              lineHeight: 1.55,
               color: COLORS.textSoft,
+              maxWidth: 760,
             }}
           >
             Les documents apparaîtront ici dès que le contrat, les actes ou les packs
@@ -149,7 +188,11 @@ export function DocumentsSection({
           </div>
         </div>
       ) : (
-        <div>
+        <div
+          style={{
+            borderTop: `1px solid ${COLORS.line}`,
+          }}
+        >
           {documents.map((doc, index) => {
             const tone = getStatusTone(doc);
 
@@ -158,33 +201,34 @@ export function DocumentsSection({
                 key={doc.id}
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(0, 1fr) auto",
-                  gap: 12,
+                  gridTemplateColumns: isMobile
+                    ? "1fr"
+                    : "minmax(0, 1fr) auto",
+                  gap: isMobile ? 8 : 14,
                   alignItems: "center",
-                  padding: "10px 16px",
-                  borderTop: index === 0 ? "none" : `1px solid ${COLORS.borderSoft}`,
+                  padding: "11px 0",
+                  borderTop: index === 0 ? "none" : `1px solid ${COLORS.lineSoft}`,
                 }}
               >
                 <div
                   style={{
                     minWidth: 0,
                     display: "flex",
-                    alignItems: "center",
-                    gap: 12,
+                    alignItems: "flex-start",
+                    gap: 10,
                   }}
                 >
                   <div
                     style={{
-                      width: 30,
-                      height: 28,
-                      borderRadius: 12,
-                      border: `1px solid ${COLORS.borderSoft}`,
-                      background: "#FFF",
+                      width: 24,
+                      height: 24,
                       display: "inline-flex",
                       alignItems: "center",
                       justifyContent: "center",
                       flexShrink: 0,
-                      fontSize: 16,
+                      fontSize: 14,
+                      marginTop: 1,
+                      opacity: 0.9,
                     }}
                   >
                     {getDocumentIcon(doc)}
@@ -197,45 +241,56 @@ export function DocumentsSection({
                         alignItems: "center",
                         gap: 8,
                         flexWrap: "wrap",
-                        marginBottom: 4,
+                        marginBottom: doc.filename ? 3 : 0,
                       }}
                     >
                       <div
                         style={{
                           fontSize: 14,
-                          fontWeight: 800,
+                          fontWeight: 600,
                           color: COLORS.textStrong,
                           minWidth: 0,
                           wordBreak: "break-word",
+                          lineHeight: 1.45,
                         }}
                       >
                         {doc.label}
                       </div>
 
-                      <span
-                        style={{
-                          display: "inline-flex",
-                          alignItems: "center",
-                          padding: "4px 8px",
-                          borderRadius: 999,
-                          fontSize: 11,
-                          fontWeight: 700,
-                          background: tone.background,
-                          border: `1px solid ${tone.border}`,
-                          color: tone.color,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {doc.statusLabel}
-                      </span>
+                      {doc.statusLabel ? (
+                        <span
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            fontSize: 12.5,
+                            fontWeight: 500,
+                            color: tone.color,
+                            whiteSpace: "nowrap",
+                            lineHeight: 1.3,
+                          }}
+                        >
+                          <span
+                            style={{
+                              width: 6,
+                              height: 6,
+                              borderRadius: 999,
+                              background: tone.dot,
+                              display: "inline-block",
+                              flexShrink: 0,
+                            }}
+                          />
+                          <span>{doc.statusLabel}</span>
+                        </span>
+                      ) : null}
                     </div>
 
                     {doc.filename ? (
                       <div
                         style={{
-                          fontSize: 12,
+                          fontSize: 12.5,
                           color: COLORS.textSoft,
-                          lineHeight: 1.4,
+                          lineHeight: 1.45,
                           wordBreak: "break-word",
                         }}
                       >
@@ -248,52 +303,25 @@ export function DocumentsSection({
                 <div
                   style={{
                     display: "flex",
-                    gap: 8,
+                    gap: 14,
                     flexWrap: "wrap",
-                    justifyContent: "flex-end",
+                    justifyContent: isMobile ? "flex-start" : "flex-end",
                     alignItems: "center",
+                    width: isMobile ? "100%" : "auto",
+                    paddingLeft: isMobile ? 34 : 0,
                   }}
                 >
-                  <button
-                    type="button"
-                    onClick={() => onDownloadDocument(doc)}
+                  <DownloadLink
+                    label="Télécharger"
                     disabled={!doc.downloadable}
-                    style={{
-                      appearance: "none",
-                      border: `1px solid ${doc.downloadable ? COLORS.borderStrong : "#D0D5DD"}`,
-                      background: doc.downloadable ? "#FFFFFF" : "#F2F4F7",
-                      color: doc.downloadable ? COLORS.textStrong : "#98A2B3",
-                      borderRadius: 10,
-                      padding: "9px 12px",
-                      fontSize: 13,
-                      fontWeight: 700,
-                      cursor: doc.downloadable ? "pointer" : "not-allowed",
-                      whiteSpace: "nowrap",
-                    }}
-                  >
-                    Télécharger
-                  </button>
+                    onClick={() => onDownloadDocument(doc)}
+                  />
 
                   {doc.signedFinalDocumentId ? (
-                    <button
-                      type="button"
+                    <DownloadLink
+                      label="Télécharger signé"
                       onClick={() => onDownloadSignedDocument(doc)}
-                      style={{
-                        appearance: "none",
-                        border: `1px solid ${COLORS.blue}`,
-                        background: COLORS.blue,
-                        color: "#FFFFFF",
-                        borderRadius: 10,
-                        padding: "9px 12px",
-                        fontSize: 13,
-                        fontWeight: 800,
-                        cursor: "pointer",
-                        boxShadow: "0 5px 14px rgba(29, 78, 216, 0.16)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      Télécharger signé
-                    </button>
+                    />
                   ) : null}
                 </div>
               </div>

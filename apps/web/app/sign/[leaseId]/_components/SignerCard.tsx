@@ -1,9 +1,23 @@
 import React from "react";
+import {
+  PenLine,
+  Mail,
+  Send,
+  Download,
+  FilePenLine,
+  Circle,
+  Check,
+  CheckCircle2,
+  Clock3,
+  Link2,
+  Sparkles,
+} from "lucide-react";
 import type { SignerTask } from "../_types/signature-center.types";
 
 type SignerCardProps = {
   task: SignerTask;
   isActive: boolean;
+  isProminent?: boolean;
   onStartOnSite: (task: SignerTask) => void;
   onSendEmail: (task: SignerTask) => void;
   onResendEmail: (task: SignerTask) => void;
@@ -22,30 +36,19 @@ type HistoryItem = {
 };
 
 const COLORS = {
-  textStrong: "#172033",
-  textSoft: "#667085",
-  textMuted: "#98A2B3",
-  border: "#D9E2EC",
-  borderSoft: "#E9EEF5",
-  borderStrong: "#C7D3E0",
-  surface: "#FFFFFF",
-  surfaceSoft: "#FCFDFE",
-  blue: "#1D4ED8",
-  blueSoft: "#EEF4FF",
-  blueBorder: "#C7D7FE",
-  green: "#16A34A",
-  greenSoft: "#F0FDF4",
-  greenBorder: "#BBF7D0",
-  amber: "#D97706",
-  amberSoft: "#FFF7ED",
-  amberBorder: "#FED7AA",
-  red: "#DC2626",
-  redSoft: "#FEF2F2",
-  redBorder: "#FECACA",
-  purple: "#7C3AED",
-  purpleSoft: "#F5F3FF",
-  purpleBorder: "#DDD6FE",
-  graySoft: "#F8FAFC",
+  textStrong: "#18243D",
+  textSoft: "#6A7690",
+  textMuted: "#9AA6BA",
+
+  border: "rgba(26, 39, 66, 0.06)",
+  borderSoft: "rgba(26, 39, 66, 0.045)",
+  borderStrong: "rgba(26, 39, 66, 0.08)",
+
+  blue: "#557ADD",
+  blueTop: "#6A90EB",
+
+  green: "#4F9B71",
+  amber: "#C18432",
 };
 
 function getFirstName(name: string) {
@@ -65,93 +68,84 @@ function formatShortDate(input?: string | null) {
   }).format(date);
 }
 
-function getRoleChip(task: SignerTask) {
+function getRoleMeta(task: SignerTask) {
   if (task.kind === "TENANT") {
     return {
       label: task.roleLabel.toUpperCase(),
-      background: COLORS.blueSoft,
-      border: COLORS.blueBorder,
-      color: COLORS.blue,
+      color: "#5D7FE0",
     };
   }
 
   if (task.kind === "GUARANTOR") {
     return {
-      label: task.roleLabel.toUpperCase(),
-      background: COLORS.purpleSoft,
-      border: COLORS.purpleBorder,
-      color: COLORS.purple,
+      label: "GARANT",
+      color: "#796A99",
     };
   }
 
   return {
-    label: task.roleLabel.toUpperCase(),
-    background: "#F3F4F6",
-    border: "#E5E7EB",
-    color: "#475467",
+    label: "BAILLEUR",
+    color: "#6A7690",
   };
 }
 
-function getStatusPill(task: SignerTask) {
+function getStatusMeta(task: SignerTask) {
   if (task.status === "SIGNED") {
     return {
       label: "Signé",
-      background: COLORS.greenSoft,
-      border: COLORS.greenBorder,
-      color: COLORS.green,
+      color: "#2FA35B",
+      background: "rgba(65, 196, 105, 0.16)",
+      iconColor: "#35B764",
+      icon: CheckCircle2,
     };
   }
 
   if (task.status === "LINK_SENT") {
     return {
       label: "Lien envoyé",
-      background: COLORS.amberSoft,
-      border: COLORS.amberBorder,
-      color: COLORS.amber,
+      color: "#C97E14",
+      background: "rgba(233, 151, 37, 0.16)",
+      iconColor: "#DD8E1D",
+      icon: Link2,
     };
   }
 
   if (task.status === "IN_PROGRESS") {
     return {
       label: "En cours",
-      background: COLORS.amberSoft,
-      border: COLORS.amberBorder,
-      color: COLORS.amber,
+      color: "#C97E14",
+      background: "rgba(233, 151, 37, 0.16)",
+      iconColor: "#DD8E1D",
+      icon: Clock3,
     };
   }
 
   if (task.status === "READY") {
     return {
       label: "Prêt à signer",
-      background: COLORS.blueSoft,
-      border: COLORS.blueBorder,
-      color: COLORS.blue,
-    };
-  }
-
-  if (task.status === "NOT_REQUIRED") {
-    return {
-      label: "Non requis",
-      background: COLORS.graySoft,
-      border: "#E2E8F0",
-      color: "#64748B",
+      color: "#61718C",
+      background: "rgba(116, 129, 154, 0.085)",
+      iconColor: "#9FAABD",
+      icon: Sparkles,
     };
   }
 
   if (task.requiresPreparation) {
     return {
       label: "À préparer",
-      background: COLORS.amberSoft,
-      border: COLORS.amberBorder,
-      color: COLORS.amber,
+      color: "#C97E14",
+      background: "rgba(233, 151, 37, 0.16)",
+      iconColor: "#DD8E1D",
+      icon: FilePenLine,
     };
   }
 
   return {
     label: task.statusLabel || "En attente",
-    background: COLORS.graySoft,
-    border: "#E2E8F0",
-    color: "#64748B",
+    color: "#61718C",
+    background: "rgba(116, 129, 154, 0.085)",
+    iconColor: "#9FAABD",
+    icon: Clock3,
   };
 }
 
@@ -175,7 +169,7 @@ function buildProgressItems(task: SignerTask): ProgressItem[] {
   }
 
   if (task.kind === "GUARANTOR" && task.status === "SIGNED") {
-    return [{ label: "Garant signé", done: true }];
+    return [{ label: "Signature finalisée", done: true }];
   }
 
   if (task.kind === "LANDLORD" && task.status === "SIGNED") {
@@ -196,7 +190,7 @@ function buildProgressItems(task: SignerTask): ProgressItem[] {
   }
 
   if (task.kind === "GUARANTOR") {
-    return [{ label: "Garant à signer", done: false }];
+    return [{ label: "Signature garant requise", done: false }];
   }
 
   if (task.kind === "LANDLORD") {
@@ -252,6 +246,7 @@ function getPrimaryAction(task: SignerTask) {
     return {
       key: "prepare" as const,
       label: task.kind === "GUARANTOR" ? "Préparer l’acte" : "Préparer le document",
+      icon: FilePenLine,
     };
   }
 
@@ -259,6 +254,7 @@ function getPrimaryAction(task: SignerTask) {
     return {
       key: "download" as const,
       label: "Télécharger signé",
+      icon: Download,
     };
   }
 
@@ -266,13 +262,15 @@ function getPrimaryAction(task: SignerTask) {
     return {
       key: "sign" as const,
       label: "Signer sur place",
+      icon: PenLine,
     };
   }
 
   if (task.status === "LINK_SENT" && task.canResendLink) {
     return {
       key: "resend" as const,
-      label: "Renvoyer un lien",
+      label: "Renvoyer le lien",
+      icon: Send,
     };
   }
 
@@ -280,6 +278,7 @@ function getPrimaryAction(task: SignerTask) {
     return {
       key: "send" as const,
       label: "Envoyer un lien",
+      icon: Mail,
     };
   }
 
@@ -287,6 +286,7 @@ function getPrimaryAction(task: SignerTask) {
     return {
       key: "download" as const,
       label: "Télécharger signé",
+      icon: Download,
     };
   }
 
@@ -306,6 +306,7 @@ function getSecondaryAction(
     return {
       key: "sign" as const,
       label: "Signer sur place",
+      icon: PenLine,
     };
   }
 
@@ -316,9 +317,11 @@ function getSecondaryAction(
     task.status !== "SIGNED" &&
     task.status !== "NOT_REQUIRED"
   ) {
+    const resend = task.canResendLink || task.hasActiveLink;
     return {
-      key: task.canResendLink || task.hasActiveLink ? ("resend" as const) : ("send" as const),
-      label: task.canResendLink || task.hasActiveLink ? "Renvoyer un lien" : "Envoyer un lien",
+      key: resend ? ("resend" as const) : ("send" as const),
+      label: resend ? "Renvoyer le lien" : "Envoyer un lien",
+      icon: resend ? Send : Mail,
     };
   }
 
@@ -326,34 +329,69 @@ function getSecondaryAction(
     return {
       key: "download" as const,
       label: "Télécharger signé",
+      icon: Download,
     };
   }
 
   return null;
 }
 
-function getCardSurface(task: SignerTask, isActive: boolean): React.CSSProperties {
+function StatusChip({
+  label,
+  color,
+  background,
+  iconColor,
+  icon: Icon,
+}: {
+  label: string;
+  color: string;
+  background: string;
+  iconColor: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number; color?: string }>;
+}) {
+  return (
+    <span
+      style={{
+        flexShrink: 0,
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 7,
+        minHeight: 30,
+        padding: "0 11px",
+        borderRadius: 999,
+        background,
+        color,
+        whiteSpace: "nowrap",
+        fontSize: 12.5,
+        fontWeight: 700,
+        letterSpacing: "-0.01em",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.74)",
+        border: "1px solid rgba(255,255,255,0.54)",
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
+      <Icon size={14} strokeWidth={2.05} color={iconColor} />
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function getCardSurface(isActive: boolean): React.CSSProperties {
   const base: React.CSSProperties = {
-    borderRadius: 16,
-    border: `1px solid ${COLORS.border}`,
-    background: COLORS.surface,
-    boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
-    transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
+    borderRadius: 28,
+    border: "1px solid rgba(26,39,66,0.06)",
+    background: "linear-gradient(180deg,#FFFFFF 0%,#FCFDFF 100%)",
+    boxShadow:
+      "0 8px 18px rgba(25,35,60,0.025), 0 2px 6px rgba(25,35,60,0.014)",
+    transition: "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
   };
 
-  if (task.status === "SIGNED") {
-    base.border = `1px solid ${COLORS.greenBorder}`;
-    base.background = "linear-gradient(180deg, #FFFFFF 0%, #FBFFFC 100%)";
-  } else if (task.status === "READY" || task.status === "LINK_SENT" || task.status === "IN_PROGRESS") {
-    base.border = `1px solid ${COLORS.amberBorder}`;
-    base.background = "linear-gradient(180deg, #FFFFFF 0%, #FFFDF9 100%)";
-  } else if (task.status === "NOT_REQUIRED") {
-    base.background = COLORS.graySoft;
-  }
-
   if (isActive) {
-    base.border = "1px solid #93C5FD";
-    base.boxShadow = "0 12px 28px rgba(29, 78, 216, 0.12)";
+    base.border = "1px solid rgba(92,129,228,0.16)";
+    base.boxShadow =
+      "0 12px 24px rgba(25,35,60,0.04), 0 4px 12px rgba(92,129,228,0.05)";
+    base.transform = "translateY(-1px)";
   }
 
   return base;
@@ -389,360 +427,359 @@ function runAction(
   }
 }
 
+function PrimaryActionButton(props: {
+  label: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  onClick: () => void;
+}) {
+  const Icon = props.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      style={{
+        appearance: "none",
+        border: "none",
+        minHeight: 40,
+        padding: "0 16px",
+        borderRadius: 15,
+        background: "linear-gradient(180deg, #6A90EB 0%, #557ADD 100%)",
+        color: "#FFFFFF",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        fontWeight: 600,
+        fontSize: 13.5,
+        letterSpacing: "-0.01em",
+        cursor: "pointer",
+        boxShadow: "0 8px 16px rgba(85,122,221,0.11), inset 0 1px 0 rgba(255,255,255,0.14)",
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
+      <Icon size={15} strokeWidth={2.05} />
+      <span>{props.label}</span>
+    </button>
+  );
+}
+
+function SecondaryActionButton(props: {
+  label: string;
+  icon: React.ComponentType<{ size?: number; strokeWidth?: number }>;
+  onClick: () => void;
+}) {
+  const Icon = props.icon;
+
+  return (
+    <button
+      type="button"
+      onClick={props.onClick}
+      style={{
+        appearance: "none",
+        border: "1px solid rgba(26,39,66,0.065)",
+        minHeight: 40,
+        padding: "0 16px",
+        borderRadius: 15,
+        background: "rgba(255,255,255,0.84)",
+        color: "#243041",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+        fontWeight: 500,
+        fontSize: 13.5,
+        letterSpacing: "-0.01em",
+        cursor: "pointer",
+        boxShadow: "0 2px 6px rgba(31,41,64,0.016)",
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
+      <Icon size={15} strokeWidth={2.05} />
+      <span>{props.label}</span>
+    </button>
+  );
+}
+
 export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
   function SignerCard(
-    { task, isActive, onStartOnSite, onSendEmail, onResendEmail, onDownloadSigned, onPrepare },
+    {
+      task,
+      isActive,
+      onStartOnSite,
+      onSendEmail,
+      onResendEmail,
+      onDownloadSigned,
+      onPrepare,
+    },
     ref,
   ) {
-    const roleChip = getRoleChip(task);
-    const statusPill = getStatusPill(task);
+    const roleMeta = getRoleMeta(task);
+    const statusMeta = getStatusMeta(task);
     const progressItems = buildProgressItems(task);
     const historyItems = buildHistoryPreview(task);
+
     const primaryAction = getPrimaryAction(task);
     const secondaryAction = getSecondaryAction(task, primaryAction?.key ?? null);
 
     return (
-      <div
+      <article
         ref={ref}
         style={{
-          ...getCardSurface(task, isActive),
-          padding: 14,
+          ...getCardSurface(isActive),
+          padding: 22,
           height: "100%",
           display: "flex",
           flexDirection: "column",
-        }}
-        onMouseEnter={(e) => {
-          if (isActive) return;
-          if (task.status === "SIGNED" || task.status === "NOT_REQUIRED") return;
-          e.currentTarget.style.transform = "translateY(-1px)";
-        }}
-        onMouseLeave={(e) => {
-          e.currentTarget.style.transform = "translateY(0)";
         }}
       >
         <div
           style={{
             display: "flex",
-            alignItems: "flex-start",
-            justifyContent: "space-between",
-            gap: 12,
-            marginBottom: 10,
+            flexDirection: "column",
+            minHeight: 0,
+            flex: 1,
           }}
         >
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flexWrap: "wrap",
-                marginBottom: 8,
-              }}
-            >
-              <span
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  padding: "3px 8px",
-                  borderRadius: 999,
-                  fontSize: 10,
-                  fontWeight: 800,
-                  letterSpacing: "0.03em",
-                  background: roleChip.background,
-                  border: `1px solid ${roleChip.border}`,
-                  color: roleChip.color,
-                }}
-              >
-                {roleChip.label}
-              </span>
-
-              {task.subtypeLabel ? (
-                <span
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 600,
-                    color: COLORS.textMuted,
-                  }}
-                >
-                  {task.subtypeLabel}
-                </span>
-              ) : null}
-
-              {isActive ? (
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    padding: "3px 8px",
-                    borderRadius: 999,
-                    fontSize: 10,
-                    fontWeight: 700,
-                    background: COLORS.blueSoft,
-                    border: `1px solid ${COLORS.blueBorder}`,
-                    color: COLORS.blue,
-                  }}
-                >
-                  Session active
-                </span>
-              ) : null}
-            </div>
-
-            <div
-              style={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: 10,
-                flexWrap: "wrap",
-                marginBottom: 4,
-              }}
-            >
+          <div
+            style={{
+              display: "flex",
+              alignItems: "flex-start",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 14,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
               <div
                 style={{
-                  fontSize: 16,
-                  lineHeight: 1.15,
-                  fontWeight: 700,
+                  fontSize: 12,
+                  opacity: 0.9,
+                  lineHeight: 1.2,
+                  fontWeight: 800,
+                  letterSpacing: "0.045em",
+                  textTransform: "uppercase",
+                  color: roleMeta.color,
+                  marginBottom: 12,
+                }}
+              >
+                {roleMeta.label}
+              </div>
+
+              <div
+                style={{
+                  fontSize: 19,
+                  letterSpacing: "-0.03em",
+                  lineHeight: 1.28,
+                  fontWeight: 800,
                   color: COLORS.textStrong,
-                  letterSpacing: "-0.02em",
                   wordBreak: "break-word",
                 }}
               >
                 {task.displayName}
               </div>
 
-              <div
-                style={{
-                  fontSize: 12,
-                  color: COLORS.textSoft,
-                }}
-              >
-                Document :{" "}
-                <span style={{ color: COLORS.textSoft }}>
-                  {task.documentLabel}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ flexShrink: 0 }}>
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 11,
-                fontWeight: 800,
-                background: statusPill.background,
-                border: `1px solid ${statusPill.border}`,
-                color: statusPill.color,
-                whiteSpace: "nowrap",
-              }}
-            >
-              {statusPill.label}
-            </span>
-          </div>
-        </div>
-
-        <div
-          style={{
-            borderTop: `1px solid ${COLORS.borderSoft}`,
-            paddingTop: 10,
-            display: "grid",
-            gap: 10,
-            flex: 1,
-          }}
-        >
-          <div
-            style={{
-              display: "grid",
-              gap: 7,
-            }}
-          >
-            {progressItems.map((item, index) => (
-              <div
-                key={`${item.label}-${index}`}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 13,
-                  color: item.done ? COLORS.textStrong : "#475467",
-                  fontWeight: item.done ? 700 : 600,
-                  lineHeight: 1.35,
-                }}
-              >
-                <span
+              {task.tenantLabel ? (
+                <div
                   style={{
-                    width: 16,
-                    height: 16,
-                    borderRadius: 999,
-                    display: "inline-flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexShrink: 0,
-                    border: item.done ? `1px solid ${COLORS.green}` : `1px solid #D0D5DD`,
-                    background: item.done ? COLORS.greenSoft : "#FFF",
-                    color: item.done ? COLORS.green : "#98A2B3",
-                    fontSize: 11,
-                    lineHeight: 1,
+                    marginTop: 6,
+                    fontSize: 13,
+                    lineHeight: 1.45,
+                    color: "#475467",
+                    fontWeight: 700,
                   }}
                 >
-                  {item.done ? "✓" : "○"}
-                </span>
+                  {task.tenantLabel}
+                </div>
+              ) : null}
 
-                <span>{item.label}</span>
-              </div>
-            ))}
+              {task.subtypeLabel ? (
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 12.5,
+                    lineHeight: 1.42,
+                    color: "#8A94A8",
+                  }}
+                >
+                  {task.subtypeLabel}
+                </div>
+              ) : null}
+            </div>
+
+            <StatusChip
+              label={statusMeta.label}
+              color={statusMeta.color}
+              background={statusMeta.background}
+              iconColor={statusMeta.iconColor}
+              icon={statusMeta.icon}
+            />
           </div>
-
-          {task.blockedReason ? (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "6px 8px",
-                borderRadius: 10,
-                border: `1px solid ${COLORS.redBorder}`,
-                background: COLORS.redSoft,
-                fontSize: 11,
-                lineHeight: 1.4,
-                color: COLORS.red,
-                fontWeight: 600,
-              }}
-            >
-              <span style={{ fontSize: 12, lineHeight: 1 }}>!</span>
-              <span>{task.blockedReason}</span>
-            </div>
-          ) : task.helperLabel ? (
-            <div
-              style={{
-                fontSize: 12,
-                lineHeight: 1.45,
-                color: COLORS.textSoft,
-              }}
-            >
-              {task.helperLabel}
-            </div>
-          ) : null}
 
           <div
             style={{
+              borderTop: "1px solid rgba(26,39,66,0.045)",
+              paddingTop: 14,
               display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              alignItems: "center",
-              marginTop: "auto",
+              flexDirection: "column",
+              flex: 1,
+              minHeight: 0,
             }}
->
-            {primaryAction ? (
-              <button
-                type="button"
-                onClick={() =>
-                  runAction(primaryAction.key, task, {
-                    onStartOnSite,
-                    onSendEmail,
-                    onResendEmail,
-                    onDownloadSigned,
-                    onPrepare,
-                  })
-                }
-                style={{
-                  appearance: "none",
-                  border: "1px solid #1D4ED8",
-                  background: "#1D4ED8",
-                  color: "#FFF",
-                  borderRadius: 10,
-                  padding: "9px 13px",
-                  fontSize: 13,
-                  fontWeight: 800,
-                  cursor: "pointer",
-                  boxShadow: "0 5px 14px rgba(29, 78, 216, 0.16)",
-                }}
-              >
-                {primaryAction.label}
-              </button>
-            ) : null}
-
-            {secondaryAction ? (
-              <button
-                type="button"
-                onClick={() =>
-                  runAction(secondaryAction.key, task, {
-                    onStartOnSite,
-                    onSendEmail,
-                    onResendEmail,
-                    onDownloadSigned,
-                    onPrepare,
-                  })
-                }
-                style={{
-                  appearance: "none",
-                  border: `1px solid ${COLORS.borderStrong}`,
-                  background: "#FFF",
-                  color: COLORS.textStrong,
-                  borderRadius: 10,
-                  padding: "9px 13px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                }}
-              >
-                {secondaryAction.label}
-              </button>
-            ) : null}
-          </div>
-
-          {historyItems.length > 0 ? (
+          >
             <div
               style={{
+                fontSize: 13,
+                lineHeight: 1.4,
+                color: "#6B778C",
+                marginBottom: 10,
+              }}
+            >
+              {task.documentLabel}
+            </div>
+
+            <div style={{ display: "grid", gap: 8 }}>
+              {progressItems.map((item) => (
+                <div
+                  key={item.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    color: item.done ? "#1C2B42" : "#4E5C73",
+                    fontSize: 13.5,
+                    lineHeight: 1.45,
+                    fontWeight: item.done ? 700 : 500,
+                  }}
+                >
+                  {item.done ? (
+                    <Check size={15} strokeWidth={2.2} color="#4C936A" />
+                  ) : (
+                    <Circle size={14} strokeWidth={2.0} color="#CC8B37" />
+                  )}
+                  <span>{item.label}</span>
+                </div>
+              ))}
+            </div>
+
+            {task.helperLabel && !task.requiresPreparation && task.status !== "SIGNED" ? (
+              <div
+                style={{
+                  marginTop: 12,
+                  fontSize: 12.5,
+                  lineHeight: 1.5,
+                  color: "#667085",
+                }}
+              >
+                {task.helperLabel}
+              </div>
+            ) : null}
+
+            {primaryAction || secondaryAction ? (
+              <div
+                style={{
+                  display: "flex",
+                  gap: 10,
+                  flexWrap: "wrap",
+                  marginTop: 16,
+                }}
+              >
+                {primaryAction ? (
+                  <PrimaryActionButton
+                    label={primaryAction.label}
+                    icon={primaryAction.icon}
+                    onClick={() =>
+                      runAction(primaryAction.key, task, {
+                        onStartOnSite,
+                        onSendEmail,
+                        onResendEmail,
+                        onDownloadSigned,
+                        onPrepare,
+                      })
+                    }
+                  />
+                ) : null}
+
+                {secondaryAction ? (
+                  <SecondaryActionButton
+                    label={secondaryAction.label}
+                    icon={secondaryAction.icon}
+                    onClick={() =>
+                      runAction(secondaryAction.key, task, {
+                        onStartOnSite,
+                        onSendEmail,
+                        onResendEmail,
+                        onDownloadSigned,
+                        onPrepare,
+                      })
+                    }
+                  />
+                ) : null}
+              </div>
+            ) : null}
+
+            <div
+              style={{
+                marginTop: primaryAction || secondaryAction ? "auto" : 12,
+                paddingTop: primaryAction || secondaryAction ? 16 : 6,
+              }}
+            />
+
+            <div
+              style={{
+                paddingTop: 12,
                 borderTop: `1px solid ${COLORS.borderSoft}`,
-                paddingTop: 10,
-                display: "grid",
-                gap: 6,
               }}
             >
               <div
                 style={{
                   fontSize: 11,
+                  lineHeight: 1.2,
                   fontWeight: 800,
-                  color: COLORS.textMuted,
+                  letterSpacing: "0.09em",
                   textTransform: "uppercase",
-                  letterSpacing: "0.03em",
+                  color: COLORS.textMuted,
+                  marginBottom: 8,
                 }}
               >
                 Historique
               </div>
 
-              {historyItems.map((item) => (
-                <div
-                  key={item.key}
-                  style={{
-                    display: "flex",
-                    alignItems: "flex-start",
-                    gap: 7,
-                    fontSize: 12,
-                    lineHeight: 1.4,
-                    color: COLORS.textSoft,
-                  }}
-                >
-                  <span
+              <div style={{ display: "grid", gap: 6 }}>
+                {historyItems.length === 0 ? (
+                  <div
                     style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: 999,
-                      background: "#94A3B8",
-                      marginTop: 5,
-                      flexShrink: 0,
+                      fontSize: 13,
+                      lineHeight: 1.5,
+                      color: COLORS.textSoft,
                     }}
-                  />
-                  <span>{item.label}</span>
-                </div>
-              ))}
+                  >
+                    Aucun historique.
+                  </div>
+                ) : (
+                  historyItems.map((item) => (
+                    <div
+                      key={item.key}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        fontSize: 13.5,
+                        lineHeight: 1.45,
+                        color: "#667085",
+                      }}
+                    >
+                      <span style={{ color: "#A8B2C3", fontSize: 15, lineHeight: 1 }}>•</span>
+                      <span>{item.label}</span>
+                    </div>
+                  ))
+                )}
+              </div>
             </div>
-          ) : null}
+          </div>
         </div>
-      </div>
+      </article>
     );
   },
 );

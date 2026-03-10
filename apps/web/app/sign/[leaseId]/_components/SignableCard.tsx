@@ -1,115 +1,129 @@
-"use client";
 import React from "react";
 
-export type SignableCardAction = {
+type SignableAction = {
   label: string;
-  onClick: () => void | Promise<void>;
-  kind?: "primary" | "secondary";
+  onClick?: () => void;
   disabled?: boolean;
-  title?: string;
+  kind?: "primary" | "secondary";
 };
 
-const brandBlue = "#2F5FB8";
-const borderSoft = "#dde3ec";
-const borderSoftStrong = "#cfd8e3";
-const textStrong = "#172033";
-const textSoft = "#667085";
-
-export function SignableCard(props: {
-  title: string;
-  statusChip: React.ReactNode;
+export function SignableCard({
+  title,
+  subtitle,
+  statusChip,
+  actions = [],
+}: {
+  title: React.ReactNode;
   subtitle?: React.ReactNode;
-  actions: SignableCardAction[];
-  children?: React.ReactNode;
+  statusChip?: React.ReactNode;
+  actions?: SignableAction[];
 }) {
-  const primary = props.actions.filter((a) => a.kind !== "secondary");
-  const secondary = props.actions.filter((a) => a.kind === "secondary");
-
   return (
-    <section
+    <div
       style={{
-        border: `1px solid ${borderSoft}`,
-        borderRadius: 16,
-        background: "#fff",
-        padding: 14,
-        marginTop: 12,
-        boxShadow: "0 2px 6px rgba(15,23,42,0.03)",
+        border: "1px solid rgba(26,39,66,0.06)",
+        borderRadius: 20,
+        background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
+        boxShadow: "0 8px 18px rgba(31,41,64,0.03), 0 2px 6px rgba(31,41,64,0.018)",
+        padding: 16,
+        display: "grid",
+        gap: 12,
+        minWidth: 0,
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
         <div style={{ minWidth: 0 }}>
-          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <h3
-              style={{
-                margin: 0,
-                fontSize: 15.5,
-                fontWeight: 800,
-                color: textStrong,
-                letterSpacing: -0.02,
-              }}
-            >
-              {props.title}
-            </h3>
-            {props.statusChip}
+          <div
+            style={{
+              fontSize: 15.5,
+              lineHeight: 1.3,
+              fontWeight: 800,
+              letterSpacing: "-0.02em",
+              color: "#16233D",
+            }}
+          >
+            {title}
           </div>
 
-          {props.subtitle ? (
-            <div style={{ marginTop: 8, color: textSoft, fontSize: 13, lineHeight: 1.5 }}>{props.subtitle}</div>
+          {subtitle ? (
+            <div
+              style={{
+                marginTop: 8,
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                color: "#667792",
+              }}
+            >
+              {subtitle}
+            </div>
           ) : null}
         </div>
 
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
-          {primary.map((a) => (
-            <button
-              key={a.label}
-              onClick={a.onClick}
-              disabled={a.disabled}
-              title={a.title}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 14,
-                border: `1px solid ${brandBlue}`,
-                background: brandBlue,
-                color: "#fff",
-                fontWeight: 600,
-                cursor: a.disabled ? "not-allowed" : "pointer",
-                opacity: a.disabled ? 0.55 : 1,
-                boxShadow: "0 8px 18px rgba(47,95,184,0.16), inset 0 -1px 0 rgba(0,0,0,0.08)",
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              {a.label}
-            </button>
-          ))}
-
-          {secondary.map((a) => (
-            <button
-              key={a.label}
-              onClick={a.onClick}
-              disabled={a.disabled}
-              title={a.title}
-              style={{
-                padding: "10px 14px",
-                borderRadius: 14,
-                border: `1px solid ${borderSoftStrong}`,
-                background: "#fff",
-                color: "#243041",
-                fontWeight: 600,
-                cursor: a.disabled ? "not-allowed" : "pointer",
-                opacity: a.disabled ? 0.55 : 1,
-                boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+        {statusChip ? <div style={{ flexShrink: 0 }}>{statusChip}</div> : null}
       </div>
 
-      {props.children ? <div style={{ marginTop: 12 }}>{props.children}</div> : null}
-    </section>
+      {actions.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+          }}
+        >
+          {actions.map((action, index) => {
+            const isPrimary = (action.kind || "primary") === "primary";
+
+            return (
+              <button
+                key={`${action.label}-${index}`}
+                type="button"
+                onClick={action.onClick}
+                disabled={action.disabled}
+                style={{
+                  appearance: "none",
+                  border: isPrimary ? "none" : "1px solid rgba(26,39,66,0.08)",
+                  borderRadius: 14,
+                  minHeight: 40,
+                  padding: "0 14px",
+                  background: action.disabled
+                    ? "#F3F5F8"
+                    : isPrimary
+                      ? "linear-gradient(180deg, #6A90EB 0%, #557ADD 100%)"
+                      : "rgba(255,255,255,0.82)",
+                  color: action.disabled
+                    ? "#A0AAB9"
+                    : isPrimary
+                      ? "#FFFFFF"
+                      : "#22324B",
+                  fontSize: 13.5,
+                  fontWeight: 800,
+                  letterSpacing: "-0.01em",
+                  cursor: action.disabled ? "not-allowed" : "pointer",
+                  boxShadow: action.disabled
+                    ? "none"
+                    : isPrimary
+                      ? "0 8px 16px rgba(85,122,221,0.12), inset 0 1px 0 rgba(255,255,255,0.14)"
+                      : "0 3px 8px rgba(31,41,64,0.022)",
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                }}
+              >
+                {action.label}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }

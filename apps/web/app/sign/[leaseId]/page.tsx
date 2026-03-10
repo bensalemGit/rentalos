@@ -12,33 +12,55 @@ import { DocumentsSection } from "./_components/DocumentsSection";
 import { HistorySection, type HistoryItem } from "./_components/HistorySection";
 
 
-const brandBlue = "#2F5FB8";
-const brandBlueHover = "#284FA0";
-const textStrong = "#172033";
-const textSoft = "#667085";
-const borderSoft = "#dde3ec";
-const borderSoftStrong = "#cfd8e3";
-const bgSoft = "#f8fafc";
+const brandBlue = "#4D7DE0";
+const brandBlueHover = "#4474D7";
+const brandBlueBorder = "#3567C8";
 
+const textStrong = "#1D273B";
+const textSoft = "#667085";
+const textMuted = "#98A2B3";
+
+const borderSoft = "#D9E2EC";
+const borderSoftStrong = "#C8D4E3";
+const borderUltraSoft = "#E8EEF5";
+
+const bgSoft = "#F7F9FC";
+const panelBg = "#FBFCFE";
+
+const successBg = "#EAF6EE";
+const successBorder = "#CEE6D5";
+const successText = "#4C9A70";
+
+const warningBg = "#FBF1E4";
+const warningBorder = "#EBCFA8";
+const warningText = "#B7791F";
+
+const neutralBg = "#F7F8FB";
+const neutralBorder = "#D8E1EC";
+const neutralText = "#66758F";
+
+const dangerBg = "#FCEAEA";
+const dangerBorder = "#F2CFCF";
+const dangerText = "#C35B5B";
 
 const ui = {
   card: {
-    background: "#ffffff",
+    background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
     border: `1px solid ${borderSoft}`,
     borderRadius: 24,
-    boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
+    boxShadow: "0 10px 24px rgba(31,41,64,0.04), 0 2px 6px rgba(31,41,64,0.018)",
     transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
   } as React.CSSProperties,
   hTitle: {
     fontSize: 18,
-    fontWeight: 800,
+    fontWeight: 700,
     margin: 0,
-    letterSpacing: -0.02,
+    letterSpacing: -0.03,
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as React.CSSProperties,
   sub: {
-    fontSize: 13,
+    fontSize: 13.5,
     color: textSoft,
     marginTop: 4,
     fontFamily:
@@ -53,30 +75,51 @@ function Badge({
   tone: "success" | "warning" | "danger" | "neutral" | "primary";
   children: React.ReactNode;
 }) {
-    const map: any = {
-    success: { bg: "rgba(34,197,94,0.08)", fg: "#1f7a57", bd: "transparent" },
-    warning: { bg: "rgba(245,158,11,0.10)", fg: "#b45309", bd: "rgba(245,158,11,0.22)" },
-    danger: { bg: "rgba(239,68,68,0.08)", fg: "#b42318", bd: "transparent" },
-    neutral: { bg: "rgba(100,116,139,0.08)", fg: "#667085", bd: "transparent" },
-    primary: { bg: "rgba(47,95,184,0.09)", fg: brandBlue, bd: "transparent" },
+  const map: Record<string, React.CSSProperties> = {
+    success: {
+      background: "#EAF6EE",
+      color: "#3D8B63",
+      border: "none",
+    },
+    warning: {
+      background: "#FBF2E6",
+      color: "#B7791F",
+      border: "none",
+    },
+    danger: {
+      background: "#FCECEC",
+      color: "#C45A5A",
+      border: "none",
+    },
+    neutral: {
+      background: "#F3F6FA",
+      color: "#66758F",
+      border: "none",
+    },
+    primary: {
+      background: "#EEF4FF",
+      color: "#4D6FD6",
+      border: "none",
+    },
   };
-  const s = map[tone];
+
   return (
     <span
       style={{
         display: "inline-flex",
         alignItems: "center",
-        padding: "5px 12px",
+        justifyContent: "center",
+        minHeight: 34,
+        padding: "0 14px",
         borderRadius: 999,
-        border: `1px solid ${s.bd}`,
-        background: s.bg,
-        color: s.fg,
         fontWeight: 700,
-        fontSize: 11,
+        fontSize: 12.5,
         letterSpacing: -0.01,
+        whiteSpace: "nowrap",
+        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        whiteSpace: "nowrap",
+        ...map[tone],
       }}
     >
       {children}
@@ -93,7 +136,7 @@ const Btn = React.forwardRef<
   const base: React.CSSProperties = {
     padding: "10px 14px",
     borderRadius: 15,
-    fontWeight: 600,
+    fontWeight: 700,
     cursor: "pointer",
     border: `1px solid ${borderSoft}`,
     transition: "background 140ms ease, box-shadow 140ms ease, border-color 140ms ease, transform 140ms ease",
@@ -104,10 +147,10 @@ const Btn = React.forwardRef<
   const styles: any = {
     primary: {
       ...base,
-      background: brandBlue,
-      border: `1px solid ${brandBlue}`,
+      background: `linear-gradient(180deg, ${brandBlue} 0%, ${brandBlueBorder} 100%)`,
+      border: `1px solid ${brandBlueBorder}`,
       color: "white",
-      boxShadow: "0 6px 14px rgba(47,95,184,0.16), inset 0 -1px 0 rgba(0,0,0,0.08)",
+      boxShadow: "0 10px 22px rgba(61,115,229,0.22), inset 0 1px 0 rgba(255,255,255,0.14)",
     },
     secondary: {
       ...base,
@@ -152,17 +195,26 @@ function Card({
       className="workflow-card"
       style={{ ...ui.card, ...toneStyle, padding: 20 }}
     >
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start" }}>
+      <div style={{
+        padding: 22,
+        maxWidth: 1280,
+        margin: "0 auto",
+        display: "grid",
+        gap: 20,
+        background: "transparent",
+        borderRadius: 30,
+      }}>
         <div>
           <div
             style={{
-              fontWeight: 800,
-              fontSize: 14,
+              fontWeight: 700,
+              fontSize: 13.5,
               display: "flex",
               alignItems: "center",
               gap: 8,
-              color: textStrong,
-              letterSpacing: -0.01,
+              letterSpacing: 0.01,
+              textTransform: "uppercase",
+              color: "#3157B7",
               fontFamily:
                 'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
             }}
@@ -173,8 +225,9 @@ function Card({
             <div
               style={{
                 fontSize: 12.5,
-                color: textSoft,
-                marginTop: 5,
+                color: "#7A869A",
+                marginTop: 6,
+                lineHeight: 1.5,
                 fontFamily:
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}
@@ -265,7 +318,7 @@ function CollapsibleSectionHeader({
         <div
           style={{
             fontSize: 11,
-            fontWeight: 800,
+            fontWeight: 700,
             color: "#98A2B3",
             textTransform: "uppercase",
             letterSpacing: "0.04em",
@@ -278,7 +331,7 @@ function CollapsibleSectionHeader({
         <div
           style={{
             fontSize: 18,
-            fontWeight: 800,
+            fontWeight: 700,
             color: "#172033",
             lineHeight: 1.2,
           }}
@@ -313,7 +366,7 @@ function CollapsibleSectionHeader({
           background: "#FFFFFF",
           color: "#344054",
           fontSize: 16,
-          fontWeight: 800,
+          fontWeight: 700,
           boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
         }}
       >
@@ -406,23 +459,23 @@ function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
   const styles =
     state === "done"
       ? {
-          background: "linear-gradient(180deg, #f8fafc 0%, #eef2f6 100%)",
-          border: "2px solid #94a3b8",
-          color: "#475467",
-          boxShadow: "0 0 0 6px rgba(148,163,184,0.10)",
+          background: "#F2FBF5",
+          border: "1.5px solid #CFE5D5",
+          color: "#4E9B72",
+          boxShadow: "0 0 0 6px rgba(207,229,213,0.22)",
         }
       : state === "current"
         ? {
-            background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-            border: "2px solid #64748b",
-            color: "#334155",
-            boxShadow: "0 0 0 6px rgba(148,163,184,0.10)",
+            background: "#FFF8EE",
+            border: "1.5px solid #E9D1AE",
+            color: "#A87422",
+            boxShadow: "0 0 0 6px rgba(233,209,174,0.22)",
           }
         : {
-            background: "#ffffff",
-            border: `2px solid ${borderSoftStrong}`,
-            color: "#98a2b3",
-            boxShadow: "0 0 0 4px rgba(148,163,184,0.08)",
+            background: "#FFFFFF",
+            border: `1.5px solid ${borderSoftStrong}`,
+            color: "#9AA5B8",
+            boxShadow: "0 0 0 4px rgba(216,224,236,0.22)",
           };
 
   return (
@@ -437,7 +490,7 @@ function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
         justifyContent: "center",
         flexShrink: 0,
         fontSize: 12,
-        fontWeight: 800,
+        fontWeight: 700,
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
         ...styles,
@@ -451,25 +504,25 @@ function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
 function workflowCardTone(state: "done" | "current" | "todo"): React.CSSProperties {
   if (state === "done") {
     return {
-      border: "1px solid rgba(203,213,225,0.9)",
-      background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-      boxShadow: "0 10px 24px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
+      border: "1px solid #E5EBF3",
+      background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
+      boxShadow: "0 8px 22px rgba(31,41,64,0.038)",
     };
   }
 
   if (state === "current") {
     return {
-      border: "1px solid rgba(203,213,225,0.9)",
-      background: "#ffffff",
-      boxShadow: "0 12px 28px rgba(15,23,42,0.05), 0 2px 6px rgba(15,23,42,0.03)",
+      border: "1px solid #E5EBF3",
+      background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
+      boxShadow: "0 9px 24px rgba(31,41,64,0.042)",
     };
   }
 
   return {
-    border: `1px solid ${borderSoft}`,
-    background: "#ffffff",
-    boxShadow: "0 8px 22px rgba(15,23,42,0.03), 0 2px 6px rgba(15,23,42,0.02)",
-    opacity: 0.94,
+    border: "1px solid #E5EBF3",
+    background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
+    boxShadow: "0 7px 18px rgba(31,41,64,0.034)",
+    opacity: 1,
   };
 }
 
@@ -2001,7 +2054,7 @@ function SummaryRow({
       style={{
         display: "flex",
         justifyContent: "space-between",
-        gap: 12,
+        gap: 10,
         alignItems: "center",
         padding: "8px 0",
         borderBottom: "1px solid rgba(226,232,240,0.7)",
@@ -2037,9 +2090,10 @@ function SummaryRow({
           display: "inline-flex",
           alignItems: "center",
           gap: 6,
-          padding: "7px 12px",
+          minHeight: 34,
+          padding: "0 12px",
           borderRadius: 999,
-          fontSize: 12,
+          fontSize: 12.5,
           fontWeight: 700,
           letterSpacing: -0.01,
           fontFamily:
@@ -2050,8 +2104,8 @@ function SummaryRow({
         <span
           aria-hidden="true"
           style={{
-            width: 8,
-            height: 8,
+            width: 7,
+            height: 7,
             borderRadius: 999,
             background:
               contractStatusTone === "success"
@@ -2266,7 +2320,17 @@ const panelDocumentLabel = isSessionDriven
       : selectedLandlordDoc?.label || "Contrat";
       
   return (
-    <div style={{ padding: 18, maxWidth: 1280, margin: "0 auto", display: "grid", gap: 14 }}>
+    <div
+      style={{
+        padding: 22,
+        maxWidth: 1280,
+        margin: "0 auto",
+        display: "grid",
+        gap: 18,
+        background: "linear-gradient(180deg, #FAFBFD 0%, #F3F6FA 100%)",
+        borderRadius: 28,
+      }}
+    >
       <SignatureHero
         overview={overview}
         recommendedActionLabel={recommendedActionLabel}
@@ -2278,40 +2342,8 @@ const panelDocumentLabel = isSessionDriven
       />
       <div
         style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          marginTop: 6,
-          marginBottom: 12,
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        }}
-      >
-        <div
-          style={{
-            width: 10,
-            height: 10,
-            borderRadius: 999,
-            background: "#2F5FB8",
-            boxShadow: "0 0 0 6px rgba(47,95,184,0.10)",
-          }}
-        />
-        <div
-          style={{
-            fontSize: 18,
-            fontWeight: 800,
-            letterSpacing: 0.02,
-            color: "#344054",
-            textTransform: "uppercase",
-          }}
-        >
-          Signataires
-        </div>
-      </div>
-      <div
-        style={{
           display: "grid",
-          gridTemplateColumns: isWideScreen ? "minmax(0, 1fr) 340px" : "1fr",
+          gridTemplateColumns: isWideScreen ? "minmax(0, 1fr) 392px" : "1fr",
           gap: 20,
           alignItems: "start",
         }}
@@ -2332,42 +2364,42 @@ const panelDocumentLabel = isSessionDriven
           className="sign-sticky"
           style={{
             position: isWideScreen ? "sticky" : "static",
-            top: isWideScreen ? 8 : "auto",
+            top: isWideScreen ? 14 : "auto",
             display: "flex",
             flexDirection: "column",
-            gap: 12,
+            gap: 10,
             alignSelf: "start",
           }}
         >
           <div
-            style={{
-              background: "#fff",
-              border: `1px solid ${borderSoft}`,
-              borderRadius: 22,
-              padding: 18,
-              boxShadow: "0 10px 30px rgba(15,23,42,0.04), 0 2px 6px rgba(15,23,42,0.03)",
-            }}
-          >
+          style={{
+            background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
+            border: "1px solid rgba(26,39,66,0.06)",
+            borderRadius: 28,
+            padding: 20,
+            boxShadow: "0 10px 22px rgba(31,41,64,0.028), 0 2px 8px rgba(31,41,64,0.016)",
+          }}
+        >
             <div
               style={{
-                fontSize: 16,
-                fontWeight: 800,
-                color: textStrong,
-                letterSpacing: -0.03,
-                marginBottom: 6,
+                fontSize: 17.5,
+                fontWeight: 700,
+                color: "#1B2740",
+                letterSpacing: -0.02,
+                marginBottom: 8,
                 fontFamily:
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
               }}
-            >
+                          >
               {isSessionDriven ? "Session de signature sécurisée" : "Poste de signature"}
             </div>
 
             <div
               style={{
-                marginTop: -4,
-                marginBottom: 10,
-                fontSize: 12.5,
-                lineHeight: 1.55,
+                marginTop: 0,
+                marginBottom: 14,
+                fontSize: 13,
+                lineHeight: 1.65,
                 color: textSoft,
                 fontFamily:
                   'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2381,34 +2413,119 @@ const panelDocumentLabel = isSessionDriven
             {showPanelEmptyState ? (
               <div
                 style={{
-                  marginBottom: 14,
-                  padding: 14,
-                  borderRadius: 14,
-                  border: "1px solid rgba(47,95,184,0.12)",
-                  background: "rgba(47,95,184,0.035)",
+                  marginTop: 14,
+                  marginBottom: 18,
+                  padding: 16,
+                  borderRadius: 20,
+                  border: "1px solid #DCE5F0",
+                  background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFE 100%)",
+                  boxShadow: "0 6px 16px rgba(31,41,64,0.03)",
                   display: "grid",
-                  gap: 10,
+                  gap: 14,
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
-                <div style={{ display: "grid", gap: 6 }}>
+                <div
+                  style={{
+                    fontSize: 15.5,
+                    fontWeight: 700,
+                    color: "#172033",
+                    letterSpacing: -0.015,
+                  }}
+                >
+                  Commencez par choisir un signataire
+                </div>
+
+                <div
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "58px minmax(0, 1fr)",
+                    gap: 14,
+                    alignItems: "start",
+                  }}
+                >
                   <div
+                    aria-hidden="true"
                     style={{
-                      fontSize: 14,
-                      fontWeight: 800,
-                      color: textStrong,
-                      letterSpacing: -0.02,
+                      width: 56,
+                      height: 56,
+                      borderRadius: 14,
+                      background: "linear-gradient(180deg, #DDF5F4 0%, #C7ECE9 100%)",
+                      border: "1px solid rgba(155,206,202,0.95)",
+                      boxShadow: "0 6px 16px rgba(31,41,64,0.08)",
+                      position: "relative",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
                     }}
                   >
-                    Commencez par choisir un signataire
+                    <div
+                      style={{
+                        width: 28,
+                        height: 34,
+                        borderRadius: 6,
+                        background: "#FFFDF9",
+                        border: "1.5px solid #98C7C3",
+                        position: "relative",
+                        boxShadow: "0 2px 6px rgba(31,41,64,0.08)",
+                      }}
+                    >
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 7,
+                          left: 6,
+                          width: 16,
+                          height: 2.5,
+                          borderRadius: 999,
+                          background: "#7FA8C8"
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 13,
+                          left: 6,
+                          width: 12,
+                          height: 2.5,
+                          borderRadius: 999,
+                          background: "#7FA8C8"
+                        }}
+                      />
+                      <div
+                        style={{
+                          position: "absolute",
+                          top: 19,
+                          left: 6,
+                          width: 9,
+                          height: 2.5,
+                          borderRadius: 999,
+                          background: "#7FA8C8"
+                        }}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        position: "absolute",
+                        right: 8,
+                        bottom: 10,
+                        width: 18,
+                        height: 10,
+                        borderLeft: "4px solid #D98A4C",
+                        borderBottom: "4px solid #D98A4C",
+                        transform: "rotate(-45deg)",
+                        borderRadius: 2,
+                      }}
+                    />
                   </div>
 
                   <div
                     style={{
-                      fontSize: 13,
-                      lineHeight: 1.55,
-                      color: textSoft,
+                      fontSize: 14,
+                      lineHeight: 1.7,
+                      color: "#667085",
                     }}
                   >
                     Sélectionnez un locataire, un garant ou le bailleur dans la section signataires pour ouvrir une session guidée de signature sur place.
@@ -2420,12 +2537,16 @@ const panelDocumentLabel = isSessionDriven
                   onClick={() => setShowLegacyPanelForm(true)}
                   style={{
                     width: "100%",
-                    padding: "10px 12px",
+                    height: 40,
+                    padding: "0 16px",
                     borderRadius: 14,
-                    border: `1px solid ${borderSoftStrong}`,
-                    background: "#ffffff",
-                    color: "#243041",
-                    fontWeight: 600,
+                    border: "1px solid rgba(26,39,66,0.06)",
+                    background: "rgba(255,255,255,0.84)",
+                    color: "#2C3448",
+                    fontWeight: 700,
+                    fontSize: 15,
+                    boxShadow: "0 2px 6px rgba(31,41,64,0.016)",
+                    letterSpacing: -0.01,
                     cursor: "pointer",
                     fontFamily:
                       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2439,34 +2560,36 @@ const panelDocumentLabel = isSessionDriven
             {isSessionDriven ? (
               <div
                 style={{
-                  marginBottom: 14,
-                  padding: 12,
-                  borderRadius: 14,
-                  border: "1px solid rgba(47,95,184,0.14)",
-                  background: "rgba(47,95,184,0.04)",
+                  marginTop: 12,
+                  marginBottom: 16,
+                  padding: 16,
+                  borderRadius: 18,
+                  border: "1px solid rgba(26,39,66,0.06)",
+                  background: "rgba(255,255,255,0.84)",
                   display: "grid",
-                  gap: 6,
+                  gap: 8,
+                  boxShadow: "0 6px 14px rgba(15,23,42,0.02)",
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
                 <div
                   style={{
-                    fontSize: 12,
-                    color: textSoft,
+                    fontSize: 10.5,
+                    color: textMuted,
                     fontWeight: 700,
                     textTransform: "uppercase",
-                    letterSpacing: 0.3,
+                    letterSpacing: 0.05,
                   }}
                 >
-                  Signataire active
+                  Session guidée
                 </div>
 
-                <div style={{ fontSize: 16, fontWeight: 800, color: textStrong }}>
+                <div style={{ fontSize: 17, fontWeight: 850, color: textStrong }}>
                   {sessionDraft.signerName}
                 </div>
 
-                <div style={{ fontSize: 13.5, color: textSoft }}>
+                <div style={{ fontSize: 13.5, color: textSoft, lineHeight: 1.6 }}>
                   Document : {sessionDraft.documentLabel} • Rôle : {sessionDraft.roleLabel}
                 </div>
               </div>
@@ -2489,7 +2612,7 @@ const panelDocumentLabel = isSessionDriven
                         border: `1px solid ${borderSoftStrong}`,
                         background: "#fff",
                         color: "#243041",
-                        fontWeight: 600,
+                        fontWeight: 500,
                         cursor: "pointer",
                         fontFamily:
                           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2502,7 +2625,7 @@ const panelDocumentLabel = isSessionDriven
 
                 {!isSessionDriven ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                    <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
                       Signer en tant que
                     </div>
                     <select
@@ -2515,14 +2638,15 @@ const panelDocumentLabel = isSessionDriven
                       }}
                       style={{
                         width: "100%",
-                        padding: "11px 13px",
+                        padding: "0 14px",
+                        height: 42,
                         borderRadius: 14,
-                        border: `1px solid ${borderSoftStrong}`,
-                        background: "#fff",
-                        fontWeight: 500,
+                        border: "1px solid #D6DFEB",
+                        background: "#FFFFFF",
+                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.015)",
                         fontSize: 14.5,
-                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                        color: "#1f2937",
+                        fontWeight: 500,
+                        color: "#243041",
                         fontFamily:
                           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                       }}
@@ -2538,7 +2662,7 @@ const panelDocumentLabel = isSessionDriven
 
                 {!isSessionDriven && role === "LOCATAIRE" && hasMultipleTenants ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                    <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
                       Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
                     </div>
                     <select
@@ -2546,13 +2670,14 @@ const panelDocumentLabel = isSessionDriven
                       onChange={(e) => setSelectedTenantId(e.target.value)}
                       style={{
                         width: "100%",
-                        padding: "11px 13px",
+                        padding: "0 14px",
+                        height: 38,
                         borderRadius: 14,
                         border: `1px solid ${borderSoftStrong}`,
-                        background: "#fff",
+                        background: "rgba(255,255,255,0.98)",
                         fontWeight: 500,
                         fontSize: 14.5,
-                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02), 0 1px 2px rgba(15,23,42,0.02)",
                         color: "#1f2937",
                         fontFamily:
                           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2576,7 +2701,7 @@ const panelDocumentLabel = isSessionDriven
 
                 {!isSessionDriven ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                    <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
                       Document à signer
                     </div>
 
@@ -2590,12 +2715,13 @@ const panelDocumentLabel = isSessionDriven
                         disabled={isSessionDriven || guarantorSignables.length === 0}
                         style={{
                           width: "100%",
-                          padding: "11px 13px",
+                          padding: "0 12px",
+                          height: 38,
                           borderRadius: 14,
                           border: `1px solid ${borderSoftStrong}`,
                           background: "#fff",
                           fontWeight: 500,
-                          fontSize: 14.5,
+                          fontSize: 14,
                           boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
                           color: "#1f2937",
                           fontFamily:
@@ -2666,7 +2792,7 @@ const panelDocumentLabel = isSessionDriven
                 <div style={{ height: 10 }} />
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                  <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
                     Nom affiché sur la signature
                   </div>
                   <input
@@ -2686,13 +2812,14 @@ const panelDocumentLabel = isSessionDriven
                     }}
                     style={{
                       width: "100%",
-                      padding: "11px 13px",
+                      padding: "0 14px",
+                      height: 38,
                       borderRadius: 14,
                       border: `1px solid ${borderSoftStrong}`,
-                      background: "#fff",
+                      background: "rgba(255,255,255,0.98)",
                       fontWeight: 500,
                       fontSize: 14.5,
-                      boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
+                      boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02), 0 1px 2px rgba(15,23,42,0.02)",
                       color: "#1f2937",
                       fontFamily:
                         'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2703,21 +2830,24 @@ const panelDocumentLabel = isSessionDriven
 
                 <div style={{ height: 12 }} />
 
-                <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01, marginBottom: 6 }}>
+                <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase", marginBottom: 6 }}>
                   Signature manuscrite
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                  <div style={{ fontSize: 12.5, color: textSoft, fontWeight: 600, letterSpacing: -0.01 }}>
+                  <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
                     Document concerné
                   </div>
                   <div
                     style={{
-                      padding: "11px 13px",
+                      padding: "0 14px",
+                      height: 38,
+                      display: "flex",
+                      alignItems: "center",
                       borderRadius: 14,
                       border: `1px solid ${borderSoftStrong}`,
-                      background: "#f8fafc",
-                      fontWeight: 600,
+                      background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+                      fontWeight: 700,
                       fontSize: 14.5,
                       color: "#1f2937",
                       fontFamily:
@@ -2732,13 +2862,13 @@ const panelDocumentLabel = isSessionDriven
                   style={{
                     position: "relative",
                     width: "100%",
-                    height: 182,
-                    borderRadius: 14,
-                    border: isSessionDriven ? "1px solid rgba(47,95,184,0.22)" : `1px solid ${borderSoftStrong}`,
-                    background: isSessionDriven ? "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)" : "#ffffff",
+                    height: 138,
+                    borderRadius: 15,
+                    border: isSessionDriven ? "1px solid rgba(47,95,184,0.16)" : `1px solid ${borderSoftStrong}`,
+                    background: isSessionDriven ? "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)" : "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
                     boxShadow: isSessionDriven
-                      ? "0 10px 24px rgba(47,95,184,0.06), inset 0 1px 2px rgba(15,23,42,0.02)"
-                      : "inset 0 1px 2px rgba(15,23,42,0.02)",
+                      ? "0 6px 16px rgba(47,95,184,0.05), inset 0 1px 2px rgba(15,23,42,0.02)"
+                      : "0 2px 8px rgba(15,23,42,0.025), inset 0 1px 2px rgba(15,23,42,0.02)",
                     overflow: "hidden",
                   }}
                 >
@@ -2753,7 +2883,7 @@ const panelDocumentLabel = isSessionDriven
                         pointerEvents: "none",
                         color: "#94a3b8",
                         fontSize: 14,
-                        fontWeight: 600,
+                        fontWeight: 500,
                         zIndex: 1,
                         fontFamily:
                           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2782,19 +2912,20 @@ const panelDocumentLabel = isSessionDriven
 
                 <div style={{ height: 12 }} />
 
-                <div style={{ display: "flex", gap: 10, justifyContent: "space-between" }}>
+                <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
                   <button
                     onClick={clearCanvas}
                     style={{
                       flex: 1,
-                      padding: "11px 13px",
+                      height: 42,
+                      padding: "0 16px",
                       borderRadius: 14,
-                      border: `1px solid ${borderSoftStrong}`,
-                      background: "#fff",
-                      fontWeight: 600,
-                      fontSize: 14.5,
-                      boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
-                      color: "#1f2937",
+                      border: "1px solid #D7E0EC",
+                      background: "#FFFFFF",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      boxShadow: "0 2px 6px rgba(31,41,64,0.025)",
+                      color: "#2D3A52",
                       fontFamily:
                         'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                     }}
@@ -2816,14 +2947,17 @@ const panelDocumentLabel = isSessionDriven
                     disabled={role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId}
                     style={{
                       flex: 1,
-                      padding: "10px 12px",
+                      height: 42,
+                      padding: "0 16px",
                       borderRadius: 14,
-                      border: `1px solid ${brandBlue}`,
-                      background: brandBlue,
+                      border: "none",
+                      background: "linear-gradient(180deg, #4E7CE8 0%, #3567D6 100%)",
                       color: "white",
                       cursor: "pointer",
-                      fontWeight: 600,
-                      boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
+                      fontWeight: 700,
+                      fontSize: 14,
+                      letterSpacing: -0.01,
+                      boxShadow: "0 8px 18px rgba(53,103,214,0.24), inset 0 1px 0 rgba(255,255,255,0.16)",
                       opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
                       fontFamily:
                         'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2865,13 +2999,14 @@ const panelDocumentLabel = isSessionDriven
                     }}
                     style={{
                       width: "100%",
-                      marginTop: 10,
-                      padding: "10px 12px",
+                      height: 42,
+                      marginTop: 12,
+                      padding: "0 16px",
                       borderRadius: 14,
                       border: `1px solid ${borderSoftStrong}`,
                       background: "#fff",
                       color: "#243041",
-                      fontWeight: 600,
+                      fontWeight: 500,
                       cursor: "pointer",
                       fontFamily:
                         'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -2886,15 +3021,25 @@ const panelDocumentLabel = isSessionDriven
             {status ? (
               <div
                 style={{
-                  marginTop: 12,
-                  padding: 10,
-                  borderRadius: 12,
-                  border: "1px solid rgba(148,163,184,0.18)",
-                  background: "#f8fafc",
+                  marginTop: 10,
+                  padding: "8px 10px",
+                  borderRadius: 10,
+                  background:
+                    status.includes("✅") || status.toLowerCase().includes("télécharg")
+                      ? "#F3FAF5"
+                      : "#F8FAFC",
+                  color:
+                    status.includes("✅") || status.toLowerCase().includes("télécharg")
+                      ? "#2F6B4F"
+                      : "#475467",
+                  fontSize: 12.5,
+                  fontWeight: 700,
+                  lineHeight: 1.4,
+                  fontFamily:
+                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 12, color: textSoft }}>Information</div>
-                <div style={{ marginTop: 4, fontWeight: 800 }}>{status}</div>
+                {status.replace("✅ ", "✓ ")}
               </div>
             ) : null}
 
@@ -2913,7 +3058,7 @@ const panelDocumentLabel = isSessionDriven
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
               >
-                <div style={{ fontWeight: 800, fontSize: 12 }}>Erreur</div>
+                <div style={{ fontWeight: 700, fontSize: 12 }}>Erreur</div>
                 <div style={{ fontWeight: 700, lineHeight: 1.5 }}>{error}</div>
               </div>
             ) : null}
@@ -2956,7 +3101,7 @@ const panelDocumentLabel = isSessionDriven
               background: "#ffffff",
               borderRadius: 22,
               border: "1px solid #dde3ec",
-              boxShadow: "0 24px 60px rgba(15,23,42,0.18), 0 8px 24px rgba(15,23,42,0.10)",
+              boxShadow: "0 20px 48px rgba(31,41,64,0.14), 0 6px 18px rgba(31,41,64,0.07)",
               padding: 24,
               display: "grid",
               gap: 16,
@@ -2968,7 +3113,7 @@ const panelDocumentLabel = isSessionDriven
               <div
                 style={{
                   fontSize: 20,
-                  fontWeight: 800,
+                  fontWeight: 700,
                   color: textStrong,
                   letterSpacing: -0.03,
                 }}
@@ -3008,7 +3153,7 @@ const panelDocumentLabel = isSessionDriven
                   border: `1px solid ${borderSoftStrong}`,
                   background: "#ffffff",
                   color: "#243041",
-                  fontWeight: 600,
+                  fontWeight: 500,
                   cursor: "pointer",
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
@@ -3023,12 +3168,12 @@ const panelDocumentLabel = isSessionDriven
                 style={{
                   padding: "10px 14px",
                   borderRadius: 14,
-                  border: "1px solid #2F5FB8",
-                  background: "#2F5FB8",
+                  border: `1px solid ${brandBlueBorder}`,
+                  background: `linear-gradient(180deg, ${brandBlue} 0%, ${brandBlueBorder} 100%)`,
                   color: "#ffffff",
-                  fontWeight: 600,
+                  fontWeight: 500,
                   cursor: "pointer",
-                  boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
+                  boxShadow: "0 10px 22px rgba(61,115,229,0.22), inset 0 1px 0 rgba(255,255,255,0.12)",
                   fontFamily:
                     'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                 }}
@@ -3073,7 +3218,7 @@ const panelDocumentLabel = isSessionDriven
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
-                gap: 12,
+                gap: 16,
                 flexWrap: "wrap",
                 paddingTop: 14,
                 borderTop: "1px solid #E9EEF5",
@@ -3331,7 +3476,7 @@ const panelDocumentLabel = isSessionDriven
                               paddingTop: 12,
                               borderTop: "1px solid rgba(226,232,240,0.75)",
                               display: "grid",
-                              gap: 12,
+                              gap: 10,
                             }}
                           >
                             {finalSignedDoc?.id ? (
@@ -3380,13 +3525,13 @@ const panelDocumentLabel = isSessionDriven
                                         style={{
                                           display: "flex",
                                           justifyContent: "space-between",
-                                          gap: 12,
+                                          gap: 10,
                                           alignItems: "flex-start",
                                           flexWrap: "wrap",
                                         }}
                                       >
                                         <div style={{ minWidth: 240 }}>
-                                          <div style={{ fontWeight: 800 }}>
+                                          <div style={{ fontWeight: 700, color: textStrong, letterSpacing: -0.01 }}>
                                             {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
                                           </div>
 
@@ -3806,7 +3951,7 @@ const panelDocumentLabel = isSessionDriven
                             .filter(Boolean)
                             .map((d: any) => (
                               <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
-                                <div style={{ fontWeight: 800 }}>{d.label}</div>
+                                <div style={{ fontWeight: 700, color: textStrong, letterSpacing: -0.01 }}>{d.label}</div>
 
                                 <div
                                   style={{
@@ -3894,15 +4039,13 @@ const panelDocumentLabel = isSessionDriven
             }
 
             .workflow-card:hover{
-              transform: translateY(-1px);
-              box-shadow: 0 12px 24px rgba(15,23,42,0.05), 0 3px 8px rgba(15,23,42,0.03);
+              transform: translateY(-2px);
+              box-shadow: 0 16px 34px rgba(31,41,64,0.06), 0 4px 10px rgba(31,41,64,0.024);
             }
 
             #edl-inv:hover{
               transform: translateY(-2px) !important;
-              box-shadow:
-                0 16px 30px rgba(15,23,42,0.06),
-                0 4px 10px rgba(15,23,42,0.03) !important;
+              box-shadow: 0 16px 34px rgba(31,41,64,0.06), 0 4px 10px rgba(31,41,64,0.024) !important;
             }
 
             @media (max-width: 1100px){
@@ -3917,19 +4060,32 @@ const panelDocumentLabel = isSessionDriven
   );
 }
 
-function workflowAccentBar(_state: "done" | "current" | "todo"): React.CSSProperties {
+function workflowAccentBar(state: "done" | "current" | "todo"): React.CSSProperties {
+  if (state === "done") {
+    return {
+      borderLeft: "4px solid #E3F0E7",
+    };
+  }
+
+  if (state === "current") {
+    return {
+      borderLeft: "4px solid #F4E5CB",
+    };
+  }
+
   return {
-    borderLeft: "4px solid rgba(226,232,240,0.9)",
+    borderLeft: "4px solid #EDF2F7",
   };
 }
 
 function card(border: string) {
   return {
     border: `1px solid ${border}`,
-    borderRadius: 16,
-    background: "#fff",
+    borderRadius: 18,
+    background: "linear-gradient(180deg, #FFFFFF 0%, #FBFCFE 100%)",
     padding: 14,
     minWidth: 0,
+    boxShadow: "0 8px 20px rgba(31,41,64,0.035)",
   } as const;
 }
 
@@ -3937,13 +4093,13 @@ function btnPrimarySmall() {
   return {
     padding: "10px 14px",
     borderRadius: 14,
-    border: `1px solid ${brandBlue}`,
-    background: brandBlue,
+    border: "none",
+    background: "linear-gradient(180deg, #5A86E8 0%, #3E6FD8 100%)",
     color: "#fff",
-    fontWeight: 600,
+    fontWeight: 700,
     cursor: "pointer",
     textAlign: "center" as const,
-    boxShadow: "0 8px 18px rgba(47,95,184,0.18), inset 0 -1px 0 rgba(0,0,0,0.08)",
+    boxShadow: "0 10px 22px rgba(62,111,216,0.22), inset 0 1px 0 rgba(255,255,255,0.12)",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
@@ -3954,11 +4110,11 @@ function btnSecondary() {
     padding: "10px 14px",
     borderRadius: 14,
     border: `1px solid ${borderSoftStrong}`,
-    background: "#ffffff",
+    background: "linear-gradient(180deg, #FFFFFF 0%, #FAFBFD 100%)",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 700,
     color: "#243041",
-    boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
+    boxShadow: "0 4px 12px rgba(31,41,64,0.035)",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
@@ -3969,13 +4125,13 @@ function btnAction() {
     padding: "10px 12px",
     borderRadius: 14,
     border: `1px solid ${borderSoftStrong}`,
-    background: "#ffffff",
+    background: "linear-gradient(180deg, #FFFFFF 0%, #FAFBFD 100%)",
     cursor: "pointer",
-    fontWeight: 600,
+    fontWeight: 700,
     minWidth: 160,
     textAlign: "center" as const,
     color: "#243041",
-    boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
+    boxShadow: "0 4px 12px rgba(31,41,64,0.035)",
     fontFamily:
       'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
   } as const;
@@ -3985,35 +4141,42 @@ function btnAction() {
 function statusPillStyle(tone: "success" | "warning" | "neutral") {
   if (tone === "success") {
     return {
-      background: "rgba(34,197,94,0.08)",
-      color: "#1f7a57",
-      border: "1px solid transparent",
+      background: "#EAF6EE",
+      color: "#3D8B63",
+      border: "none",
+      boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
     } as const;
   }
 
   if (tone === "warning") {
     return {
-      background: "rgba(245,158,11,0.10)",
-      color: "#b45309",
-      border: "1px solid rgba(245,158,11,0.22)",
+      background: "#FBF2E6",
+      color: "#B7791F",
+      border: "none",
+      boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
     } as const;
   }
 
   return {
-    background: "rgba(100,116,139,0.08)",
-    color: "#667085",
-    border: "1px solid transparent",
+    background: "#F3F6FA",
+    color: "#66758F",
+    border: "none",
+    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
   } as const;
 }
 
-function chip(border: string, color: string) {
+function chip(border: string, color: string, background = "#FFFFFF") {
   return {
-    padding: "8px 10px",
+    minHeight: 32,
+    padding: "0 12px",
     borderRadius: 999,
-    border: `1px solid ${border}`,
-    background: "#fff",
+    border: "none",
+    background,
     color,
-    fontWeight: 800,
-    fontSize: 12,
+    fontWeight: 700,
+    fontSize: 12.5,
+    display: "inline-flex",
+    alignItems: "center",
+    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
   } as const;
 }

@@ -36,6 +36,7 @@ type SignatureStatusPayloadLite = {
   };
   guarantees?: Array<{
     guaranteeId: string;
+    leaseTenantId?: string | null;
     guarantorFullName?: string | null;
     tenantFullName?: string | null;
     type?: string | null;
@@ -181,6 +182,16 @@ function mapGuarantorTasks(
   const landlordSigned =
   String(sigStatus?.contract?.landlord?.signatureStatus || "").toUpperCase() === "SIGNED";
 
+  const tenantNameByLeaseTenantId = new Map<string, string>();
+
+  (sigStatus?.contract?.tenants || []).forEach((t) => {
+    const leaseTenantId = String(t.leaseTenantId || "").trim();
+    const fullName = String(t.fullName || "").trim();
+
+    if (leaseTenantId && fullName) {
+      tenantNameByLeaseTenantId.set(leaseTenantId, fullName);
+    }
+  });
 
   return guarantees.map((g) => {
     const type = String(g.type || "").toUpperCase();
@@ -216,6 +227,15 @@ function mapGuarantorTasks(
         ? String(g.tenantFullName || "").trim() || "VISALE"
         : String(g.guarantorFullName || "").trim() || "Garant",
       roleLabel: "Garant",
+      tenantLabel: !isVisale
+        ? (() => {
+            const tenantNameFromMap = tenantNameByLeaseTenantId.get(String(g.leaseTenantId || "").trim());
+            const fallbackTenantName = String(g.tenantFullName || "").trim();
+
+            const targetName = tenantNameFromMap || fallbackTenantName;
+            return targetName ? `Garant pour ${targetName}` : null;
+          })()
+        : null,
       subtypeLabel: isVisale ? "Garantie VISALE" : "Caution personnelle",
       helperLabel: isVisale
         ? "Aucune signature garant requise"

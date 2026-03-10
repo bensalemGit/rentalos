@@ -17,6 +17,7 @@ export type SignerTask = {
 
   displayName: string;
   roleLabel: string;
+  tenantLabel?: string | null;
 
   subtypeLabel?: string | null;
   helperLabel?: string | null;

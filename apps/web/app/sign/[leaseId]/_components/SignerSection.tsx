@@ -13,7 +13,6 @@ type SignerSectionProps = {
   onPrepare: (task: SignerTask) => void;
 };
 
-const textStrong = "#172033";
 const textSoft = "#667085";
 
 export function SignerSection({
@@ -26,9 +25,8 @@ export function SignerSection({
   onDownloadSigned,
   onPrepare,
 }: SignerSectionProps) {
-  
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  
+
   useEffect(() => {
     if (!enableAutoScroll) return;
     if (!activeTaskId) return;
@@ -47,17 +45,25 @@ export function SignerSection({
   }, [activeTaskId, enableAutoScroll]);
 
   return (
-    <section style={{ display: "grid", gap: 14 }}>
+    <section
+      style={{
+        display: "grid",
+        gap: 20,
+        alignItems: "start",
+        alignContent: "start",
+        fontFamily:
+          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      }}
+    >
       {tasks.length === 0 ? (
         <div
           style={{
-            background: "#ffffff",
-            border: "1px solid #dde3ec",
-            borderRadius: 20,
-            padding: 18,
+            background: "linear-gradient(180deg,#FFFFFF 0%,#FCFDFF 100%)",
+            border: "1px solid rgba(26,39,66,0.06)",
+            borderRadius: 24,
+            padding: 20,
             color: textSoft,
-            fontFamily:
-              'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+            boxShadow: "0 8px 18px rgba(31,41,64,0.028)",
           }}
         >
           Aucun signataire à afficher.
@@ -66,9 +72,11 @@ export function SignerSection({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
+            gridTemplateColumns: enableAutoScroll ? "repeat(2, minmax(0, 1fr))" : "1fr",
             gap: 18,
-            alignItems: "start",
+            alignItems: "stretch",
+            alignContent: "start",
+            gridAutoRows: enableAutoScroll ? "1fr" : "auto",
           }}
         >
           {tasks.map((task) => (

@@ -1,5 +1,12 @@
 import React from "react";
 import type { SignatureOverview } from "../_types/signature-center.types";
+import {
+  CheckCircle2,
+  RefreshCw,
+  ShieldCheck,
+  Users,
+  Clock3,
+} from "lucide-react";
 
 type SignatureHeroProps = {
   overview: SignatureOverview;
@@ -11,83 +18,186 @@ type SignatureHeroProps = {
   onRefresh?: () => void;
 };
 
+const FONT =
+  '"Manrope", "Inter", "Segoe UI", ui-sans-serif, system-ui, sans-serif';
+
 const COLORS = {
-  textStrong: "#172033",
-  textSoft: "#667085",
-  textMuted: "#98A2B3",
-  border: "#D9E2EC",
-  borderStrong: "#C7D3E0",
-  surface: "#FFFFFF",
-  blue: "#1D4ED8",
-  blueSoft: "#EEF4FF",
-  blueBorder: "#C7D7FE",
-  green: "#16A34A",
-  greenSoft: "#F0FDF4",
-  greenBorder: "#BBF7D0",
-  amber: "#D97706",
-  amberSoft: "#FFF7ED",
-  amberBorder: "#FED7AA",
-  slateSoft: "#F8FAFC",
+  navyStrong: "#18243D",
+  navySoft: "#6A7890",
+  navyMuted: "#9AA7BA",
+
+  border: "rgba(26, 39, 66, 0.055)",
+
+  blue: "#5C81E4",
+  green: "#59A37A",
+  amber: "#C48A36",
 };
 
 function getProgressTone(progressPercent: number, remainingCount: number) {
   if (remainingCount === 0) {
     return {
-      bar: "linear-gradient(90deg, #22C55E 0%, #16A34A 100%)",
-      chipBg: COLORS.greenSoft,
-      chipBorder: COLORS.greenBorder,
-      chipColor: COLORS.green,
+      track: "rgba(89, 163, 122, 0.11)",
+      fill: "linear-gradient(90deg, #67B287 0%, #4F9C70 100%)",
     };
   }
 
   if (progressPercent >= 50) {
     return {
-      bar: "linear-gradient(90deg, #F59E0B 0%, #D97706 100%)",
-      chipBg: COLORS.amberSoft,
-      chipBorder: COLORS.amberBorder,
-      chipColor: COLORS.amber,
+      track: "rgba(26, 39, 66, 0.05)",
+      fill: "linear-gradient(90deg, #F0C978 0%, #E7B66A 48%, #DD9D61 100%)",
     };
   }
 
   return {
-    bar: "linear-gradient(90deg, #3B82F6 0%, #1D4ED8 100%)",
-    chipBg: COLORS.blueSoft,
-    chipBorder: COLORS.blueBorder,
-    chipColor: COLORS.blue,
+    track: "rgba(26, 39, 66, 0.05)",
+    fill: "linear-gradient(90deg, #E6BE69 0%, #E8CB8A 58%, #EBDCB5 100%)",
   };
 }
 
-function statPill(label: string, tone: "neutral" | "success" | "warning" = "neutral") {
-  if (tone === "success") {
+function getChipTone(done: boolean, empty = false) {
+  if (empty) {
     return {
-      label,
-      style: {
-        background: COLORS.greenSoft,
-        border: `1px solid ${COLORS.greenBorder}`,
-        color: COLORS.green,
-      },
+      bg: "rgba(120, 136, 165, 0.12)",
+      text: "#6D7D96",
+      icon: "#97A6BE",
     };
   }
 
-  if (tone === "warning") {
+  if (done) {
     return {
-      label,
-      style: {
-        background: COLORS.amberSoft,
-        border: `1px solid ${COLORS.amberBorder}`,
-        color: COLORS.amber,
-      },
+      bg: "rgba(85, 186, 120, 0.16)",
+      text: "#3F9B63",
+      icon: "#46AE6E",
     };
   }
 
   return {
-    label,
-    style: {
-      background: "#F8FAFC",
-      border: "1px solid #E2E8F0",
-      color: "#475467",
-    },
+    bg: "rgba(226, 156, 56, 0.16)",
+    text: "#C98420",
+    icon: "#DB9830",
   };
+}
+
+function HeroChip({
+  icon,
+  label,
+  done,
+  empty = false,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  done: boolean;
+  empty?: boolean;
+}) {
+  const tone = getChipTone(done, empty);
+
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        minHeight: 38,
+        padding: "0 16px",
+        borderRadius: 999,
+        background: tone.bg,
+        color: tone.text,
+        border: "1px solid rgba(255,255,255,0.55)",
+        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.74)",
+        fontSize: 13,
+        fontWeight: 700,
+        letterSpacing: "-0.012em",
+        whiteSpace: "nowrap",
+        fontFamily: FONT,
+      }}
+    >
+      <span
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          color: tone.icon,
+        }}
+      >
+        {icon}
+      </span>
+      <span>{label}</span>
+    </span>
+  );
+}
+
+function PrimaryButton({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        appearance: "none",
+        border: "none",
+        borderRadius: 18,
+        height: 50,
+        padding: "0 24px",
+        background: disabled
+          ? "#EEF2F7"
+          : "linear-gradient(180deg, #6A90EB 0%, #557ADD 100%)",
+        color: disabled ? "#9AA6BC" : "#FFFFFF",
+        fontSize: 14.5,
+        fontWeight: 600,
+        letterSpacing: "-0.018em",
+        cursor: disabled ? "not-allowed" : "pointer",
+        boxShadow: disabled
+          ? "none"
+          : "0 10px 20px rgba(85,122,221,0.11), inset 0 1px 0 rgba(255,255,255,0.16)",
+        fontFamily: FONT,
+      }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function SecondaryButton({
+  children,
+  disabled,
+  onClick,
+}: {
+  children: React.ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      style={{
+        appearance: "none",
+        border: `1px solid ${disabled ? "#D7DFEA" : "rgba(26,39,66,0.08)"}`,
+        borderRadius: 18,
+        height: 50,
+        padding: "0 24px",
+        background: "rgba(255,255,255,0.84)",
+        color: disabled ? "#9AA6BC" : COLORS.navyStrong,
+        fontSize: 14.5,
+        fontWeight: 600,
+        letterSpacing: "-0.018em",
+        cursor: disabled ? "not-allowed" : "pointer",
+        boxShadow: "0 4px 10px rgba(31,41,64,0.022)",
+        fontFamily: FONT,
+      }}
+    >
+      {children}
+    </button>
+  );
 }
 
 export function SignatureHero({
@@ -100,41 +210,36 @@ export function SignatureHero({
   onRefresh,
 }: SignatureHeroProps) {
   const progressPercent = Math.max(0, Math.min(100, overview.progressPercent || 0));
-  const progressWidth = `${Math.max(progressPercent, progressPercent > 0 ? 8 : 0)}%`;
+  const progressWidth = `${Math.max(progressPercent, progressPercent > 0 ? 9 : 0)}%`;
   const isCompleted = overview.remainingCount === 0;
   const progressTone = getProgressTone(progressPercent, overview.remainingCount);
-
-  const tenantPill =
-    overview.tenants.total > 0
-      ? statPill(
-          `Locataires ${overview.tenants.signed}/${overview.tenants.total}`,
-          overview.tenants.signed === overview.tenants.total ? "success" : "warning",
-        )
-      : statPill("Aucun locataire");
-
-  const guarantorPill =
-    overview.guarantors.total > 0
-      ? statPill(
-          `Garanties ${overview.guarantors.signed}/${overview.guarantors.total}`,
-          overview.guarantors.signed === overview.guarantors.total ? "success" : "warning",
-        )
-      : statPill("Aucune garantie");
-
-  const landlordPill = statPill(
-    `Bailleur ${overview.landlord.signed ? "signé" : "à signer"}`,
-    overview.landlord.signed ? "success" : "warning",
-  );
 
   return (
     <section
       style={{
-        borderRadius: 22,
+        borderRadius: 32,
         border: `1px solid ${COLORS.border}`,
-        background: COLORS.surface,
-        boxShadow: "0 12px 32px rgba(15, 23, 42, 0.05)",
-        padding: 16,
+        background:
+         "linear-gradient(180deg, rgba(255,255,255,0.97) 0%, rgba(252,253,255,0.99) 100%)",
+        boxShadow:
+          "0 8px 18px rgba(31,41,64,0.022), 0 2px 6px rgba(31,41,64,0.012)",
+        padding: 28,
+        fontFamily: FONT,
+        position: "relative",
+        overflow: "hidden",
       }}
     >
+      <div
+        aria-hidden="true"
+        style={{
+          position: "absolute",
+          inset: 0,
+          pointerEvents: "none",
+          background:
+            "radial-gradient(circle at 14% 0%, rgba(255,255,255,0.78) 0%, rgba(255,255,255,0.22) 32%, rgba(255,255,255,0) 62%)",
+        }}
+      />
+
       <div
         style={{
           display: "flex",
@@ -142,49 +247,39 @@ export function SignatureHero({
           justifyContent: "space-between",
           gap: 18,
           flexWrap: "wrap",
-          marginBottom: 16,
+          marginBottom: 22,
+          position: "relative",
+          zIndex: 1,
         }}
       >
-        <div style={{ minWidth: 0 }}>
+        <div style={{ minWidth: 0, flex: "1 1 520px" }}>
           <div
             style={{
-              fontSize: 15,
-              fontWeight: 700,
-              color: COLORS.blue,
-              marginBottom: 8,
+              fontSize: 18,
+              fontWeight: 600,
+              color: "#4F6FD3",
+              marginBottom: 14,
+              letterSpacing: "-0.01em",
+              lineHeight: 1.1,
             }}
           >
             Signature du bail
           </div>
 
-          <h1
+          <div
             style={{
               margin: 0,
               fontSize: 28,
-              lineHeight: 1.02,
-              letterSpacing: "-0.03em",
-              fontWeight: 800,
-              color: COLORS.textStrong,
+              lineHeight: 1.06,
+              letterSpacing: "-0.04em",
+              fontWeight: 700,
+              color: COLORS.navyStrong,
+              wordBreak: "break-word",
             }}
           >
-            {overview.leaseLabel}
-          </h1>
-
-          <div
-            style={{
-              marginTop: 8,
-              fontSize: 15,
-              color: COLORS.textSoft,
-              display: "flex",
-              gap: 8,
-              flexWrap: "wrap",
-              alignItems: "center",
-            }}
-          >
-            <span>Locataire principal :</span>
-            <span style={{ color: COLORS.textStrong, fontWeight: 700 }}>
-              {overview.primaryTenantName}
-            </span>
+            <span>{overview.leaseLabel}</span>
+            <span style={{ color: "#B4BED0", fontWeight: 500 }}> — </span>
+            <span style={{ fontWeight: 700 }}>{overview.primaryTenantName}</span>
           </div>
         </div>
 
@@ -192,29 +287,17 @@ export function SignatureHero({
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 10,
+            gap: 12,
             flexWrap: "wrap",
             justifyContent: "flex-end",
           }}
         >
-          <span
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              padding: "8px 12px",
-              borderRadius: 999,
-              fontSize: 12,
-              fontWeight: 800,
-              background: progressTone.chipBg,
-              border: `1px solid ${progressTone.chipBorder}`,
-              color: progressTone.chipColor,
-              whiteSpace: "nowrap",
-            }}
-          >
-            {isCompleted
-              ? "Dossier finalisé"
-              : `${overview.remainingCount} signature(s) restante(s)`}
-          </span>
+          <HeroChip
+            icon={<Clock3 size={14} strokeWidth={2.15} />}
+            label={isCompleted ? "Dossier finalisé" : `${overview.remainingCount} signatures restantes`}
+            done={isCompleted}
+            empty={!isCompleted && overview.remainingCount <= 0}
+          />
 
           {onRefresh ? (
             <button
@@ -222,122 +305,128 @@ export function SignatureHero({
               onClick={onRefresh}
               style={{
                 appearance: "none",
-                border: "1px solid #D9E2EC",
-                background: "#FFFFFF",
-                borderRadius: 10,
-                padding: "7px 10px",
-                fontSize: 12,
-                fontWeight: 700,
+                border: `1px solid rgba(26,39,66,0.08)`,
+                background: "rgba(255,255,255,0.84)",
+                borderRadius: 16,
+                height: 44,
+                padding: "0 16px",
+                fontSize: 14,
+                fontWeight: 800,
                 cursor: "pointer",
-                color: COLORS.textStrong,
+                color: COLORS.navyStrong,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                boxShadow: "0 4px 10px rgba(31,41,64,0.022)",
+                fontFamily: FONT,
               }}
             >
-              Rafraîchir
+              <RefreshCw size={14} strokeWidth={2.05} />
+              <span>Rafraîchir</span>
             </button>
           ) : null}
         </div>
       </div>
 
-      <div style={{ marginBottom: 16 }}>
+      <div style={{ marginBottom: 18 }}>
         <div
           style={{
-            width: "100%",
-            height: 10,
-            borderRadius: 999,
-            background: "#E9EEF5",
-            overflow: "hidden",
-            marginBottom: 10,
-          }}
-        >
-          <div
-            style={{
-              width: progressWidth,
-              minWidth: progressPercent > 0 ? 10 : 0,
-              height: "100%",
-              borderRadius: 999,
-              background: progressTone.bar,
-              transition: "width 220ms ease",
-            }}
-          />
-        </div>
-
-        <div
-          style={{
-            display: "flex",
+            display: "grid",
+            gridTemplateColumns: "minmax(0, 1fr) minmax(360px, 580px)",
             alignItems: "center",
-            justifyContent: "space-between",
-            gap: 12,
-            flexWrap: "wrap",
+            gap: 22,
           }}
         >
           <div
             style={{
               display: "flex",
-              gap: 8,
+              gap: 12,
               flexWrap: "wrap",
               alignItems: "center",
+              minWidth: 0,
             }}
           >
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 700,
-                ...tenantPill.style,
-              }}
-            >
-              {tenantPill.label}
-            </span>
+            <HeroChip
+              icon={<Users size={14} strokeWidth={2.15} />}
+              label={`Locataires ${overview.tenants.signed}/${overview.tenants.total}`}
+              done={overview.tenants.total > 0 && overview.tenants.signed === overview.tenants.total}
+              empty={overview.tenants.total === 0}
+            />
 
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 700,
-                ...guarantorPill.style,
-              }}
-            >
-              {guarantorPill.label}
-            </span>
+            <HeroChip
+              icon={<ShieldCheck size={14} strokeWidth={2.15} />}
+              label={
+                overview.guarantors.total > 0
+                  ? `Garanties ${overview.guarantors.signed}/${overview.guarantors.total}`
+                  : "Aucune garantie"
+              }
+              done={
+                overview.guarantors.total > 0 &&
+                overview.guarantors.signed === overview.guarantors.total
+              }
+              empty={overview.guarantors.total === 0}
+            />
 
-            <span
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                padding: "6px 10px",
-                borderRadius: 999,
-                fontSize: 12,
-                fontWeight: 700,
-                ...landlordPill.style,
-              }}
-            >
-              {landlordPill.label}
-            </span>
+            <HeroChip
+              icon={<CheckCircle2 size={14} strokeWidth={2.15} />}
+              label={`Bailleur ${overview.landlord.signed ? "signé" : "à signer"}`}
+              done={overview.landlord.signed}
+            />
           </div>
 
           <div
             style={{
-              fontSize: 13,
-              fontWeight: 700,
-              color: COLORS.textSoft,
-              whiteSpace: "nowrap",
+              display: "grid",
+              gridTemplateColumns: "minmax(0, 1fr) auto",
+              alignItems: "center",
+              gap: 14,
+              justifySelf: "end",
+              width: "100%",
             }}
           >
-            Progression : {progressPercent}%
+            <div>
+              <div
+                style={{
+                  height: 7,
+                  background: progressTone.track,
+                  borderRadius: 999,
+                  overflow: "hidden",
+                  boxShadow: "inset 0 1px 0 rgba(255,255,255,0.65)",
+                }}
+              >
+                <div
+                  style={{
+                    width: progressWidth,
+                    minWidth: progressPercent > 0 ? 10 : 0,
+                    height: "100%",
+                    borderRadius: 999,
+                    background: progressTone.fill,
+                    transition: "width 220ms ease",
+                    boxShadow: "0 1px 3px rgba(16,24,40,0.04)",
+                  }}
+                />
+              </div>
+            </div>
+
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 700,
+                color: "#73819A",
+                whiteSpace: "nowrap",
+                letterSpacing: "-0.014em",
+              }}
+            >
+              Progression : {progressPercent}%
+            </div>
           </div>
         </div>
       </div>
 
       <div
         style={{
-          borderTop: `1px solid ${COLORS.border}`,
-          paddingTop: 16,
+          borderTop: `1px solid rgba(26,39,66,0.05)`,
+          paddingTop: 22,
           display: "flex",
           alignItems: "flex-start",
           justifyContent: "space-between",
@@ -345,15 +434,15 @@ export function SignatureHero({
           flexWrap: "wrap",
         }}
       >
-        <div style={{ minWidth: 280, flex: "1 1 380px" }}>
+        <div style={{ minWidth: 0, flex: "1 1 380px" }}>
           <div
             style={{
               fontSize: 12,
-              fontWeight: 800,
-              letterSpacing: "0.03em",
+              fontWeight: 700,
+              letterSpacing: "0.11em",
               textTransform: "uppercase",
-              color: COLORS.textMuted,
-              marginBottom: 8,
+              color: "#A2ACBC",
+              marginBottom: 14,
             }}
           >
             {isCompleted ? "Résumé dossier" : "Prochaine action recommandée"}
@@ -361,10 +450,11 @@ export function SignatureHero({
 
           <div
             style={{
-              fontSize: 15,
-              lineHeight: 1.5,
-              color: COLORS.textStrong,
-              fontWeight: 700,
+              fontSize: 16.5,
+              lineHeight: 1.58,
+              color: COLORS.navyStrong,
+              fontWeight: 800,
+              maxWidth: 820,
             }}
           >
             {isCompleted
@@ -377,51 +467,24 @@ export function SignatureHero({
           <div
             style={{
               display: "flex",
-              gap: 10,
+              gap: 12,
               flexWrap: "wrap",
               alignItems: "center",
             }}
           >
-            <button
-              type="button"
+            <PrimaryButton
               onClick={onSendAllRemainingLinks}
               disabled={!canSendAllRemainingLinks}
-              style={{
-                appearance: "none",
-                border: `1px solid ${canSendAllRemainingLinks ? "#1D4ED8" : "#D0D5DD"}`,
-                background: canSendAllRemainingLinks ? "#1D4ED8" : "#F2F4F7",
-                color: canSendAllRemainingLinks ? "#FFFFFF" : "#98A2B3",
-                borderRadius: 12,
-                padding: "11px 16px",
-                fontSize: 14,
-                fontWeight: 800,
-                cursor: canSendAllRemainingLinks ? "pointer" : "not-allowed",
-                boxShadow: canSendAllRemainingLinks
-                  ? "0 6px 16px rgba(29, 78, 216, 0.18)"
-                  : "none",
-              }}
             >
               Envoyer tous les liens restants
-            </button>
+            </PrimaryButton>
 
-            <button
-              type="button"
+            <SecondaryButton
               onClick={onStartNextOnSite}
               disabled={!canStartNextOnSite}
-              style={{
-                appearance: "none",
-                border: `1px solid ${canStartNextOnSite ? COLORS.borderStrong : "#D0D5DD"}`,
-                background: canStartNextOnSite ? "#FFFFFF" : "#F9FAFB",
-                color: canStartNextOnSite ? COLORS.textStrong : "#98A2B3",
-                borderRadius: 12,
-                padding: "11px 16px",
-                fontSize: 14,
-                fontWeight: 700,
-                cursor: canStartNextOnSite ? "pointer" : "not-allowed",
-              }}
             >
               Lancer la prochaine signature sur place
-            </button>
+            </SecondaryButton>
           </div>
         ) : null}
       </div>
