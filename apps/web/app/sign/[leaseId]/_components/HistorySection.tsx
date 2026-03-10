@@ -11,15 +11,16 @@ type HistorySectionProps = {
   items: HistoryItem[];
 };
 
+const FONT =
+  '"Inter", "Segoe UI", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif';
+
 const COLORS = {
-  textStrong: "#172033",
+  textStrong: "#1B2740",
   textSoft: "#667085",
   textMuted: "#98A2B3",
-  border: "#D9E2EC",
-  borderSoft: "#E9EEF5",
-  surface: "#FFFFFF",
-  graySoft: "#F8FAFC",
-  blue: "#1D4ED8",
+  line: "rgba(26,39,66,0.06)",
+  lineSoft: "rgba(26,39,66,0.045)",
+  blue: "#4F6FD3",
 };
 
 export function HistorySection({ items }: HistorySectionProps) {
@@ -28,27 +29,22 @@ export function HistorySection({ items }: HistorySectionProps) {
   return (
     <section
       style={{
-        borderRadius: 18,
-        border: `1px solid ${COLORS.border}`,
-        background: COLORS.surface,
-        boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
-        overflow: "hidden",
+        fontFamily: FONT,
       }}
     >
       <div
         style={{
-          padding: "14px 16px 10px 16px",
-          borderBottom: `1px solid ${COLORS.borderSoft}`,
+          marginBottom: 8,
         }}
       >
         <div
           style={{
-            fontSize: 11,
-            fontWeight: 800,
-            color: COLORS.textMuted,
+            fontSize: 11.5,
+            fontWeight: 700,
+            color: "#A4AEBD",
             textTransform: "uppercase",
-            letterSpacing: "0.04em",
-            marginBottom: 4,
+            letterSpacing: "0.1em",
+            marginBottom: 6,
           }}
         >
           Historique récent
@@ -57,29 +53,30 @@ export function HistorySection({ items }: HistorySectionProps) {
         <div
           style={{
             fontSize: 15,
-            fontWeight: 800,
+            fontWeight: 600,
             color: COLORS.textStrong,
+            letterSpacing: "-0.01em",
           }}
         >
           {visibleItems.length === 0
             ? "Aucun événement"
-            : `$Activité du dossier${visibleItems.length > 1 ? "s" : ""}`}
+            : `Activité du dossier`}
         </div>
       </div>
 
       {visibleItems.length === 0 ? (
         <div
           style={{
-            padding: "16px",
-            display: "grid",
-            gap: 4,
+            padding: "10px 0 4px 0",
+            borderTop: `1px solid ${COLORS.line}`,
           }}
         >
           <div
             style={{
               fontSize: 14,
-              fontWeight: 700,
+              fontWeight: 600,
               color: COLORS.textStrong,
+              marginBottom: 4,
             }}
           >
             Aucun événement récent
@@ -88,8 +85,9 @@ export function HistorySection({ items }: HistorySectionProps) {
           <div
             style={{
               fontSize: 13,
-              lineHeight: 1.5,
+              lineHeight: 1.55,
               color: COLORS.textSoft,
+              maxWidth: 760,
             }}
           >
             Les envois de liens, préparations de documents et signatures
@@ -97,26 +95,31 @@ export function HistorySection({ items }: HistorySectionProps) {
           </div>
         </div>
       ) : (
-        <div>
+        <div
+          style={{
+            borderTop: `1px solid ${COLORS.line}`,
+          }}
+        >
           {visibleItems.map((item, index) => (
             <div
               key={item.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "90px minmax(0, 1fr)",
+                gridTemplateColumns: "96px minmax(0, 1fr)",
                 gap: 12,
-                padding: "10px 16px",
-                borderTop: index === 0 ? "none" : `1px solid ${COLORS.borderSoft}`,
+                padding: "10px 0",
+                borderTop: index === 0 ? "none" : `1px solid ${COLORS.lineSoft}`,
                 alignItems: "start",
               }}
             >
               <div
                 style={{
-                  fontSize: 12,
-                  fontWeight: 700,
+                  fontSize: 12.5,
+                  fontWeight: 500,
                   color: COLORS.textMuted,
                   lineHeight: 1.4,
                   whiteSpace: "nowrap",
+                  paddingTop: 1,
                 }}
               >
                 {item.dateLabel}
@@ -132,12 +135,13 @@ export function HistorySection({ items }: HistorySectionProps) {
               >
                 <span
                   style={{
-                    width: 8,
-                    height: 8,
+                    width: 6,
+                    height: 6,
                     borderRadius: 999,
                     background: COLORS.blue,
-                    marginTop: 5,
+                    marginTop: 7,
                     flexShrink: 0,
+                    opacity: 0.9,
                   }}
                 />
 
@@ -145,9 +149,9 @@ export function HistorySection({ items }: HistorySectionProps) {
                   <div
                     style={{
                       fontSize: 14,
-                      fontWeight: 700,
+                      fontWeight: 600,
                       color: COLORS.textStrong,
-                      lineHeight: 1.4,
+                      lineHeight: 1.45,
                       wordBreak: "break-word",
                     }}
                   >
@@ -158,8 +162,8 @@ export function HistorySection({ items }: HistorySectionProps) {
                     <div
                       style={{
                         marginTop: 2,
-                        fontSize: 12,
-                        lineHeight: 1.45,
+                        fontSize: 12.5,
+                        lineHeight: 1.5,
                         color: COLORS.textSoft,
                         wordBreak: "break-word",
                       }}
