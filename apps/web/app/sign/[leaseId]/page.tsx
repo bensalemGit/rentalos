@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { RefreshCw } from "lucide-react";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
 import { SignableCard } from "./_components/SignableCard";
@@ -10,6 +11,7 @@ import { SignerSection } from "./_components/SignerSection";
 import type { SignerTask } from "./_types/signature-center.types";
 import { DocumentsSection } from "./_components/DocumentsSection";
 import { HistorySection, type HistoryItem } from "./_components/HistorySection";
+import { SIGN_UI, PremiumButton } from "./_components/signature-ui";
 
 
 const brandBlue = "#4D7DE0";
@@ -43,12 +45,15 @@ const dangerBg = "#FCEAEA";
 const dangerBorder = "#F2CFCF";
 const dangerText = "#C35B5B";
 
+const UI_FONT =
+  '"Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
+
 const ui = {
   card: {
     background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
     border: `1px solid ${borderSoft}`,
-    borderRadius: 24,
-    boxShadow: "0 10px 24px rgba(31,41,64,0.04), 0 2px 6px rgba(31,41,64,0.018)",
+    borderRadius: 22,
+    boxShadow: "0 4px 14px rgba(31,41,64,0.03), 0 1px 3px rgba(31,41,64,0.012)",
     transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
   } as React.CSSProperties,
   hTitle: {
@@ -68,6 +73,25 @@ const ui = {
   } as React.CSSProperties,
 };
 
+
+const heroHeaderButtonStyle: React.CSSProperties = {
+  appearance: "none",
+  border: `1px solid ${SIGN_UI.colors.cardBorder}`,
+  background: "#FFFFFF",
+  borderRadius: 14,
+  height: 40,
+  padding: "0 16px",
+  fontSize: 13.5,
+  fontWeight: 600,
+  cursor: "pointer",
+  color: SIGN_UI.colors.textStrong,
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  boxShadow: SIGN_UI.shadows.soft,
+  fontFamily: UI_FONT,
+};
+
 function Badge({
   tone,
   children,
@@ -77,8 +101,8 @@ function Badge({
 }) {
   const map: Record<string, React.CSSProperties> = {
     success: {
-      background: "#EAF6EE",
-      color: "#3D8B63",
+      background: "#EAF7F1",
+      color: "#147A55",
       border: "none",
     },
     warning: {
@@ -174,207 +198,6 @@ const Btn = React.forwardRef<
   );
 });
 
-function Card({
-  id,
-  title,
-  subtitle,
-  right,
-  children,
-  toneStyle,
-}: {
-  id?: string;
-  title: React.ReactNode;
-  subtitle?: React.ReactNode;
-  right?: React.ReactNode;
-  children: React.ReactNode;
-  toneStyle?: React.CSSProperties;
-}) {
-  return (
-    <section
-      id={id}
-      className="workflow-card"
-      style={{ ...ui.card, ...toneStyle, padding: 20 }}
-    >
-      <div style={{
-        padding: 22,
-        maxWidth: 1280,
-        margin: "0 auto",
-        display: "grid",
-        gap: 20,
-        background: "transparent",
-        borderRadius: 30,
-      }}>
-        <div>
-          <div
-            style={{
-              fontWeight: 700,
-              fontSize: 13.5,
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              letterSpacing: 0.01,
-              textTransform: "uppercase",
-              color: "#3157B7",
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-            }}
-          >
-            {title}
-          </div>
-          {subtitle ? (
-            <div
-              style={{
-                fontSize: 12.5,
-                color: "#7A869A",
-                marginTop: 6,
-                lineHeight: 1.5,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-              }}
-            >
-              {subtitle}
-            </div>
-          ) : null}
-        </div>
-        {right}
-      </div>
-      <div style={{ marginTop: 14 }}>{children}</div>
-    </section>
-  );
-}
-
-function InlineMenu({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        marginTop: 10,
-        marginBottom: 12,
-        border: `1px solid ${borderSoft}`,
-        borderRadius: 14,
-        background: bgSoft,
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.7)",
-        padding: 10,
-      }}
-    >
-      <div
-        style={{
-          fontSize: 11,
-          fontWeight: 700,
-          color: textSoft,
-          marginBottom: 8,
-          textTransform: "uppercase",
-          letterSpacing: 0.5,
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        }}
-      >
-        {title}
-      </div>
-
-      <div style={{ display: "grid", gap: 4 }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function CollapsibleSectionHeader({
-  title,
-  subtitle,
-  open,
-  onToggle,
-}: {
-  title: string;
-  subtitle?: string;
-  open: boolean;
-  onToggle: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      style={{
-        appearance: "none",
-        width: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        gap: 16,
-        padding: 0,
-        margin: 0,
-        border: "none",
-        background: "transparent",
-        cursor: "pointer",
-        textAlign: "left",
-      }}
-    >
-      <div>
-        <div
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            color: "#98A2B3",
-            textTransform: "uppercase",
-            letterSpacing: "0.04em",
-            marginBottom: 4,
-          }}
-        >
-          Actions avancées
-        </div>
-
-        <div
-          style={{
-            fontSize: 18,
-            fontWeight: 700,
-            color: "#172033",
-            lineHeight: 1.2,
-          }}
-        >
-          {title}
-        </div>
-
-        {subtitle ? (
-          <div
-            style={{
-              marginTop: 4,
-              fontSize: 13,
-              color: "#667085",
-              lineHeight: 1.45,
-            }}
-          >
-            {subtitle}
-          </div>
-        ) : null}
-      </div>
-
-      <div
-        style={{
-          flexShrink: 0,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          width: 36,
-          height: 36,
-          borderRadius: 999,
-          border: "1px solid #D9E2EC",
-          background: "#FFFFFF",
-          color: "#344054",
-          fontSize: 16,
-          fontWeight: 700,
-          boxShadow: "0 1px 2px rgba(15, 23, 42, 0.04)",
-        }}
-      >
-        {open ? "−" : "+"}
-      </div>
-    </button>
-  );
-}
 
 function toneFromStatus(s?: string) {
   const v = String(s || "").toUpperCase();
@@ -453,85 +276,6 @@ function countMissingFromSignatureStatus(sigStatus: any) {
     missingCount === 0 ? "Tout est prêt" : missingCount === 1 ? missing[0].msg : `${missingCount} actions à faire`;
 
   return { missing: missingCount, label, firstAnchor };
-}
-
-function stepCircle(step: number, state: "done" | "current" | "todo" = "todo") {
-  const styles =
-    state === "done"
-      ? {
-          background: "#F2FBF5",
-          border: "1.5px solid #CFE5D5",
-          color: "#4E9B72",
-          boxShadow: "0 0 0 6px rgba(207,229,213,0.22)",
-        }
-      : state === "current"
-        ? {
-            background: "#FFF8EE",
-            border: "1.5px solid #E9D1AE",
-            color: "#A87422",
-            boxShadow: "0 0 0 6px rgba(233,209,174,0.22)",
-          }
-        : {
-            background: "#FFFFFF",
-            border: `1.5px solid ${borderSoftStrong}`,
-            color: "#9AA5B8",
-            boxShadow: "0 0 0 4px rgba(216,224,236,0.22)",
-          };
-
-  return (
-    <span
-      aria-hidden="true"
-      style={{
-        width: 30,
-        height: 30,
-        borderRadius: 999,
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        flexShrink: 0,
-        fontSize: 12,
-        fontWeight: 700,
-        fontFamily:
-          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        ...styles,
-      }}
-    >
-      {state === "done" ? "✓" : step}
-    </span>
-  );
-}
-
-function workflowCardTone(state: "done" | "current" | "todo"): React.CSSProperties {
-  if (state === "done") {
-    return {
-      border: "1px solid #E5EBF3",
-      background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
-      boxShadow: "0 8px 22px rgba(31,41,64,0.038)",
-    };
-  }
-
-  if (state === "current") {
-    return {
-      border: "1px solid #E5EBF3",
-      background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
-      boxShadow: "0 9px 24px rgba(31,41,64,0.042)",
-    };
-  }
-
-  return {
-    border: "1px solid #E5EBF3",
-    background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
-    boxShadow: "0 7px 18px rgba(31,41,64,0.034)",
-    opacity: 1,
-  };
-}
-
-
-function sectionIcon(sectionId?: string) {
-  if (sectionId === "contract") return stepCircle(1, "todo");
-  if (sectionId === "guarantees") return stepCircle(2, "todo");
-  if (sectionId === "edl-inv") return stepCircle(3, "todo");
-  return null;
 }
 
 
@@ -670,13 +414,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   // ✅ NEW: panneau signature unique (droite)
   const [role, setRole] = useState<"LOCATAIRE" | "BAILLEUR" | "GARANT">("LOCATAIRE");
 
-  const [contractMenuOpen, setContractMenuOpen] = useState(false);
-  const [guaranteesMenuOpen, setGuaranteesMenuOpen] = useState(false);
-  const [edlMenuOpen, setEdlMenuOpen] = useState(false);
-
-  const [showContractDetails, setShowContractDetails] = useState(false);
-  const [showGuaranteesDetails, setShowGuaranteesDetails] = useState(false);
-  const [showEdlInvDetails, setShowEdlInvDetails] = useState(false);
 
   const [showLegacyPanelForm, setShowLegacyPanelForm] = useState(false);
   const [isWideScreen, setIsWideScreen] = useState(true);
@@ -710,8 +447,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     tenantId: undefined as string | undefined,
     guaranteeId: undefined as string | undefined,
   });
-
-  const [advancedOpen, setAdvancedOpen] = useState(false);
 
 
   const blue = "#1d4ed8";
@@ -1611,8 +1346,6 @@ function onPointerUp(e: any) {
 
 
 
-
-
   const hasMultipleTenants = useMemo(() => (tenants?.length || 0) > 1, [tenants]);
   const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
 
@@ -1949,282 +1682,6 @@ async function signGuarantorOnPlace() {
   }
 
 
-function MenuItem({
-  children,
-  icon,
-  onClick,
-  disabled,
-}: {
-  children: React.ReactNode;
-  icon?: React.ReactNode;
-  onClick?: () => void;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: "100%",
-        textAlign: "left",
-        padding: "10px 12px",
-        borderRadius: 10,
-        border: "none",
-        background: "transparent",
-        cursor: disabled ? "not-allowed" : "pointer",
-        fontWeight: 700,
-        color: disabled ? "#9ca3af" : textStrong,
-        display: "flex",
-        alignItems: "center",
-        gap: 10,
-        transition: "background 120ms ease",
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled) e.currentTarget.style.background = "rgba(100,116,139,0.08)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.background = "transparent";
-      }}
-    >
-      <span
-        style={{
-          width: 20,
-          height: 20,
-          display: "inline-flex",
-          alignItems: "center",
-          justifyContent: "center",
-          flexShrink: 0,
-          borderRadius: 999,
-          border: disabled ? "1px solid rgba(148,163,184,0.16)" : "1px solid rgba(148,163,184,0.20)",
-          background: disabled ? "rgba(148,163,184,0.06)" : "rgba(148,163,184,0.08)",
-          color: disabled ? "#cbd5e1" : "#64748b",
-          fontSize: 11,
-          fontWeight: 700,
-          lineHeight: 1,
-        }}
-      >
-        {icon || "•"}
-      </span>
-
-      <span>{children}</span>
-    </button>
-  );
-}
-
-function DetailToggle({
-  open,
-  onClick,
-}: {
-  open: boolean;
-  onClick: () => void;
-}) {
-  return (
-  <button
-    onClick={onClick}
-    style={{
-      border: "none",
-      background: "transparent",
-      color: "#667085",
-      cursor: "pointer",
-      fontWeight: 700,
-      fontSize: 12.5,
-      padding: 0,
-      display: "inline-flex",
-      alignItems: "center",
-      gap: 6,
-      fontFamily:
-        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-    }}
-  >
-    {open ? "Détails ▴" : "Détails ▾"}
-  </button>
-);
-}
-
-function SummaryRow({
-  label,
-  status,
-}: {
-  label: string;
-  status: React.ReactNode;
-}) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        gap: 10,
-        alignItems: "center",
-        padding: "8px 0",
-        borderBottom: "1px solid rgba(226,232,240,0.7)",
-      }}
-    >
-      <div style={{ fontWeight: 700 }}>{label}</div>
-      <div style={{ color: textSoft, fontWeight: 700 }}>{status}</div>
-    </div>
-  );
-}
-
-    const contractStatusValue = sigStatus?.contract?.status || "—";
-
-    const contractStatusTone =
-      contractStatusValue === "SIGNED"
-        ? "success"
-        : contractStatusValue === "IN_PROGRESS" || contractStatusValue === "DRAFT"
-          ? "warning"
-          : "neutral";
-
-    const contractStatusLabel =
-      contractStatusValue === "SIGNED"
-        ? "Signé"
-        : contractStatusValue === "IN_PROGRESS"
-          ? "En cours"
-          : contractStatusValue === "DRAFT"
-            ? "Brouillon"
-            : "Non généré";
-
-    const contractStatusChip = (
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          minHeight: 34,
-          padding: "0 12px",
-          borderRadius: 999,
-          fontSize: 12.5,
-          fontWeight: 700,
-          letterSpacing: -0.01,
-          fontFamily:
-            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-          ...statusPillStyle(contractStatusTone),
-        }}
-      >
-        <span
-          aria-hidden="true"
-          style={{
-            width: 7,
-            height: 7,
-            borderRadius: 999,
-            background:
-              contractStatusTone === "success"
-                ? "#16a34a"
-                : contractStatusTone === "warning"
-                  ? "#d97706"
-                  : "#94a3b8",
-          }}
-        />
-        {contractStatusLabel}
-      </span>
-    );
-
-
-    const tenantsList = sigStatus?.contract?.tenants || [];
-
-    const tenantsTotalCount = tenantsList.length;
-    const tenantsSignedCount = tenantsList.filter((t) => t.signatureStatus === "SIGNED").length;
-    const tenantsPendingCount = tenantsList.filter((t) => t.signatureStatus !== "SIGNED").length;
-
-
-    const guaranteesCount = sigStatus?.guarantees?.length || 0;
-    const guaranteesUnsignedCount = sigStatus?.guarantees?.filter((g) => g.signatureStatus !== "SIGNED").length || 0;
-
-    const guaranteesSummaryText =
-      !sigStatus
-        ? "Chargement…"
-        : guaranteesCount === 0
-          ? "Aucune garantie"
-          : guaranteesUnsignedCount === 0
-            ? `${guaranteesCount} garantie(s), toutes prêtes`
-            : `${guaranteesUnsignedCount} garantie(s) à finaliser`;
-
-    const packEntry = (sigStatus as any)?.packEdlInv?.entry || null;
-    const packExit = (sigStatus as any)?.packEdlInv?.exit || null;
-
-    const edlDocsFlat = sigStatus
-      ? [
-          sigStatus.edl?.entry,
-          sigStatus.edl?.exit,
-          sigStatus.inventory?.entry,
-          sigStatus.inventory?.exit,
-          packEntry,
-          packExit,
-        ].filter(Boolean)
-      : [];
-
-    const edlInvMissingCount = edlDocsFlat.filter(
-      (d: any) => !d?.documentId || isMissingStatus(d?.status)
-    ).length;
-
-    const edlInvSummaryChip = (
-      <Badge
-        tone={
-          !sigStatus ? "neutral" : edlInvMissingCount === 0 ? "success" : edlInvMissingCount <= 2 ? "warning" : "danger"
-        }
-      >
-        {!sigStatus
-          ? "Chargement…"
-          : edlInvMissingCount === 0
-            ? "Tout est prêt"
-            : `${edlInvMissingCount} documents restants`}
-      </Badge>
-    );
-
-    const packEntryStatus = humanDocStatus(packEntry?.status);
-    const packExitStatus = humanDocStatus(packExit?.status);
-
-    const edlInvDocsSummaryText = !sigStatus
-      ? "Chargement…"
-      : edlInvMissingCount === 0
-        ? "Tous les documents sont prêts"
-        : `${edlInvMissingCount} documents restants`;
-
-    const contractStepState: "done" | "current" | "todo" =
-      contractStatusValue === "SIGNED"
-        ? "done"
-        : contractStatusValue === "IN_PROGRESS" || contractStatusValue === "DRAFT"
-          ? "current"
-          : "todo";
-
-  const guaranteesStepState: "done" | "current" | "todo" =
-    guaranteesCount === 0
-      ? "todo"
-      : guaranteesUnsignedCount === 0
-        ? "done"
-        : "current";
-
-  const edlStepState: "done" | "current" | "todo" =
-    edlInvMissingCount === 0
-      ? "done"
-      : edlDocsFlat.length > 0
-        ? "current"
-        : "todo";
-
-  const workflowStates = [
-    contractStepState,
-    guaranteesStepState,
-    edlStepState,
-  ] as const;
-
-  const contractNarrative =
-    contractStepState === "done"
-      ? "Contrat finalisé et signatures terminées"
-      : tenantsPendingCount > 0
-        ? `${tenantsPendingCount} signature(s) locataire en attente`
-        : "Contrat à générer ou à finaliser";
-
-  const guaranteesNarrative =
-    guaranteesCount === 0
-      ? "Aucune garantie rattachée au dossier"
-      : guaranteesUnsignedCount === 0
-        ? "Toutes les garanties sont finalisées"
-        : `${guaranteesUnsignedCount} garantie(s) encore à traiter`;
-
-  const edlNarrative =
-    edlInvMissingCount === 0
-      ? "Tous les documents EDL / inventaire sont prêts"
-      : `${edlInvMissingCount} document(s) EDL / inventaire restants`;
 
 const isSessionDriven = sessionDraft.open;
 const showManualPanel = !isSessionDriven && showLegacyPanelForm;
@@ -2318,6 +1775,23 @@ const panelDocumentLabel = isSessionDriven
     : role === "LOCATAIRE"
       ? selectedTenantDoc?.label || "Contrat"
       : selectedLandlordDoc?.label || "Contrat";
+
+const flatFieldStyle: React.CSSProperties = {
+  width: "100%",
+  height: 42,
+  padding: "0 14px",
+  borderRadius: 12,
+  border: "1px solid #D6DFEB",
+  background: "#FFFFFF",
+  fontWeight: 400,
+  fontSize: 14,
+  color: "#1F2A3C",
+  boxShadow: "none",
+  fontFamily: UI_FONT,
+  WebkitFontSmoothing: "antialiased",
+  MozOsxFontSmoothing: "grayscale",
+  boxSizing: "border-box",
+};
       
   return (
     <div
@@ -2327,111 +1801,207 @@ const panelDocumentLabel = isSessionDriven
         margin: "0 auto",
         display: "grid",
         gap: 18,
-        background: "linear-gradient(180deg, #FAFBFD 0%, #F3F6FA 100%)",
+        background: `linear-gradient(180deg, ${SIGN_UI.colors.pageBgTop} 0%, ${SIGN_UI.colors.pageBgBottom} 100%)`,
         borderRadius: 28,
       }}
     >
-      <SignatureHero
-        overview={overview}
-        recommendedActionLabel={recommendedActionLabel}
-        canSendAllRemainingLinks={canSendAllRemainingLinks}
-        canStartNextOnSite={canStartNextOnSite}
-        onSendAllRemainingLinks={sendAllRemainingLinks}
-        onStartNextOnSite={startNextOnSite}
-        onRefresh={refreshAll}
-      />
+      <div
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: 20,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ minWidth: 0, flex: "1 1 720px" }}>
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 700,
+              color: SIGN_UI.colors.blue,
+              marginBottom: 10,
+              letterSpacing: "-0.01em",
+              fontFamily: SIGN_UI.font,
+            }}
+          >
+            Signature du bail
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "baseline",
+              gap: 10,
+              flexWrap: "wrap",
+              minWidth: 0,
+            }}
+          >
+            <div
+              style={{
+                fontSize: 24,
+                lineHeight: 1.12,
+                letterSpacing: "-0.04em",
+                fontWeight: 800,
+                color: SIGN_UI.colors.textStrong,
+                wordBreak: "break-word",
+                fontFamily: UI_FONT,
+              }}
+            >
+              <span>{overview.leaseLabel}</span>
+              <span style={{ color: "#B7C0CF", fontWeight: 500 }}> — </span>
+              <span style={{ color: SIGN_UI.colors.textSoft, fontWeight: 600 }}>
+                {overview.primaryTenantName}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={refreshAll}
+          style={{
+            appearance: "none",
+            border: `1px solid ${SIGN_UI.colors.cardBorder}`,
+            background: "linear-gradient(180deg, #FFFFFF 0%, #FBFCFE 100%)",
+            borderRadius: 14,
+            height: 40,
+            padding: "0 16px",
+            fontSize: 13.5,
+            fontWeight: 600,
+            cursor: "pointer",
+            color: SIGN_UI.colors.textStrong,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 8,
+            boxShadow: "0 2px 6px rgba(31,41,64,0.04)",
+            fontFamily: SIGN_UI.font,
+            flexShrink: 0,
+          }}
+        >
+          <RefreshCw size={14} strokeWidth={2.05} />
+          <span>Rafraîchir</span>
+        </button>
+      </div>
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isWideScreen ? "minmax(0, 1fr) 392px" : "1fr",
+          gridTemplateColumns: isWideScreen ? "minmax(0, 1fr) 372px" : "1fr",
           gap: 20,
           alignItems: "start",
         }}
       >
-        <SignerSection
-          tasks={signerTasks}
-          activeTaskId={sessionDraft.signerTaskId}
-          enableAutoScroll={isWideScreen}
-          onStartOnSite={startOnSiteSignature}
-          onSendEmail={sendSignatureLink}
-          onResendEmail={resendSignatureLink}
-          onDownloadSigned={downloadSignedArtifact}
-          onPrepare={prepareSignerTask}
-        />
+        <div
+          style={{
+            display: "grid",
+            gap: 16,
+            minWidth: 0,
+          }}
+        >
+    
+
+          <SignatureHero
+            overview={overview}
+            recommendedActionLabel={recommendedActionLabel}
+            canSendAllRemainingLinks={canSendAllRemainingLinks}
+            canStartNextOnSite={canStartNextOnSite}
+            onSendAllRemainingLinks={sendAllRemainingLinks}
+            onStartNextOnSite={startNextOnSite}
+          />
+
+          <SignerSection
+            tasks={signerTasks}
+            activeTaskId={sessionDraft.signerTaskId}
+            enableAutoScroll={isWideScreen}
+            onStartOnSite={startOnSiteSignature}
+            onSendEmail={sendSignatureLink}
+            onResendEmail={resendSignatureLink}
+            onDownloadSigned={downloadSignedArtifact}
+            onPrepare={prepareSignerTask}
+          />
+
+          <DocumentsSection
+            documents={documents}
+            onDownloadDocument={downloadDocumentResource}
+            onDownloadSignedDocument={downloadSignedDocumentResource}
+          />
+        </div>
 
         <div
           ref={signaturePanelRef}
           className="sign-sticky"
           style={{
             position: isWideScreen ? "sticky" : "static",
-            top: isWideScreen ? 14 : "auto",
-            display: "flex",
-            flexDirection: "column",
-            gap: 10,
+            top: isWideScreen ? 12 : "auto",
+            display: "grid",
+            gap: 18,
             alignSelf: "start",
+            minWidth: 0,
+            marginTop: 0,
           }}
         >
-          <div
-          style={{
-            background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
-            border: "1px solid rgba(26,39,66,0.06)",
-            borderRadius: 28,
-            padding: 20,
-            boxShadow: "0 10px 22px rgba(31,41,64,0.028), 0 2px 8px rgba(31,41,64,0.016)",
-          }}
-        >
+  <div
+    style={{
+      background: SIGN_UI.colors.cardBg,
+      border: `1px solid ${SIGN_UI.colors.cardBorder}`,
+      borderRadius: 22,
+      padding: 18,
+      boxShadow: SIGN_UI.shadows.card,
+      fontFamily: UI_FONT,
+      WebkitFontSmoothing: "antialiased",
+      MozOsxFontSmoothing: "grayscale",
+    }}
+  >
             <div
               style={{
-                fontSize: 17.5,
-                fontWeight: 700,
-                color: "#1B2740",
-                letterSpacing: -0.02,
-                marginBottom: 8,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                fontSize: 17,
+                fontWeight: 600,
+                color: "#1C2434",
+                letterSpacing: -0.015,
+                marginBottom: 6,
+                fontFamily: UI_FONT,
               }}
-                          >
-              {isSessionDriven ? "Session de signature sécurisée" : "Poste de signature"}
-            </div>
+            >
+              {isSessionDriven ? "Session de signature" : "Poste de signature"}
+</div>
 
             <div
               style={{
-                marginTop: 0,
-                marginBottom: 14,
-                fontSize: 13,
+                marginBottom: 16,
+                fontSize: 13.5,
                 lineHeight: 1.65,
-                color: textSoft,
-                fontFamily:
-                  'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                color: "#6B7688",
+                fontWeight: 400,
+                fontFamily: UI_FONT,
               }}
             >
               {isSessionDriven
-                ? "Vérifiez l’identité du signataire puis recueillez sa signature manuscrite."
-                : "Démarrez de préférence depuis une carte signataire pour ouvrir une session guidée."}
+                ? "Vérifiez l’identité du signataire puis recueillez sa signature."
+                : "Ouvrez une session guidée depuis un signataire, ou utilisez le mode manuel."}
             </div>
 
             {showPanelEmptyState ? (
               <div
                 style={{
-                  marginTop: 14,
-                  marginBottom: 18,
+                  marginTop: 10,
+                  marginBottom: 16,
                   padding: 16,
-                  borderRadius: 20,
-                  border: "1px solid #DCE5F0",
-                  background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFE 100%)",
-                  boxShadow: "0 6px 16px rgba(31,41,64,0.03)",
+                  borderRadius: 18,
+                  border: "1px solid #DCE4F0",
+                  background: "linear-gradient(180deg, #FCFDFF 0%, #F5F7FB 100%)",
+                  boxShadow: "0 8px 18px rgba(31,41,64,0.035), inset 0 1px 0 rgba(255,255,255,0.82)",
                   display: "grid",
                   gap: 14,
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontFamily: UI_FONT,
                 }}
               >
                 <div
                   style={{
                     fontSize: 15.5,
-                    fontWeight: 700,
+                    fontWeight: 600,
                     color: "#172033",
                     letterSpacing: -0.015,
+                    lineHeight: 1.25,
                   }}
                 >
                   Commencez par choisir un signataire
@@ -2440,7 +2010,7 @@ const panelDocumentLabel = isSessionDriven
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "58px minmax(0, 1fr)",
+                    gridTemplateColumns: "64px minmax(0,1fr)",
                     gap: 14,
                     alignItems: "start",
                   }}
@@ -2448,10 +2018,10 @@ const panelDocumentLabel = isSessionDriven
                   <div
                     aria-hidden="true"
                     style={{
-                      width: 56,
-                      height: 56,
+                      width: 60,
+                      height: 60,
                       borderRadius: 14,
-                      background: "linear-gradient(180deg, #DDF5F4 0%, #C7ECE9 100%)",
+                      background: "linear-gradient(180deg,#DDF5F4 0%,#C7ECE9 100%)",
                       border: "1px solid rgba(155,206,202,0.95)",
                       boxShadow: "0 6px 16px rgba(31,41,64,0.08)",
                       position: "relative",
@@ -2460,11 +2030,12 @@ const panelDocumentLabel = isSessionDriven
                       justifyContent: "center",
                     }}
                   >
+                    {/* document */}
                     <div
                       style={{
-                        width: 28,
-                        height: 34,
-                        borderRadius: 6,
+                        width: 30,
+                        height: 36,
+                        borderRadius: 7,
                         background: "#FFFDF9",
                         border: "1.5px solid #98C7C3",
                         position: "relative",
@@ -2476,10 +2047,10 @@ const panelDocumentLabel = isSessionDriven
                           position: "absolute",
                           top: 7,
                           left: 6,
-                          width: 16,
+                          width: 17,
                           height: 2.5,
                           borderRadius: 999,
-                          background: "#7FA8C8"
+                          background: "#7FA8C8",
                         }}
                       />
                       <div
@@ -2487,10 +2058,10 @@ const panelDocumentLabel = isSessionDriven
                           position: "absolute",
                           top: 13,
                           left: 6,
-                          width: 12,
+                          width: 13,
                           height: 2.5,
                           borderRadius: 999,
-                          background: "#7FA8C8"
+                          background: "#7FA8C8",
                         }}
                       />
                       <div
@@ -2498,19 +2069,20 @@ const panelDocumentLabel = isSessionDriven
                           position: "absolute",
                           top: 19,
                           left: 6,
-                          width: 9,
+                          width: 10,
                           height: 2.5,
                           borderRadius: 999,
-                          background: "#7FA8C8"
+                          background: "#7FA8C8",
                         }}
                       />
                     </div>
 
+                    {/* check */}
                     <div
                       style={{
                         position: "absolute",
                         right: 8,
-                        bottom: 10,
+                        bottom: 11,
                         width: 18,
                         height: 10,
                         borderLeft: "4px solid #D98A4C",
@@ -2523,12 +2095,14 @@ const panelDocumentLabel = isSessionDriven
 
                   <div
                     style={{
-                      fontSize: 14,
-                      lineHeight: 1.7,
-                      color: "#667085",
+                      fontSize: 13.5,
+                      lineHeight: 1.72,
+                      color: "#6B7688",
+                      fontWeight: 400,
                     }}
                   >
-                    Sélectionnez un locataire, un garant ou le bailleur dans la section signataires pour ouvrir une session guidée de signature sur place.
+                    Sélectionnez un locataire, un garant ou le bailleur dans la section
+                    signataires pour ouvrir une session guidée de signature sur place.
                   </div>
                 </div>
 
@@ -2537,19 +2111,17 @@ const panelDocumentLabel = isSessionDriven
                   onClick={() => setShowLegacyPanelForm(true)}
                   style={{
                     width: "100%",
-                    height: 40,
+                    height: 42,
                     padding: "0 16px",
-                    borderRadius: 14,
-                    border: "1px solid rgba(26,39,66,0.06)",
-                    background: "rgba(255,255,255,0.84)",
-                    color: "#2C3448",
-                    fontWeight: 700,
-                    fontSize: 15,
-                    boxShadow: "0 2px 6px rgba(31,41,64,0.016)",
-                    letterSpacing: -0.01,
+                    borderRadius: 12,
+                    border: "1px solid #D6DFEB",
+                    background: "#FFFFFF",
+                    color: "#2A3345",
+                    fontWeight: 500,
+                    fontSize: 14,
                     cursor: "pointer",
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    boxShadow: "0 3px 8px rgba(31,41,64,0.04)",
+                    fontFamily: UI_FONT,
                   }}
                 >
                   Ouvrir le mode manuel
@@ -2560,37 +2132,35 @@ const panelDocumentLabel = isSessionDriven
             {isSessionDriven ? (
               <div
                 style={{
-                  marginTop: 12,
+                  marginTop: 10,
                   marginBottom: 16,
-                  padding: 16,
-                  borderRadius: 18,
-                  border: "1px solid rgba(26,39,66,0.06)",
-                  background: "rgba(255,255,255,0.84)",
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  border: "1px solid #D9E6FB",
+                  background: "#F5F9FF",
                   display: "grid",
-                  gap: 8,
-                  boxShadow: "0 6px 14px rgba(15,23,42,0.02)",
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  gap: 4,
+                  fontFamily: UI_FONT,
                 }}
               >
-                <div
-                  style={{
-                    fontSize: 10.5,
-                    color: textMuted,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: 0.05,
-                  }}
-                >
-                  Session guidée
-                </div>
+               <div
+                style={{
+                  fontSize: 11,
+                  color: "#7B8799",
+                  fontWeight: 500,
+                  textTransform: "uppercase",
+                  letterSpacing: 0.04,
+                }}
+              >
+                Session guidée active
+              </div>
 
-                <div style={{ fontSize: 17, fontWeight: 850, color: textStrong }}>
+                <div style={{ fontSize: 15.5, fontWeight: 600, color: "#172033", letterSpacing: -0.01 }}>
                   {sessionDraft.signerName}
                 </div>
 
-                <div style={{ fontSize: 13.5, color: textSoft, lineHeight: 1.6 }}>
-                  Document : {sessionDraft.documentLabel} • Rôle : {sessionDraft.roleLabel}
+                <div style={{ fontSize: 13, color: "#6B7688", lineHeight: 1.6, fontWeight: 400 }}>
+                  {sessionDraft.roleLabel} • {sessionDraft.documentLabel}
                 </div>
               </div>
             ) : null}
@@ -2614,8 +2184,7 @@ const panelDocumentLabel = isSessionDriven
                         color: "#243041",
                         fontWeight: 500,
                         cursor: "pointer",
-                        fontFamily:
-                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                        fontFamily: UI_FONT,
                       }}
                     >
                       Quitter le mode manuel
@@ -2625,7 +2194,15 @@ const panelDocumentLabel = isSessionDriven
 
                 {!isSessionDriven ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#8A94A6",
+                        fontWeight: 500,
+                        letterSpacing: 0.04,
+                        textTransform: "uppercase",
+                      }}
+                    >
                       Signer en tant que
                     </div>
                     <select
@@ -2636,20 +2213,7 @@ const panelDocumentLabel = isSessionDriven
                         setRole(e.target.value as any);
                         clearCanvas();
                       }}
-                      style={{
-                        width: "100%",
-                        padding: "0 14px",
-                        height: 42,
-                        borderRadius: 14,
-                        border: "1px solid #D6DFEB",
-                        background: "#FFFFFF",
-                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.015)",
-                        fontSize: 14.5,
-                        fontWeight: 500,
-                        color: "#243041",
-                        fontFamily:
-                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                      }}
+                      style={flatFieldStyle}
                     >
                       <option value="LOCATAIRE">Locataire</option>
                       <option value="BAILLEUR">Bailleur</option>
@@ -2662,26 +2226,21 @@ const panelDocumentLabel = isSessionDriven
 
                 {!isSessionDriven && role === "LOCATAIRE" && hasMultipleTenants ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#8A94A6",
+                        fontWeight: 500,
+                        letterSpacing: 0.04,
+                        textTransform: "uppercase",
+                      }}
+                    >
                       Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
                     </div>
                     <select
                       value={selectedTenantId}
                       onChange={(e) => setSelectedTenantId(e.target.value)}
-                      style={{
-                        width: "100%",
-                        padding: "0 14px",
-                        height: 38,
-                        borderRadius: 14,
-                        border: `1px solid ${borderSoftStrong}`,
-                        background: "rgba(255,255,255,0.98)",
-                        fontWeight: 500,
-                        fontSize: 14.5,
-                        boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02), 0 1px 2px rgba(15,23,42,0.02)",
-                        color: "#1f2937",
-                        fontFamily:
-                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                      }}
+                      style={{ ...flatFieldStyle, height: 38 }}
                     >
                       <option value="">— Sélectionner —</option>
                       {tenants.map((t) => {
@@ -2701,7 +2260,15 @@ const panelDocumentLabel = isSessionDriven
 
                 {!isSessionDriven ? (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#8A94A6",
+                        fontWeight: 500,
+                        letterSpacing: 0.04,
+                        textTransform: "uppercase",
+                      }}
+                    >
                       Document à signer
                     </div>
 
@@ -2714,18 +2281,8 @@ const panelDocumentLabel = isSessionDriven
                         }}
                         disabled={isSessionDriven || guarantorSignables.length === 0}
                         style={{
-                          width: "100%",
-                          padding: "0 12px",
+                          ...flatFieldStyle,
                           height: 38,
-                          borderRadius: 14,
-                          border: `1px solid ${borderSoftStrong}`,
-                          background: "#fff",
-                          fontWeight: 500,
-                          fontSize: 14,
-                          boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                          color: "#1f2937",
-                          fontFamily:
-                            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
                           cursor: guarantorSignables.length ? "pointer" : "not-allowed",
                         }}
                       >
@@ -2758,17 +2315,8 @@ const panelDocumentLabel = isSessionDriven
                         }}
                         disabled={isSessionDriven || !landlordSignables.length}
                         style={{
-                          width: "100%",
-                          padding: "11px 13px",
-                          borderRadius: 14,
-                          border: `1px solid ${borderSoftStrong}`,
-                          background: "#fff",
-                          fontWeight: 500,
-                          fontSize: 14.5,
-                          boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02)",
-                          color: "#1f2937",
-                          fontFamily:
-                            'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                          ...flatFieldStyle,
+                          height: 42,
                           cursor: landlordSignables.length ? "pointer" : "not-allowed",
                         }}
                       >
@@ -2792,7 +2340,15 @@ const panelDocumentLabel = isSessionDriven
                 <div style={{ height: 10 }} />
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#8A94A6",
+                      fontWeight: 500,
+                      letterSpacing: 0.04,
+                      textTransform: "uppercase",
+                    }}
+                  >
                     Nom affiché sur la signature
                   </div>
                   <input
@@ -2810,48 +2366,47 @@ const panelDocumentLabel = isSessionDriven
                       else if (role === "BAILLEUR") setLandlordName(e.target.value);
                       else setGuarantorName(e.target.value);
                     }}
-                    style={{
-                      width: "100%",
-                      padding: "0 14px",
-                      height: 38,
-                      borderRadius: 14,
-                      border: `1px solid ${borderSoftStrong}`,
-                      background: "rgba(255,255,255,0.98)",
-                      fontWeight: 500,
-                      fontSize: 14.5,
-                      boxShadow: "inset 0 1px 1px rgba(15,23,42,0.02), 0 1px 2px rgba(15,23,42,0.02)",
-                      color: "#1f2937",
-                      fontFamily:
-                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-                      boxSizing: "border-box",
-                    }}
+                    style={{ ...flatFieldStyle, height: 38 }}
                   />
                 </div>
 
                 <div style={{ height: 12 }} />
 
-                <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase", marginBottom: 6 }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: "#8A94A6",
+                    fontWeight: 500,
+                    letterSpacing: 0.04,
+                    textTransform: "uppercase",
+                    marginBottom: 6,
+                  }}
+                >
                   Signature manuscrite
                 </div>
 
                 <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                  <div style={{ fontSize: 11, color: textMuted, fontWeight: 700, letterSpacing: 0.03, textTransform: "uppercase" }}>
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#8A94A6",
+                      fontWeight: 500,
+                      letterSpacing: 0.04,
+                      textTransform: "uppercase",
+                    }}
+                  >
                     Document concerné
                   </div>
                   <div
                     style={{
-                      padding: "0 14px",
-                      height: 38,
-                      display: "flex",
-                      alignItems: "center",
-                      borderRadius: 14,
-                      border: `1px solid ${borderSoftStrong}`,
-                      background: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
-                      fontWeight: 700,
-                      fontSize: 14.5,
-                      color: "#1f2937",
-                      fontFamily:
-                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      padding: "10px 12px",
+                      borderRadius: 12,
+                      background: "#F8FAFC",
+                      border: "1px solid #E5EBF3",
+                      fontWeight: 500,
+                      fontSize: 14,
+                      color: "#243041",
+                      fontFamily: UI_FONT,
                     }}
                   >
                     {panelDocumentLabel}
@@ -2862,13 +2417,11 @@ const panelDocumentLabel = isSessionDriven
                   style={{
                     position: "relative",
                     width: "100%",
-                    height: 138,
-                    borderRadius: 15,
-                    border: isSessionDriven ? "1px solid rgba(47,95,184,0.16)" : `1px solid ${borderSoftStrong}`,
-                    background: isSessionDriven ? "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)" : "linear-gradient(180deg, #ffffff 0%, #fbfdff 100%)",
-                    boxShadow: isSessionDriven
-                      ? "0 6px 16px rgba(47,95,184,0.05), inset 0 1px 2px rgba(15,23,42,0.02)"
-                      : "0 2px 8px rgba(15,23,42,0.025), inset 0 1px 2px rgba(15,23,42,0.02)",
+                    height: 220,
+                    borderRadius: 18,
+                    border: isSessionDriven ? "1px solid #CFE0FF" : "1px solid #D6DFEB",
+                    background: "linear-gradient(180deg, #FFFFFF 0%, #F8FBFF 100%)",
+                    boxShadow: "inset 0 1px 2px rgba(15,23,42,0.03)",
                     overflow: "hidden",
                   }}
                 >
@@ -2881,17 +2434,17 @@ const panelDocumentLabel = isSessionDriven
                         alignItems: "center",
                         justifyContent: "center",
                         pointerEvents: "none",
-                        color: "#94a3b8",
-                        fontSize: 14,
-                        fontWeight: 500,
+                        color: "#9AA5B5",
+                        fontSize: 13.5,
+                        fontWeight: 400,
                         zIndex: 1,
-                        fontFamily:
-                          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                        fontFamily: UI_FONT,
                       }}
                     >
                       Le signataire signe ici
                     </div>
                   ) : null}
+
                   <canvas
                     ref={canvasRef}
                     style={{
@@ -2919,15 +2472,14 @@ const panelDocumentLabel = isSessionDriven
                       flex: 1,
                       height: 42,
                       padding: "0 16px",
-                      borderRadius: 14,
-                      border: "1px solid #D7E0EC",
+                      borderRadius: 12,
+                      border: "1px solid #D6DFEB",
                       background: "#FFFFFF",
-                      fontWeight: 700,
+                      fontWeight: 500,
                       fontSize: 14,
-                      boxShadow: "0 2px 6px rgba(31,41,64,0.025)",
                       color: "#2D3A52",
-                      fontFamily:
-                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      boxShadow: "none",
+                      fontFamily: UI_FONT,
                     }}
                   >
                     Effacer
@@ -2949,18 +2501,17 @@ const panelDocumentLabel = isSessionDriven
                       flex: 1,
                       height: 42,
                       padding: "0 16px",
-                      borderRadius: 14,
+                      borderRadius: 12,
                       border: "none",
                       background: "linear-gradient(180deg, #4E7CE8 0%, #3567D6 100%)",
                       color: "white",
                       cursor: "pointer",
-                      fontWeight: 700,
+                      fontWeight: 600,
                       fontSize: 14,
                       letterSpacing: -0.01,
-                      boxShadow: "0 8px 18px rgba(53,103,214,0.24), inset 0 1px 0 rgba(255,255,255,0.16)",
+                      boxShadow: "0 8px 18px rgba(53,103,214,0.22)",
                       opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
-                      fontFamily:
-                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      fontFamily: UI_FONT,
                     }}
                   >
                     {isSessionDriven ? "Confirmer la signature" : "Signer"}
@@ -2971,10 +2522,10 @@ const panelDocumentLabel = isSessionDriven
                   style={{
                     marginTop: 10,
                     fontSize: 12.5,
-                    lineHeight: 1.55,
-                    color: textSoft,
-                    fontFamily:
-                      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                    lineHeight: 1.6,
+                    color: "#6B7688",
+                    fontWeight: 400,
+                    fontFamily: UI_FONT,
                   }}
                 >
                   La signature sera horodatée et enregistrée dans le dossier locatif.
@@ -3008,8 +2559,7 @@ const panelDocumentLabel = isSessionDriven
                       color: "#243041",
                       fontWeight: 500,
                       cursor: "pointer",
-                      fontFamily:
-                        'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                      fontFamily: UI_FONT,
                     }}
                   >
                     Terminer cette session
@@ -3033,10 +2583,9 @@ const panelDocumentLabel = isSessionDriven
                       ? "#2F6B4F"
                       : "#475467",
                   fontSize: 12.5,
-                  fontWeight: 700,
+                  fontWeight: 500,
                   lineHeight: 1.4,
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontFamily: UI_FONT,
                 }}
               >
                 {status.replace("✅ ", "✓ ")}
@@ -3054,32 +2603,17 @@ const panelDocumentLabel = isSessionDriven
                   color: "#b42318",
                   display: "grid",
                   gap: 4,
-                  fontFamily:
-                    'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+                  fontFamily: UI_FONT,
                 }}
               >
-                <div style={{ fontWeight: 700, fontSize: 12 }}>Erreur</div>
-                <div style={{ fontWeight: 700, lineHeight: 1.5 }}>{error}</div>
+                <div style={{ fontWeight: 600, fontSize: 12 }}>Erreur</div>
+                <div style={{ fontWeight: 500, lineHeight: 1.5 }}>{error}</div>
               </div>
             ) : null}
           </div>
+          <HistorySection items={historyItems} />
         </div>
       </div>
-      <DocumentsSection
-        documents={documents}
-        onDownloadDocument={downloadDocumentResource}
-        onDownloadSignedDocument={downloadSignedDocumentResource}
-      />
-      <HistorySection items={historyItems} />
-
-      <div
-        style={{
-          marginTop: 4,
-          marginBottom: 2,
-          paddingTop: 6,
-          borderTop: "1px solid rgba(221,227,236,0.8)",
-        }}
-      />
 
       {pendingModeSwitchTask ? (
         <div
@@ -3105,15 +2639,14 @@ const panelDocumentLabel = isSessionDriven
               padding: 24,
               display: "grid",
               gap: 16,
-              fontFamily:
-                'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+              fontFamily: UI_FONT,
             }}
           >
             <div style={{ display: "grid", gap: 8 }}>
               <div
                 style={{
                   fontSize: 20,
-                  fontWeight: 700,
+                  fontWeight: 500,
                   color: textStrong,
                   letterSpacing: -0.03,
                 }}
@@ -3185,998 +2718,18 @@ const panelDocumentLabel = isSessionDriven
         </div>
       ) : null}
 
-      <style dangerouslySetInnerHTML={{ __html: `html{scroll-behavior:smooth}` }} />
-
-
-      <section
-        style={{
-          marginTop: 28,
-          paddingTop: 20,
-          borderTop: "1px solid #E9EEF5",
-        }}
-      >
-        <div
-          style={{
-            borderRadius: 18,
-            border: "1px solid #D9E2EC",
-            background: "#FFFFFF",
-            boxShadow: "0 8px 24px rgba(15, 23, 42, 0.04)",
-            padding: 16,
-          }}
-        >
-          <CollapsibleSectionHeader
-            title="Gestion documentaire détaillée du dossier"
-            subtitle="Conservez ici les outils de workflow avancé, hors du cockpit principal."
-            open={advancedOpen}
-            onToggle={() => setAdvancedOpen((value) => !value)}
-          />
-
-          {!advancedOpen ? (
-            <div
-              style={{
-                marginTop: 14,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 16,
-                flexWrap: "wrap",
-                paddingTop: 14,
-                borderTop: "1px solid #E9EEF5",
-              }}
-            >
-              <div
-                style={{
-                  fontSize: 13,
-                  color: "#667085",
-                  lineHeight: 1.45,
-                }}
-              >
-                Le cockpit principal reste focalisé sur les signatures. Les outils détaillés
-                de préparation documentaire et de workflow restent disponibles ici si besoin.
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setAdvancedOpen(true)}
-                style={{
-                  appearance: "none",
-                  border: "1px solid #C7D3E0",
-                  background: "#FFFFFF",
-                  color: "#172033",
-                  borderRadius: 10,
-                  padding: "7px 12px",
-                  fontSize: 12,
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                }}
-              >
-                Ouvrir les actions avancées
-              </button>
-            </div>
-          ) : null}
-
-          {advancedOpen ? (
-            <div
-              style={{
-                marginTop: 18,
-                paddingTop: 18,
-                borderTop: "1px solid #E9EEF5",
-              }}
-            >
-              <div style={{ minWidth: 0 }}>
-                {/* LEFT COLUMN START */}
-                <div
-                  style={{
-                    position: "relative",
-                    display: "grid",
-                    gap: 14,
-                    paddingLeft: 22,
-                    opacity: 0.92,
-                  }}
-                >
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      position: "absolute",
-                      left: 11,
-                      top: 14,
-                      bottom: 14,
-                      width: 2,
-                      borderRadius: 999,
-                      background: "#eef2f6",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: "100%",
-                        height:
-                          workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
-                            ? "100%"
-                            : workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "current"
-                              ? "86%"
-                              : workflowStates[0] === "done" && workflowStates[1] === "current"
-                                ? "58%"
-                                : workflowStates[0] === "done"
-                                  ? "38%"
-                                  : workflowStates[0] === "current"
-                                    ? "20%"
-                                    : "0%",
-                        background:
-                          workflowStates[0] === "done" && workflowStates[1] === "done" && workflowStates[2] === "done"
-                            ? "linear-gradient(180deg, #94a3b8 0%, #64748b 100%)"
-                            : "linear-gradient(180deg, #cbd5e1 0%, #94a3b8 100%)",
-                        borderRadius: 999,
-                        transition: "height 240ms ease",
-                      }}
-                    />
-                  </div>
-
-                  <Card
-                    id="contract"
-                    title={
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                        {stepCircle(1, contractStepState)}
-                        <span>Contrat de location</span>
-                      </span>
-                    }
-                    subtitle={undefined}
-                    toneStyle={{ ...workflowCardTone(contractStepState), ...workflowAccentBar(contractStepState) }}
-                    right={
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setGuaranteesMenuOpen(false);
-                          setEdlMenuOpen(false);
-                          setContractMenuOpen((v) => !v);
-                        }}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 10,
-                          border: "1px solid #e5e7eb",
-                          background: "#ffffff",
-                          cursor: "pointer",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#64748b",
-                          fontSize: 16,
-                          lineHeight: 1,
-                          boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-                        }}
-                      >
-                        ⋯
-                      </button>
-                    }
-                  >
-                    {contractMenuOpen ? (
-                      <InlineMenu title="Contrat">
-                        <MenuItem
-                          icon="+"
-                          onClick={() => {
-                            setContractMenuOpen(false);
-                            generateContract();
-                          }}
-                        >
-                          Générer PDF
-                        </MenuItem>
-
-                        <MenuItem
-                          icon="↓"
-                          onClick={() => {
-                            setContractMenuOpen(false);
-                            downloadContractPdf();
-                          }}
-                          disabled={!contractDoc?.id}
-                        >
-                          Télécharger contrat
-                        </MenuItem>
-
-                        <MenuItem
-                          icon="→"
-                          onClick={() => {
-                            setContractMenuOpen(false);
-                            sendPublicLink(false);
-                          }}
-                          disabled={!contractDoc?.id}
-                        >
-                          Envoyer liens locataires
-                        </MenuItem>
-
-                        <MenuItem
-                          icon="↻"
-                          onClick={() => {
-                            setContractMenuOpen(false);
-                            sendPublicLink(true);
-                          }}
-                          disabled={!contractDoc?.id}
-                        >
-                          Renvoyer liens
-                        </MenuItem>
-
-                        {isRP ? (
-                          <MenuItem
-                            icon="+"
-                            onClick={() => {
-                              setContractMenuOpen(false);
-                              generateNotice();
-                            }}
-                          >
-                            Générer notice
-                          </MenuItem>
-                        ) : null}
-
-                        {isRP ? (
-                          <MenuItem
-                            icon="↓"
-                            onClick={() => {
-                              setContractMenuOpen(false);
-                              downloadNoticePdf();
-                            }}
-                            disabled={!noticeDoc?.id}
-                          >
-                            Télécharger notice
-                          </MenuItem>
-                        ) : null}
-                      </InlineMenu>
-                    ) : null}
-
-                    {!sigStatus && loadingSigStatus ? (
-                      <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-                    ) : null}
-
-                    {sigStatusError ? (
-                      <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-                    ) : null}
-
-                    {sigStatus ? (
-                      <>
-                        <SignableCard
-                          title="Contrat de location"
-                          statusChip={contractStatusChip}
-                          subtitle={
-                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 700, color: textStrong }}>Statut :</span>
-                              {contractStatusChip}
-                            </div>
-                          }
-                          actions={[
-                            {
-                              label: "Télécharger",
-                              kind: "secondary",
-                              disabled: !sigStatus.contract.documentId,
-                              onClick: () =>
-                                sigStatus.contract.documentId &&
-                                downloadDoc(sigStatus.contract.documentId, sigStatus.contract.filename || "contrat.pdf"),
-                            },
-                            {
-                              label: "PDF signé",
-                              kind: "secondary",
-                              disabled: !sigStatus.contract.signedFinalDocumentId,
-                              onClick: () =>
-                                sigStatus.contract.signedFinalDocumentId &&
-                                downloadDoc(sigStatus.contract.signedFinalDocumentId, "contrat_SIGNE.pdf"),
-                            },
-                          ]}
-                        />
-
-                        <div style={{ marginTop: 10 }}>
-                          <DetailToggle
-                            open={showContractDetails}
-                            onClick={() => setShowContractDetails((v) => !v)}
-                          />
-                        </div>
-
-                        {showContractDetails ? (
-                          <div
-                            style={{
-                              marginTop: 12,
-                              paddingTop: 12,
-                              borderTop: "1px solid rgba(226,232,240,0.75)",
-                              display: "grid",
-                              gap: 10,
-                            }}
-                          >
-                            {finalSignedDoc?.id ? (
-                              <div style={card(border)}>
-                                <h3 style={{ marginTop: 0 }}>PDF signé final</h3>
-                                <div style={{ color: muted, marginBottom: 10 }}>{finalSignedDoc.filename}</div>
-                                <button
-                                  onClick={() => downloadDoc(finalSignedDoc.id, finalSignedDoc.filename)}
-                                  style={btnPrimarySmall()}
-                                >
-                                  Télécharger PDF signé
-                                </button>
-                              </div>
-                            ) : null}
-
-                            {packFinalV2Doc?.id ? (
-                              <div style={card(border)}>
-                                <h3 style={{ marginTop: 0 }}>PACK_FINAL signé (V2)</h3>
-                                <div style={{ color: muted, marginBottom: 10 }}>{packFinalV2Doc.filename}</div>
-                                <button
-                                  onClick={() => downloadDoc(packFinalV2Doc.id, packFinalV2Doc.filename)}
-                                  style={btnPrimarySmall()}
-                                >
-                                  Télécharger PACK_FINAL signé
-                                </button>
-                              </div>
-                            ) : null}
-
-                            <div style={card(border)}>
-                              <h3 style={{ marginTop: 0, marginBottom: 10 }}>Suivi des signatures locataires</h3>
-
-                              {!sigStatus?.contract?.tenants?.length ? (
-                                <div style={{ fontSize: 13, color: muted }}>Aucun locataire.</div>
-                              ) : (
-                                <div style={{ display: "grid", gap: 10 }}>
-                                  {sigStatus.contract.tenants.map((t) => (
-                                    <div
-                                      key={t.leaseTenantId}
-                                      style={{
-                                        border: `1px solid ${border}`,
-                                        borderRadius: 14,
-                                        padding: 12,
-                                      }}
-                                    >
-                                      <div
-                                        style={{
-                                          display: "flex",
-                                          justifyContent: "space-between",
-                                          gap: 10,
-                                          alignItems: "flex-start",
-                                          flexWrap: "wrap",
-                                        }}
-                                      >
-                                        <div style={{ minWidth: 240 }}>
-                                          <div style={{ fontWeight: 700, color: textStrong, letterSpacing: -0.01 }}>
-                                            {t.fullName} <span style={{ color: muted }}>({t.role || "tenant"})</span>
-                                          </div>
-
-                                          <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                                            Statut:{" "}
-                                            <span style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace" }}>
-                                              {humanDocStatus(t.signatureStatus)}
-                                            </span>
-                                            {t.lastLink?.createdAt ? (
-                                              <span style={{ marginLeft: 8 }}>
-                                                (lien: {new Date(t.lastLink.createdAt).toLocaleString()})
-                                              </span>
-                                            ) : null}
-                                          </div>
-                                        </div>
-
-                                        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-                                          <button
-                                            style={btnSecondary()}
-                                            onClick={() => fetchSignatureStatus(leaseId)}
-                                          >
-                                            Rafraîchir statuts
-                                          </button>
-                                        </div>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </Card>
-
-                  <Card
-                    id="guarantees"
-                    title={
-                      <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                        {stepCircle(2, guaranteesStepState)}
-                        <span>Garanties</span>
-                      </span>
-                    }
-                    subtitle={undefined}
-                    toneStyle={{ ...workflowCardTone(guaranteesStepState), ...workflowAccentBar(guaranteesStepState) }}
-                    right={
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setContractMenuOpen(false);
-                          setEdlMenuOpen(false);
-                          setGuaranteesMenuOpen((v) => !v);
-                        }}
-                        style={{
-                          width: 32,
-                          height: 32,
-                          borderRadius: 10,
-                          border: "1px solid #e5e7eb",
-                          background: "#ffffff",
-                          cursor: "pointer",
-                          display: "inline-flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          color: "#64748b",
-                          fontSize: 16,
-                          lineHeight: 1,
-                          boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-                        }}
-                      >
-                        ⋯
-                      </button>
-                    }
-                  >
-                    {guaranteesMenuOpen ? (
-                      <InlineMenu title="Garanties">
-                        <MenuItem
-                          icon="→"
-                          onClick={() => {
-                            setGuaranteesMenuOpen(false);
-                            openGuarantees();
-                          }}
-                        >
-                          Gérer garanties
-                        </MenuItem>
-                      </InlineMenu>
-                    ) : null}
-
-                    {!sigStatus && loadingSigStatus ? (
-                      <div style={{ marginTop: 8, fontSize: 13, color: muted }}>Chargement…</div>
-                    ) : null}
-
-                    {sigStatusError ? (
-                      <div style={{ marginTop: 8, fontSize: 13, color: "#b91c1c" }}>{sigStatusError}</div>
-                    ) : null}
-
-                    {sigStatus ? (
-                      <SignableCard
-                        title="Garanties"
-                        statusChip={
-                          <Badge tone={guaranteesCount > 0 ? (guaranteesUnsignedCount === 0 ? "success" : "warning") : "neutral"}>
-                            {guaranteesCount > 0 ? `${guaranteesCount} garantie(s)` : "Aucune"}
-                          </Badge>
-                        }
-                        subtitle={undefined}
-                        actions={[
-                          {
-                            label: "Gérer",
-                            kind: "secondary",
-                            onClick: openGuarantees,
-                          },
-                        ]}
-                      />
-                    ) : null}
-
-                    <div style={{ marginTop: 10 }}>
-                      <DetailToggle
-                        open={showGuaranteesDetails}
-                        onClick={() => setShowGuaranteesDetails((v) => !v)}
-                      />
-                    </div>
-
-                    {showGuaranteesDetails ? (
-                      <div
-                        style={{
-                          marginTop: 12,
-                          paddingTop: 12,
-                          borderTop: "1px solid rgba(226,232,240,0.75)",
-                        }}
-                      >
-                        {sigStatus && sigStatus.guarantees.length === 0 ? (
-                          <div style={{ marginTop: 8, fontSize: 13, color: muted }}>
-                            Aucune garantie CAUTION sélectionnée.
-                          </div>
-                        ) : null}
-
-                        {sigStatus && sigStatus.guarantees.length > 0 ? (
-                          <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                            {sigStatus.guarantees.map((g) => {
-                              const statusText =
-                                g.signatureStatus === "SIGNED"
-                                  ? "🟢 Signé"
-                                  : g.signatureStatus === "IN_PROGRESS"
-                                    ? "🟡 En cours"
-                                    : g.signatureStatus === "SENT"
-                                      ? "🟠 Lien envoyé"
-                                      : "🔵 Non envoyé";
-
-                              const linkState = !g.lastLink ? "non envoyé" : g.lastLink.consumedAt ? "consommé" : "actif";
-
-                              const ackTenant = g.tenantId;
-                              const ackRequired = Boolean(g.ack?.required);
-                              const ackInfo = ackRequired ? (g.ack?.tenants || []).find((t) => t.tenantId === ackTenant) : null;
-                              const ackOk = Boolean(ackInfo?.acknowledged);
-
-                              const primaryLabel =
-                                g.signatureStatus === "SIGNED"
-                                  ? "📤 Partager au garant"
-                                  : g.lastLink
-                                    ? "Renvoyer lien signature"
-                                    : "Envoyer lien signature";
-
-                              const actId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId;
-
-                              return (
-                                <SignableCard
-                                  key={g.guaranteeId}
-                                  title={`Acte de caution — ${g.guarantorFullName || "Garant"} → ${g.tenantFullName}`}
-                                  statusChip={
-                                    <span style={chip("#e5e7eb", g.signatureStatus === "SIGNED" ? "#16a34a" : "#b45309")}>
-                                      {statusText}
-                                    </span>
-                                  }
-                                  subtitle={
-                                    <div style={{ display: "grid", gap: 6 }}>
-                                      <div>
-                                        <strong>Lien :</strong> {linkState}
-                                        {g.lastLink?.createdAt ? ` • ${new Date(g.lastLink.createdAt).toLocaleString()}` : ""}
-                                      </div>
-                                      <div>
-                                        <strong>ACK locataire :</strong>{" "}
-                                        {!ackRequired ? "—" : ackOk ? "pris connaissance ✅" : "à confirmer"}
-                                      </div>
-                                    </div>
-                                  }
-                                  actions={[
-                                    {
-                                      label: primaryLabel,
-                                      onClick: () => {
-                                        if (g.signatureStatus === "SIGNED") {
-                                          return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SHARE_SIGNED").catch((e: any) =>
-                                            alert(e.message || String(e))
-                                          );
-                                        }
-                                        return sendGuarantorLinkByGuarantee(g.guaranteeId, false, "SIGN").catch((e: any) =>
-                                          alert(e.message || String(e))
-                                        );
-                                      },
-                                      disabled: g.signatureStatus === "SIGNED" ? !g.signedFinalDocumentId : !actId,
-                                    },
-                                    {
-                                      label: "Générer acte",
-                                      kind: "secondary",
-                                      disabled: Boolean(actId),
-                                      onClick: async () => {
-                                        await generateGuarantorActFor(g.guaranteeId);
-                                        await fetchSignatureStatus(leaseId);
-                                      },
-                                    },
-                                    {
-                                      label: "Télécharger PDF",
-                                      kind: "secondary",
-                                      disabled: !actId,
-                                      onClick: () => actId && downloadDoc(actId, "acte_caution.pdf"),
-                                    },
-                                    {
-                                      label: "ACK : Marquer comme lu",
-                                      kind: "secondary",
-                                      disabled: !ackRequired || ackOk || !g.signedFinalDocumentId,
-                                      onClick: () =>
-                                        g.signedFinalDocumentId &&
-                                        acknowledgeDoc(g.signedFinalDocumentId, ackTenant).catch((e: any) =>
-                                          alert(e.message || String(e))
-                                        ),
-                                    },
-                                  ]}
-                                />
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </Card>
-
-                  {sigStatus && (
-                    <Card
-                      id="edl-inv"
-                      title={
-                        <span style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                          {stepCircle(3, edlStepState)}
-                          <span>EDL & Inventaires</span>
-                        </span>
-                      }
-                      subtitle={undefined}
-                      toneStyle={{ ...workflowCardTone(edlStepState), ...workflowAccentBar(edlStepState) }}
-                      right={
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setContractMenuOpen(false);
-                            setGuaranteesMenuOpen(false);
-                            setEdlMenuOpen((v) => !v);
-                          }}
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 10,
-                            border: "1px solid #e5e7eb",
-                            background: "#ffffff",
-                            cursor: "pointer",
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            color: "#64748b",
-                            fontSize: 16,
-                            lineHeight: 1,
-                            boxShadow: "0 1px 2px rgba(15,23,42,0.04)",
-                          }}
-                        >
-                          ⋯
-                        </button>
-                      }
-                    >
-                      {edlMenuOpen ? (
-                        <InlineMenu title="EDL & Inventaires">
-                          <MenuItem
-                            icon="+"
-                            onClick={() => {
-                              setEdlMenuOpen(false);
-                              generatePack();
-                            }}
-                          >
-                            Générer pack (EDL + Inventaire)
-                          </MenuItem>
-
-                          <MenuItem
-                            icon="↓"
-                            onClick={() => {
-                              setEdlMenuOpen(false);
-                              downloadPackPdf();
-                            }}
-                            disabled={!packDoc?.id}
-                          >
-                            Télécharger pack
-                          </MenuItem>
-
-                          <MenuItem
-                            icon="✓"
-                            onClick={() => {
-                              setEdlMenuOpen(false);
-                              generatePackFinalV2();
-                            }}
-                          >
-                            Générer PACK_FINAL signé (V2)
-                          </MenuItem>
-                        </InlineMenu>
-                      ) : null}
-
-                      <SignableCard
-                        title="EDL & Inventaires"
-                        statusChip={edlInvSummaryChip}
-                        subtitle={undefined}
-                        actions={[
-                          {
-                            label: "Générer PDF",
-                            kind: "secondary",
-                            onClick: generatePack,
-                          },
-                          {
-                            label: "Télécharger",
-                            kind: "secondary",
-                            disabled: !packDoc?.id,
-                            onClick: downloadPackPdf,
-                          },
-                        ]}
-                      />
-
-                      <div style={{ marginTop: 10 }}>
-                        <DetailToggle
-                          open={showEdlInvDetails}
-                          onClick={() => setShowEdlInvDetails((v) => !v)}
-                        />
-                      </div>
-
-                      {showEdlInvDetails ? (
-                        <div
-                          style={{
-                            marginTop: 12,
-                            paddingTop: 12,
-                            borderTop: "1px solid rgba(226,232,240,0.75)",
-                          }}
-                        >
-                          {[packEntry, packExit]
-                            .filter(Boolean)
-                            .map((p: any) => (
-                              <div
-                                key={p.key || p.label}
-                                style={{
-                                  border: `1px solid ${border}`,
-                                  borderRadius: 14,
-                                  padding: 12,
-                                  marginTop: 10,
-                                  background: "rgba(248,250,252,0.9)",
-                                }}
-                              >
-                                <div style={{ fontWeight: 800 }}>
-                                  {p.label} <span style={{ color: muted, fontWeight: 700 }}>— recommandé</span>
-                                </div>
-
-                                <div
-                                  style={{
-                                    fontSize: 13,
-                                    color: muted,
-                                    marginTop: 6,
-                                    display: "flex",
-                                    gap: 8,
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <span style={{ fontWeight: 700 }}>Statut:</span>
-                                  <Badge tone={toneFromStatus(p.status)}>{humanDocStatus(p.status)}</Badge>
-                                </div>
-
-                                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                                  <button
-                                    style={btnAction()}
-                                    disabled={Boolean(p.documentId)}
-                                    onClick={() => {
-                                      const phase = String(p.key || "").includes("exit") ? "exit" : "entry";
-                                      return generatePackEdlInv(phase as "entry" | "exit");
-                                    }}
-                                  >
-                                    Générer PDF
-                                  </button>
-
-                                  <button
-                                    style={btnSecondary()}
-                                    disabled={!p.documentId}
-                                    onClick={() =>
-                                      p.documentId && downloadDoc(p.documentId, p.filename || `${p.key || "pack_edl_inv"}.pdf`)
-                                    }
-                                  >
-                                    Télécharger PDF
-                                  </button>
-
-                                  <button
-                                    style={btnSecondary()}
-                                    disabled={!p.signedFinalDocumentId}
-                                    onClick={() =>
-                                      p.signedFinalDocumentId &&
-                                      downloadDoc(p.signedFinalDocumentId, `${p.key || "pack_edl_inv"}_SIGNE.pdf`)
-                                    }
-                                  >
-                                    Télécharger signé
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-
-                          {[
-                            sigStatus.edl?.entry,
-                            sigStatus.edl?.exit,
-                            sigStatus.inventory?.entry,
-                            sigStatus.inventory?.exit,
-                          ]
-                            .filter(Boolean)
-                            .map((d: any) => (
-                              <div key={d.key} style={{ border: `1px solid ${border}`, borderRadius: 14, padding: 12, marginTop: 10 }}>
-                                <div style={{ fontWeight: 700, color: textStrong, letterSpacing: -0.01 }}>{d.label}</div>
-
-                                <div
-                                  style={{
-                                    fontSize: 13,
-                                    color: muted,
-                                    marginTop: 6,
-                                    display: "flex",
-                                    gap: 8,
-                                    alignItems: "center",
-                                  }}
-                                >
-                                  <span style={{ fontWeight: 700 }}>Statut:</span>
-                                  <Badge tone={toneFromStatus(d.status)}>{humanDocStatus(d.status)}</Badge>
-                                </div>
-
-                                <div style={{ fontSize: 13, color: muted, marginTop: 6 }}>
-                                  Bailleur: {d.need?.landlord?.signed ? "✅ signé" : "❌ manquant"} •
-                                  Locataires:{" "}
-                                  {(d.need?.tenants || []).filter((t: any) => !t.signed).length === 0
-                                    ? "✅ tous signés"
-                                    : "❌ manquants"}
-                                </div>
-
-                                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 10 }}>
-                                  <button
-                                    style={btnAction()}
-                                    disabled={Boolean(d.documentId)}
-                                    onClick={() => {
-                                      const k = String(d.key || "");
-                                      if (k === "edl:entry" || k === "edl_entry") return generateEdl("entry");
-                                      if (k === "edl:exit" || k === "edl_exit") return generateEdl("exit");
-                                      if (k === "inv:entry" || k === "inv_entry") return generateInventory("entry");
-                                      if (k === "inv:exit" || k === "inv_exit") return generateInventory("exit");
-                                    }}
-                                  >
-                                    Générer PDF
-                                  </button>
-
-                                  <button
-                                    style={btnSecondary()}
-                                    disabled={!d.documentId}
-                                    onClick={() => d.documentId && downloadDoc(d.documentId, d.filename || `${d.key}.pdf`)}
-                                  >
-                                    Télécharger PDF
-                                  </button>
-
-                                  <button
-                                    style={btnSecondary()}
-                                    disabled={!d.signedFinalDocumentId}
-                                    onClick={() => d.signedFinalDocumentId && downloadDoc(d.signedFinalDocumentId, `${d.key}_SIGNE.pdf`)}
-                                  >
-                                    Télécharger signé
-                                  </button>
-                                </div>
-                              </div>
-                            ))}
-                        </div>
-                      ) : null}
-                    </Card>
-                  )}
-                </div>
-                {/* LEFT COLUMN END */}
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </section>
-
       <style
         dangerouslySetInnerHTML={{
           __html: `
-            .workflow-card{
-              position: relative;
-            }
-
-            .workflow-card::before{
-              content: "";
-              position: absolute;
-              left: -18px;
-              top: 30px;
-              width: 14px;
-              height: 2px;
-              background: #dbe4ee;
-              border-radius: 999px;
-            }
-
-            .workflow-card:hover{
-              transform: translateY(-2px);
-              box-shadow: 0 16px 34px rgba(31,41,64,0.06), 0 4px 10px rgba(31,41,64,0.024);
-            }
-
-            #edl-inv:hover{
-              transform: translateY(-2px) !important;
-              box-shadow: 0 16px 34px rgba(31,41,64,0.06), 0 4px 10px rgba(31,41,64,0.024) !important;
-            }
+            html{scroll-behavior:smooth}
 
             @media (max-width: 1100px){
               .sign-grid { grid-template-columns: 1fr !important; }
               .sign-sticky { position: static !important; top:auto !important; }
-              .workflow-card::before{ display:none; }
             }
           `,
         }}
       />
     </div>
   );
-}
-
-function workflowAccentBar(state: "done" | "current" | "todo"): React.CSSProperties {
-  if (state === "done") {
-    return {
-      borderLeft: "4px solid #E3F0E7",
-    };
-  }
-
-  if (state === "current") {
-    return {
-      borderLeft: "4px solid #F4E5CB",
-    };
-  }
-
-  return {
-    borderLeft: "4px solid #EDF2F7",
-  };
-}
-
-function card(border: string) {
-  return {
-    border: `1px solid ${border}`,
-    borderRadius: 18,
-    background: "linear-gradient(180deg, #FFFFFF 0%, #FBFCFE 100%)",
-    padding: 14,
-    minWidth: 0,
-    boxShadow: "0 8px 20px rgba(31,41,64,0.035)",
-  } as const;
-}
-
-function btnPrimarySmall() {
-  return {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: "none",
-    background: "linear-gradient(180deg, #5A86E8 0%, #3E6FD8 100%)",
-    color: "#fff",
-    fontWeight: 700,
-    cursor: "pointer",
-    textAlign: "center" as const,
-    boxShadow: "0 10px 22px rgba(62,111,216,0.22), inset 0 1px 0 rgba(255,255,255,0.12)",
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  } as const;
-}
-
-function btnSecondary() {
-  return {
-    padding: "10px 14px",
-    borderRadius: 14,
-    border: `1px solid ${borderSoftStrong}`,
-    background: "linear-gradient(180deg, #FFFFFF 0%, #FAFBFD 100%)",
-    cursor: "pointer",
-    fontWeight: 700,
-    color: "#243041",
-    boxShadow: "0 4px 12px rgba(31,41,64,0.035)",
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  } as const;
-}
-
-function btnAction() {
-  return {
-    padding: "10px 12px",
-    borderRadius: 14,
-    border: `1px solid ${borderSoftStrong}`,
-    background: "linear-gradient(180deg, #FFFFFF 0%, #FAFBFD 100%)",
-    cursor: "pointer",
-    fontWeight: 700,
-    minWidth: 160,
-    textAlign: "center" as const,
-    color: "#243041",
-    boxShadow: "0 4px 12px rgba(31,41,64,0.035)",
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  } as const;
-}
-
-
-function statusPillStyle(tone: "success" | "warning" | "neutral") {
-  if (tone === "success") {
-    return {
-      background: "#EAF6EE",
-      color: "#3D8B63",
-      border: "none",
-      boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
-    } as const;
-  }
-
-  if (tone === "warning") {
-    return {
-      background: "#FBF2E6",
-      color: "#B7791F",
-      border: "none",
-      boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
-    } as const;
-  }
-
-  return {
-    background: "#F3F6FA",
-    color: "#66758F",
-    border: "none",
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
-  } as const;
-}
-
-function chip(border: string, color: string, background = "#FFFFFF") {
-  return {
-    minHeight: 32,
-    padding: "0 12px",
-    borderRadius: 999,
-    border: "none",
-    background,
-    color,
-    fontWeight: 700,
-    fontSize: 12.5,
-    display: "inline-flex",
-    alignItems: "center",
-    boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
-  } as const;
 }
