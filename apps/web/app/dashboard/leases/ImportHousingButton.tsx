@@ -20,11 +20,13 @@ export default function ImportHousingButton({
   token,
   border,
   blue,
+  compact = false,
 }: {
   leaseId: string;
   token: string;
   border: string;
   blue: string;
+  compact?: boolean;
 }) {
   const [status, setStatus] = useState<string>("");
   const [error, setError] = useState<string>("");
@@ -85,8 +87,24 @@ export default function ImportHousingButton({
       ? "Non connecté"
       : "";
 
+  if (compact) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        {!isAuthed || hasData ? (
+          <button style={compactGhost(border)} title={disabledTitle}>
+            Import
+          </button>
+        ) : (
+          <Link href={`/import/${leaseId}`}>
+            <button style={compactGhost(border)}>Import</button>
+          </Link>
+        )}
+      </div>
+    );
+  }
+
   return (
-    <div style={{ display: "grid", gap: 6 }}>
+    <div style={{ display: "grid", gap: 8, minWidth: 0 }}>
       <div
         style={{
           display: "flex",
@@ -120,7 +138,7 @@ export default function ImportHousingButton({
         <div
           style={{
             fontSize: 12,
-            color: error ? "crimson" : "#6b7280",
+            color: error ? "#C2413A" : "#7C8AA5",
             whiteSpace: "pre-wrap",
           }}
         >
@@ -129,7 +147,7 @@ export default function ImportHousingButton({
       )}
 
       {isAuthed && hasData && (
-        <div style={{ fontSize: 12, color: "#6b7280" }}>
+        <div style={{ fontSize: 12.5, color: "#667085", lineHeight: 1.55, padding: "10px 12px", borderRadius: 12, border: `1px solid ${border}`, background: "#FAFBFC" }}>
           Déjà présent :
           {edlSessions[0]?.id && (
             <>
@@ -157,11 +175,12 @@ function btnPrimarySmall(blue: string) {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: `1px solid rgba(31,111,235,0.35)`,
-    background: "rgba(31,111,235,0.10)",
-    color: "#0b2a6f",
+    border: `1px solid rgba(47,99,224,0.18)`,
+    background: "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
+    color: "#fff",
     fontWeight: 900,
     cursor: "pointer",
+    boxShadow: "0 2px 6px rgba(47,99,224,0.18)",
   } as const;
 }
 function btnSecondary(border: string) {
@@ -172,6 +191,8 @@ function btnSecondary(border: string) {
     background: "#fff",
     cursor: "pointer",
     fontWeight: 800,
+    color: "#243247",
+    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
   } as const;
 }
 function btnDisabled(border: string) {
@@ -179,9 +200,24 @@ function btnDisabled(border: string) {
     padding: "10px 14px",
     borderRadius: 12,
     border: `1px solid ${border}`,
-    background: "rgba(0,0,0,0.03)",
+    background: "rgba(27,39,64,0.04)",
     cursor: "not-allowed",
     fontWeight: 900,
-    color: "#6b7280",
+    color: "#7C8AA5",
+  } as const;
+}
+
+
+function compactGhost(border: string) {
+  return {
+    padding: "8px 12px",
+    borderRadius: 999,
+    border: `1px solid ${border}`,
+    background: "#fff",
+    cursor: "pointer",
+    fontWeight: 800,
+    color: "#243247",
+    boxShadow: "none",
+    minHeight: 34,
   } as const;
 }

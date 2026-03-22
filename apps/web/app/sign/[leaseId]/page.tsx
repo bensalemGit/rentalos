@@ -14,9 +14,9 @@ import { HistorySection, type HistoryItem } from "./_components/HistorySection";
 import { SIGN_UI, PremiumButton } from "./_components/signature-ui";
 
 
-const brandBlue = "#4D7DE0";
-const brandBlueHover = "#4474D7";
-const brandBlueBorder = "#3567C8";
+const brandBlue = "#2F63E0";
+const brandBlueHover = "#2A5BD7";
+const brandBlueBorder = "#2A5BD7";
 
 const textStrong = "#1D273B";
 const textSoft = "#667085";
@@ -52,8 +52,8 @@ const ui = {
   card: {
     background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
     border: `1px solid ${borderSoft}`,
-    borderRadius: 22,
-    boxShadow: "0 4px 14px rgba(31,41,64,0.03), 0 1px 3px rgba(31,41,64,0.012)",
+    borderRadius: 24,
+    boxShadow: "0 8px 22px rgba(16,24,40,0.04), 0 2px 6px rgba(16,24,40,0.02)",
     transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
   } as React.CSSProperties,
   hTitle: {
@@ -88,7 +88,7 @@ const heroHeaderButtonStyle: React.CSSProperties = {
   display: "inline-flex",
   alignItems: "center",
   gap: 8,
-  boxShadow: SIGN_UI.shadows.soft,
+  boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
   fontFamily: UI_FONT,
 };
 
@@ -106,8 +106,8 @@ function Badge({
       border: "none",
     },
     warning: {
-      background: "#FBF2E6",
-      color: "#B7791F",
+      background: "#F6F1E8",
+      color: "#A06A2C",
       border: "none",
     },
     danger: {
@@ -121,7 +121,7 @@ function Badge({
       border: "none",
     },
     primary: {
-      background: "#EEF4FF",
+      background: "#F2F6FF",
       color: "#4D6FD6",
       border: "none",
     },
@@ -171,17 +171,17 @@ const Btn = React.forwardRef<
   const styles: any = {
     primary: {
       ...base,
-      background: `linear-gradient(180deg, ${brandBlue} 0%, ${brandBlueBorder} 100%)`,
-      border: `1px solid ${brandBlueBorder}`,
+      background: "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
+      border: `1px solid #2F63E0`,
       color: "white",
-      boxShadow: "0 10px 22px rgba(61,115,229,0.22), inset 0 1px 0 rgba(255,255,255,0.14)",
+      boxShadow: "0 2px 4px rgba(47,99,224,0.12), inset 0 1px 0 rgba(255,255,255,0.14)",
     },
     secondary: {
       ...base,
-      background: "#ffffff",
+      background: "#FAFBFC",
       color: "#243041",
-      border: `1px solid ${borderSoftStrong}`,
-      boxShadow: "0 1px 2px rgba(15,23,42,0.03)",
+      border: `1px solid rgba(27,39,64,0.08)`,
+      boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
     },
     ghost: {
       ...base,
@@ -325,18 +325,39 @@ type HistoryDocument = {
 };
 
 
+function compactHistoryName(name: string) {
+  const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
+  if (parts.length <= 2) return parts.join(" ");
+  return parts.slice(0, 2).join(" ");
+}
+
+function compactHistoryDocumentLabel(label?: string) {
+  const value = String(label || "").trim();
+  if (!value) return "Document";
+
+  if (/contrat/i.test(value)) return "Contrat";
+  if (/acte/i.test(value)) return "Acte";
+  if (/pack final/i.test(value)) return "Pack final";
+  if (/pack/i.test(value)) return "Pack";
+  if (/notice/i.test(value)) return "Notice";
+  return value;
+}
+
 function buildHistoryItems(tasks: SignerTask[], docs: HistoryDocument[]): HistoryItem[] {
   const items: Array<HistoryItem & { sortKey: number }> = [];
 
   tasks.forEach((task) => {
+    const actor = compactHistoryName(task.displayName);
+    const docLabel = compactHistoryDocumentLabel(task.documentLabel);
+
     if (task.hasActiveLink && task.activeLinkCreatedAt) {
       const time = new Date(task.activeLinkCreatedAt).getTime();
 
       items.push({
         id: `link:${task.id}`,
         dateLabel: new Date(task.activeLinkCreatedAt).toLocaleDateString(),
-        title: `Lien envoyé à ${task.displayName}`,
-        subtitle: `${task.documentLabel} • ${task.roleLabel}`,
+        title: `Lien envoyé à ${actor}`,
+        subtitle: docLabel,
         sortKey: Number.isNaN(time) ? 0 : time,
       });
     }
@@ -345,8 +366,8 @@ function buildHistoryItems(tasks: SignerTask[], docs: HistoryDocument[]): Histor
       items.push({
         id: `signed:${task.id}`,
         dateLabel: "Récent",
-        title: `${task.displayName} a signé`,
-        subtitle: `${task.documentLabel} • ${task.roleLabel}`,
+        title: `${actor} a signé`,
+        subtitle: docLabel,
         sortKey: 8_000_000_000_000,
       });
     }
@@ -357,21 +378,22 @@ function buildHistoryItems(tasks: SignerTask[], docs: HistoryDocument[]): Histor
         dateLabel: "À faire",
         title:
           task.kind === "GUARANTOR"
-            ? `Acte à préparer pour ${task.displayName}`
-            : `Contrat à préparer pour ${task.displayName}`,
-        subtitle: task.preparationLabel || undefined,
+            ? `Acte à préparer · ${actor}`
+            : `Contrat à préparer · ${actor}`,
+        subtitle: undefined,
         sortKey: 9_000_000_000_000,
       });
     }
   });
 
   docs.forEach((doc) => {
+    const docLabel = compactHistoryDocumentLabel(doc.label);
     if (doc.signedFinalDocumentId) {
       items.push({
         id: `doc:${doc.id}`,
         dateLabel: "Disponible",
-        title: `${doc.label} signé disponible`,
-        subtitle: doc.filename || undefined,
+        title: `${docLabel} signé`,
+        subtitle: undefined,
         sortKey: 7_000_000_000_000,
       });
     }
@@ -1781,8 +1803,8 @@ const flatFieldStyle: React.CSSProperties = {
   height: 42,
   padding: "0 14px",
   borderRadius: 12,
-  border: "1px solid #D6DFEB",
-  background: "#FFFFFF",
+  border: "1px solid rgba(27,39,64,0.08)",
+  background: "#FAFBFC",
   fontWeight: 400,
   fontSize: 14,
   color: "#1F2A3C",
@@ -1796,13 +1818,15 @@ const flatFieldStyle: React.CSSProperties = {
   return (
     <div
       style={{
-        padding: 22,
+        padding: isWideScreen ? 32 : 20,
         maxWidth: 1280,
+        width: "100%",
         margin: "0 auto",
         display: "grid",
-        gap: 18,
+        gap: 24,
         background: `linear-gradient(180deg, ${SIGN_UI.colors.pageBgTop} 0%, ${SIGN_UI.colors.pageBgBottom} 100%)`,
         borderRadius: 28,
+        boxSizing: "border-box",
       }}
     >
       <div
@@ -1839,18 +1863,48 @@ const flatFieldStyle: React.CSSProperties = {
           >
             <div
               style={{
-                fontSize: 24,
-                lineHeight: 1.12,
-                letterSpacing: "-0.04em",
-                fontWeight: 800,
-                color: SIGN_UI.colors.textStrong,
-                wordBreak: "break-word",
+                display: "flex",
+                alignItems: "baseline",
+                gap: 8,
+                flexWrap: "wrap",
+                minWidth: 0,
                 fontFamily: UI_FONT,
               }}
             >
-              <span>{overview.leaseLabel}</span>
-              <span style={{ color: "#B7C0CF", fontWeight: 500 }}> — </span>
-              <span style={{ color: SIGN_UI.colors.textSoft, fontWeight: 600 }}>
+              <span
+                style={{
+                  fontSize: 24,
+                  lineHeight: 1.12,
+                  letterSpacing: "-0.04em",
+                  fontWeight: 800,
+                  color: SIGN_UI.colors.textStrong,
+                  wordBreak: "break-word",
+                }}
+              >
+                {overview.leaseLabel}
+              </span>
+
+              <span
+                style={{
+                  color: "#BCC6D6",
+                  fontWeight: 500,
+                  fontSize: 22,
+                  lineHeight: 1,
+                }}
+              >
+                —
+              </span>
+
+              <span
+                style={{
+                  color: "#5F7090",
+                  fontWeight: 500,
+                  fontSize: 16,
+                  lineHeight: 1.35,
+                  letterSpacing: "-0.01em",
+                  wordBreak: "break-word",
+                }}
+              >
                 {overview.primaryTenantName}
               </span>
             </div>
@@ -1874,7 +1928,7 @@ const flatFieldStyle: React.CSSProperties = {
             display: "inline-flex",
             alignItems: "center",
             gap: 8,
-            boxShadow: "0 2px 6px rgba(31,41,64,0.04)",
+            boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
             fontFamily: SIGN_UI.font,
             flexShrink: 0,
           }}
@@ -1886,15 +1940,16 @@ const flatFieldStyle: React.CSSProperties = {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: isWideScreen ? "minmax(0, 1fr) 372px" : "1fr",
-          gap: 20,
+          gridTemplateColumns: isWideScreen ? "minmax(0,1fr) 380px" : "1fr",
+          gap: 24,
           alignItems: "start",
         }}
       >
         <div
           style={{
-            display: "grid",
-            gap: 16,
+            display: "flex",
+            flexDirection: "column",
+            gap: 24,
             minWidth: 0,
           }}
         >
@@ -1934,7 +1989,7 @@ const flatFieldStyle: React.CSSProperties = {
             position: isWideScreen ? "sticky" : "static",
             top: isWideScreen ? 12 : "auto",
             display: "grid",
-            gap: 18,
+            gap: 20,
             alignSelf: "start",
             minWidth: 0,
             marginTop: 0,
@@ -1944,9 +1999,9 @@ const flatFieldStyle: React.CSSProperties = {
     style={{
       background: SIGN_UI.colors.cardBg,
       border: `1px solid ${SIGN_UI.colors.cardBorder}`,
-      borderRadius: 22,
-      padding: 18,
-      boxShadow: SIGN_UI.shadows.card,
+      borderRadius: 24,
+      padding: 24,
+      boxShadow: "0 8px 22px rgba(16,24,40,0.04), 0 2px 6px rgba(16,24,40,0.02)",
       fontFamily: UI_FONT,
       WebkitFontSmoothing: "antialiased",
       MozOsxFontSmoothing: "grayscale",
@@ -1985,11 +2040,11 @@ const flatFieldStyle: React.CSSProperties = {
                 style={{
                   marginTop: 10,
                   marginBottom: 16,
-                  padding: 16,
-                  borderRadius: 18,
-                  border: "1px solid #DCE4F0",
-                  background: "linear-gradient(180deg, #FCFDFF 0%, #F5F7FB 100%)",
-                  boxShadow: "0 8px 18px rgba(31,41,64,0.035), inset 0 1px 0 rgba(255,255,255,0.82)",
+                  padding: 20,
+                  borderRadius: 20,
+                  border: "1px solid rgba(27,39,64,0.06)",
+                  background: "#FCFDFE",
+                  boxShadow: "none",
                   display: "grid",
                   gap: 14,
                   fontFamily: UI_FONT,
@@ -2021,9 +2076,9 @@ const flatFieldStyle: React.CSSProperties = {
                       width: 60,
                       height: 60,
                       borderRadius: 14,
-                      background: "linear-gradient(180deg,#DDF5F4 0%,#C7ECE9 100%)",
-                      border: "1px solid rgba(155,206,202,0.95)",
-                      boxShadow: "0 6px 16px rgba(31,41,64,0.08)",
+                      background: "linear-gradient(180deg,#E8F6F4 0%,#DDF1EE 100%)",
+                      border: "1px solid rgba(155,206,202,0.52)",
+                      boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
                       position: "relative",
                       display: "flex",
                       alignItems: "center",
@@ -2037,9 +2092,9 @@ const flatFieldStyle: React.CSSProperties = {
                         height: 36,
                         borderRadius: 7,
                         background: "#FFFDF9",
-                        border: "1.5px solid #98C7C3",
+                        border: "1.5px solid #A9CEC9",
                         position: "relative",
-                        boxShadow: "0 2px 6px rgba(31,41,64,0.08)",
+                        boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
                       }}
                     >
                       <div
@@ -2050,7 +2105,7 @@ const flatFieldStyle: React.CSSProperties = {
                           width: 17,
                           height: 2.5,
                           borderRadius: 999,
-                          background: "#7FA8C8",
+                          background: "#88A6C2",
                         }}
                       />
                       <div
@@ -2061,7 +2116,7 @@ const flatFieldStyle: React.CSSProperties = {
                           width: 13,
                           height: 2.5,
                           borderRadius: 999,
-                          background: "#7FA8C8",
+                          background: "#88A6C2",
                         }}
                       />
                       <div
@@ -2072,7 +2127,7 @@ const flatFieldStyle: React.CSSProperties = {
                           width: 10,
                           height: 2.5,
                           borderRadius: 999,
-                          background: "#7FA8C8",
+                          background: "#88A6C2",
                         }}
                       />
                     </div>
@@ -2117,10 +2172,10 @@ const flatFieldStyle: React.CSSProperties = {
                     border: "1px solid #D6DFEB",
                     background: "#FFFFFF",
                     color: "#2A3345",
-                    fontWeight: 500,
+                    fontWeight: 600,
                     fontSize: 14,
                     cursor: "pointer",
-                    boxShadow: "0 3px 8px rgba(31,41,64,0.04)",
+                    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
                     fontFamily: UI_FONT,
                   }}
                 >
@@ -2136,8 +2191,8 @@ const flatFieldStyle: React.CSSProperties = {
                   marginBottom: 16,
                   padding: "12px 14px",
                   borderRadius: 14,
-                  border: "1px solid #D9E6FB",
-                  background: "#F5F9FF",
+                  border: "1px solid rgba(47,99,224,0.12)",
+                  background: "#F2F6FF",
                   display: "grid",
                   gap: 4,
                   fontFamily: UI_FONT,
@@ -2401,8 +2456,8 @@ const flatFieldStyle: React.CSSProperties = {
                     style={{
                       padding: "10px 12px",
                       borderRadius: 12,
-                      background: "#F8FAFC",
-                      border: "1px solid #E5EBF3",
+                      background: "#FAFBFC",
+                      border: "1px solid rgba(27,39,64,0.08)",
                       fontWeight: 500,
                       fontSize: 14,
                       color: "#243041",
@@ -2418,10 +2473,10 @@ const flatFieldStyle: React.CSSProperties = {
                     position: "relative",
                     width: "100%",
                     height: 220,
-                    borderRadius: 18,
-                    border: isSessionDriven ? "1px solid #CFE0FF" : "1px solid #D6DFEB",
-                    background: "linear-gradient(180deg, #FFFFFF 0%, #F8FBFF 100%)",
-                    boxShadow: "inset 0 1px 2px rgba(15,23,42,0.03)",
+                    borderRadius: 20,
+                    border: "1px dashed rgba(27,39,64,0.12)",
+                    background: "linear-gradient(180deg, rgba(47,99,224,0.015) 0%, rgba(27,39,64,0.02) 100%)",
+                    boxShadow: "none",
                     overflow: "hidden",
                   }}
                 >
@@ -2473,9 +2528,9 @@ const flatFieldStyle: React.CSSProperties = {
                       height: 42,
                       padding: "0 16px",
                       borderRadius: 12,
-                      border: "1px solid #D6DFEB",
-                      background: "#FFFFFF",
-                      fontWeight: 500,
+                      border: "1px solid rgba(27,39,64,0.08)",
+                      background: "#FAFBFC",
+                      fontWeight: 600,
                       fontSize: 14,
                       color: "#2D3A52",
                       boxShadow: "none",
@@ -2503,13 +2558,13 @@ const flatFieldStyle: React.CSSProperties = {
                       padding: "0 16px",
                       borderRadius: 12,
                       border: "none",
-                      background: "linear-gradient(180deg, #4E7CE8 0%, #3567D6 100%)",
+                      background: "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
                       color: "white",
                       cursor: "pointer",
                       fontWeight: 600,
                       fontSize: 14,
                       letterSpacing: -0.01,
-                      boxShadow: "0 8px 18px rgba(53,103,214,0.22)",
+                      boxShadow: "0 2px 4px rgba(47,99,224,0.12), inset 0 1px 0 rgba(255,255,255,0.14)",
                       opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
                       fontFamily: UI_FONT,
                     }}
@@ -2557,7 +2612,7 @@ const flatFieldStyle: React.CSSProperties = {
                       border: `1px solid ${borderSoftStrong}`,
                       background: "#fff",
                       color: "#243041",
-                      fontWeight: 500,
+                      fontWeight: 600,
                       cursor: "pointer",
                       fontFamily: UI_FONT,
                     }}
@@ -2633,9 +2688,9 @@ const flatFieldStyle: React.CSSProperties = {
               width: "100%",
               maxWidth: 520,
               background: "#ffffff",
-              borderRadius: 22,
+              borderRadius: 24,
               border: "1px solid #dde3ec",
-              boxShadow: "0 20px 48px rgba(31,41,64,0.14), 0 6px 18px rgba(31,41,64,0.07)",
+              boxShadow: "0 18px 42px rgba(16,24,40,0.12), 0 4px 14px rgba(16,24,40,0.05)",
               padding: 24,
               display: "grid",
               gap: 16,

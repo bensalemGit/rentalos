@@ -47,10 +47,11 @@ export function HistorySection({ items }: HistorySectionProps) {
               style={{
                 display: "flex",
                 alignItems: "center",
-                gap: 8,
+                gap: 6,
                 minWidth: 0,
-                padding: "10px 0",
-                borderTop: index === 0 ? "none" : `1px solid ${SIGN_UI.colors.lineSoft}`,
+                padding: "7px 0",
+                borderTop: index === 0 ? "none" : "1px solid rgba(27,39,64,0.04)",
+                whiteSpace: "nowrap",
               }}
             >
               <ActivityDot />
@@ -58,11 +59,11 @@ export function HistorySection({ items }: HistorySectionProps) {
               <span
                 style={{
                   fontSize: 12,
-                  fontWeight: 400,
+                  fontWeight: 500,
                   color: "#8E9AAF",
                   whiteSpace: "nowrap",
-                  flexShrink: 0,
                   letterSpacing: "-0.01em",
+                  flexShrink: 0,
                 }}
               >
                 {item.dateLabel}
@@ -70,14 +71,22 @@ export function HistorySection({ items }: HistorySectionProps) {
 
               <span
                 style={{
-                  fontSize: 13.5,
-                  fontWeight: 500,
-                  color: SIGN_UI.colors.textStrong,
-                  minWidth: 0,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
+                  fontSize: 11,
+                  color: "#D6DCE6",
+                  flexShrink: 0,
+                  transform: "translateY(-0.5px)",
+                }}
+              >
+                ·
+              </span>
+
+              <span
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  color: "#22324D",
                   letterSpacing: "-0.01em",
+                  flexShrink: 0,
                 }}
                 title={item.title}
               >
@@ -88,22 +97,21 @@ export function HistorySection({ items }: HistorySectionProps) {
                 <>
                   <span
                     style={{
-                      color: "#C2CAD8",
+                      fontSize: 11,
+                      color: "#DCE2EB",
                       flexShrink: 0,
+                      transform: "translateY(-0.5px)",
                     }}
                   >
-                    •
+                    ·
                   </span>
-
                   <span
                     style={{
                       fontSize: 12.5,
                       fontWeight: 400,
-                      color: SIGN_UI.colors.textSoft,
-                      minWidth: 0,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
+                      color: "#B2BCCB",
+                      letterSpacing: "-0.01em",
+                      flexShrink: 0,
                     }}
                     title={item.subtitle}
                   >

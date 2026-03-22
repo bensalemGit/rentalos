@@ -94,7 +94,7 @@ function getStatusMeta(task: SignerTask) {
     return {
       label: "Signé",
       color: "#2FA35B",
-      background: "rgba(65, 196, 105, 0.16)",
+      background: "#E9F7EE",
       iconColor: "#35B764",
       icon: CheckCircle2,
     };
@@ -104,7 +104,7 @@ function getStatusMeta(task: SignerTask) {
     return {
       label: "Lien envoyé",
       color: "#C97E14",
-      background: "rgba(233, 151, 37, 0.16)",
+      background: "#F9F1E6",
       iconColor: "#DD8E1D",
       icon: Link2,
     };
@@ -114,7 +114,7 @@ function getStatusMeta(task: SignerTask) {
     return {
       label: "En cours",
       color: "#C97E14",
-      background: "rgba(233, 151, 37, 0.16)",
+      background: "#F9F1E6",
       iconColor: "#DD8E1D",
       icon: Clock3,
     };
@@ -123,9 +123,9 @@ function getStatusMeta(task: SignerTask) {
   if (task.status === "READY") {
     return {
       label: "Prêt à signer",
-      color: "#61718C",
-      background: "rgba(116, 129, 154, 0.085)",
-      iconColor: "#9FAABD",
+      color: "#A06A2C",
+      background: "#F6F1E8",
+      iconColor: "#A06A2C",
       icon: Sparkles,
     };
   }
@@ -134,7 +134,7 @@ function getStatusMeta(task: SignerTask) {
     return {
       label: "À préparer",
       color: "#C97E14",
-      background: "rgba(233, 151, 37, 0.16)",
+      background: "#F9F1E6",
       iconColor: "#DD8E1D",
       icon: FilePenLine,
     };
@@ -143,7 +143,7 @@ function getStatusMeta(task: SignerTask) {
   return {
     label: task.statusLabel || "En attente",
     color: "#61718C",
-    background: "rgba(116, 129, 154, 0.085)",
+    background: "#F3F6FA",
     iconColor: "#9FAABD",
     icon: Clock3,
   };
@@ -365,8 +365,8 @@ function StatusChip({
         fontSize: 12.5,
         fontWeight: 700,
         letterSpacing: "-0.01em",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.74)",
-        border: "1px solid rgba(255,255,255,0.54)",
+        border: "1px solid rgba(27,39,64,0.03)",
+        boxShadow: "none",
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
@@ -380,18 +380,15 @@ function StatusChip({
 function getCardSurface(isActive: boolean): React.CSSProperties {
   const base: React.CSSProperties = {
     borderRadius: 28,
-    border: "1px solid rgba(26,39,66,0.06)",
-    background: "linear-gradient(180deg,#FFFFFF 0%,#FCFDFF 100%)",
-    boxShadow:
-      "0 8px 18px rgba(25,35,60,0.025), 0 2px 6px rgba(25,35,60,0.014)",
-    transition: "transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease",
+    border: "1px solid rgba(27,39,64,0.06)",
+    background: "#FFFFFF",
+    boxShadow: "none",
+    transition: "box-shadow 160ms ease, border-color 160ms ease",
   };
 
   if (isActive) {
-    base.border = "1px solid rgba(92,129,228,0.16)";
-    base.boxShadow =
-      "0 12px 24px rgba(25,35,60,0.04), 0 4px 12px rgba(92,129,228,0.05)";
-    base.transform = "translateY(-1px)";
+    base.border = "1px solid rgba(47,99,224,0.10)";
+    base.boxShadow = "none";
   }
 
   return base;
@@ -433,6 +430,7 @@ function PrimaryActionButton(props: {
   onClick: () => void;
 }) {
   const Icon = props.icon;
+  const isOnSiteAction = props.label === "Signer sur place";
 
   return (
     <button
@@ -440,12 +438,12 @@ function PrimaryActionButton(props: {
       onClick={props.onClick}
       style={{
         appearance: "none",
-        border: "none",
+        border: "1px solid rgba(47,99,224,0.14)",
         minHeight: 40,
         padding: "0 16px",
         borderRadius: 15,
-        background: "linear-gradient(180deg, #6A90EB 0%, #557ADD 100%)",
-        color: "#FFFFFF",
+        background: "#EEF4FF",
+        color: "#2F63E0",
         display: "inline-flex",
         alignItems: "center",
         justifyContent: "center",
@@ -454,7 +452,7 @@ function PrimaryActionButton(props: {
         fontSize: 13.5,
         letterSpacing: "-0.01em",
         cursor: "pointer",
-        boxShadow: "0 8px 16px rgba(85,122,221,0.11), inset 0 1px 0 rgba(255,255,255,0.14)",
+        boxShadow: "none",
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
@@ -478,11 +476,11 @@ function SecondaryActionButton(props: {
       onClick={props.onClick}
       style={{
         appearance: "none",
-        border: "1px solid rgba(26,39,66,0.065)",
+        border: "1px solid rgba(27,39,64,0.08)",
         minHeight: 40,
         padding: "0 16px",
         borderRadius: 15,
-        background: "rgba(255,255,255,0.84)",
+        background: "#FFFFFF",
         color: "#243041",
         display: "inline-flex",
         alignItems: "center",
@@ -492,7 +490,7 @@ function SecondaryActionButton(props: {
         fontSize: 13.5,
         letterSpacing: "-0.01em",
         cursor: "pointer",
-        boxShadow: "0 2px 6px rgba(31,41,64,0.016)",
+        boxShadow: "none",
         fontFamily:
           'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
       }}
@@ -574,7 +572,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                   letterSpacing: "-0.03em",
                   lineHeight: 1.28,
                   fontWeight: 800,
-                  color: COLORS.textStrong,
+                  color: "#1F2A3C",
                   wordBreak: "break-word",
                 }}
               >
@@ -771,7 +769,18 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                       }}
                     >
                       <span style={{ color: "#A8B2C3", fontSize: 15, lineHeight: 1 }}>•</span>
-                      <span>{item.label}</span>
+                      <span
+                        style={{
+                          minWidth: 0,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                          display: "block",
+                        }}
+                        title={item.label}
+                      >
+                        {item.label}
+                      </span>
                     </div>
                   ))
                 )}

@@ -27,10 +27,10 @@ function DocumentActionLink({
         padding: 0,
         margin: 0,
         fontFamily: SIGN_UI.font,
-        fontSize: 13,
+        fontSize: 12.75,
         lineHeight: 1.2,
         fontWeight: 500,
-        color: SIGN_UI.colors.blue,
+        color: "rgba(47,99,224,0.78)",
         cursor: "pointer",
         display: "inline-flex",
         alignItems: "center",
@@ -39,14 +39,14 @@ function DocumentActionLink({
         letterSpacing: "-0.01em",
       }}
       onMouseEnter={(e) => {
-        e.currentTarget.style.color = SIGN_UI.colors.blueHover;
+        e.currentTarget.style.color = "rgba(47,99,224,0.92)";
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.color = SIGN_UI.colors.blue;
+        e.currentTarget.style.color = "rgba(47,99,224,0.78)";
       }}
     >
       {children}
-      <ChevronRight size={13} strokeWidth={2.05} />
+      <ChevronRight size={12} strokeWidth={1.95} />
     </button>
   );
 }
@@ -95,9 +95,9 @@ export function DocumentsSection({
                 style={{
                   display: "grid",
                   gridTemplateColumns: "minmax(0,1fr) auto",
-                  gap: 14,
+                  gap: 12,
                   alignItems: "center",
-                  padding: "12px 0",
+                  padding: "13px 0",
                   borderTop: index === 0 ? "none" : `1px solid ${SIGN_UI.colors.lineSoft}`,
                 }}
               >
@@ -106,14 +106,14 @@ export function DocumentsSection({
                     minWidth: 0,
                     display: "flex",
                     alignItems: "center",
-                    gap: 9,
+                    gap: 12,
                   }}
                 >
                   <FileText
                     size={14}
-                    strokeWidth={1.95}
-                    color="#7C92C9"
-                    style={{ flexShrink: 0, opacity: 0.92 }}
+                    strokeWidth={1.9}
+                    color="#8EA3D4"
+                    style={{ flexShrink: 0, opacity: 0.82 }}
                   />
 
                   <div
@@ -121,15 +121,16 @@ export function DocumentsSection({
                       minWidth: 0,
                       display: "flex",
                       alignItems: "center",
-                      gap: 8,
+                      gap: 12,
+                      minHeight: 28,
                       flexWrap: "wrap",
                     }}
                   >
                     <span
                       style={{
                         fontSize: 14,
-                        fontWeight: 400,
-                        color: SIGN_UI.colors.textStrong,
+                        fontWeight: 500,
+                        color: "#22324D",
                         lineHeight: 1.3,
                         minWidth: 0,
                         wordBreak: "break-word",
@@ -151,7 +152,7 @@ export function DocumentsSection({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 14,
+                    gap: 12,
                     flexWrap: "wrap",
                     justifyContent: "flex-end",
                   }}

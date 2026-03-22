@@ -19,14 +19,14 @@ function getProgressTone(progressPercent: number, remainingCount: number) {
   if (remainingCount === 0) {
     return {
       track: "#E7F5EF",
-      fill: "linear-gradient(90deg, #1BA672 0%, #16946A 100%)",
+      fill: "#2FA36B",
     };
   }
 
   if (progressPercent >= 50) {
     return {
-      track: "#F5EEDF",
-      fill: "linear-gradient(90deg, #D8A34A 0%, #C98B32 100%)",
+      track: "#F4ECDD",
+      fill: "linear-gradient(90deg, #D39A3A 0%, #C6892B 100%)",
     };
   }
 
@@ -55,11 +55,11 @@ export function SignatureHero({
     <section
       style={{
         borderRadius: SIGN_UI.radius.xl,
-        border: `1px solid ${SIGN_UI.colors.borderSoft}`,
+        border: "1px solid rgba(27,39,64,0.06)",
         background:
           "linear-gradient(180deg, rgba(255,255,255,0.985) 0%, rgba(251,252,254,1) 100%)",
-        boxShadow: SIGN_UI.shadows.card,
-        padding: 22,
+        boxShadow: "0 2px 6px rgba(16,24,40,0.04), 0 10px 24px rgba(16,24,40,0.022)",
+        padding: 24,
         fontFamily: SIGN_UI.font,
         position: "relative",
         overflow: "hidden",
@@ -81,7 +81,7 @@ export function SignatureHero({
           position: "relative",
           zIndex: 1,
           display: "grid",
-          gap: 16,
+          gap: 18,
         }}
       >
     
@@ -119,7 +119,7 @@ export function SignatureHero({
 
         <div
           style={{
-            height: 7,
+            height: 6,
             background: progressTone.track,
             borderRadius: 999,
             overflow: "hidden",
@@ -134,7 +134,7 @@ export function SignatureHero({
               borderRadius: 999,
               background: progressTone.fill,
               transition: "width 220ms ease",
-              boxShadow: "0 2px 8px rgba(16,24,40,0.08)",
+              boxShadow: "0 1px 4px rgba(16,24,40,0.06)",
             }}
           />
         </div>
@@ -181,7 +181,7 @@ export function SignatureHero({
         <div
           style={{
             borderTop: `1px solid ${SIGN_UI.colors.line}`,
-            paddingTop: 18,
+            paddingTop: 20,
             display: "grid",
             gap: 10,
           }}
