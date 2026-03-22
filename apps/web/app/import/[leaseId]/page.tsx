@@ -56,11 +56,11 @@ export default function ImportHousingPage({ params }: { params: { leaseId: strin
   const [error, setError] = useState("");
   const [result, setResult] = useState<ImportResult | null>(null);
 
-  const border = "#e5e7eb";
-  const muted = "#6b7280";
-  const blue = "#1f6feb";
-  const green = "#16a34a";
-  const amber = "#f59e0b";
+  const border = "rgba(27,39,64,0.08)";
+  const muted = "#667085";
+  const blue = "#2F63E0";
+  const green = "#2FA36B";
+  const amber = "#C58A2B";
 
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
@@ -136,10 +136,10 @@ export default function ImportHousingPage({ params }: { params: { leaseId: strin
   }, [result, typology]);
 
   return (
-    <main style={{ maxWidth: 980, margin: "0 auto", padding: 12 }}>
+    <main style={{ maxWidth: 1120, margin: "0 auto", padding: "28px 24px 48px", minHeight: "100vh", background: "#F6F8FC", fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
         <div>
-          <h1 style={{ margin: 0 }}>Importer modèle logement</h1>
+          <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.05, letterSpacing: "-0.03em", color: "#1F2A3C" }}>Importer modèle logement</h1>
           <div style={{ color: muted, marginTop: 6 }}>
             Bail <b>{leaseId.slice(0, 8)}…</b> • Génère <b>EDL</b> + <b>Inventaire</b> depuis templates DB (base + variantes)
           </div>
@@ -167,16 +167,16 @@ export default function ImportHousingPage({ params }: { params: { leaseId: strin
         </div>
       )}
 
-      <section style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 12 }}>
+      <section style={{ marginTop: 18, border: `1px solid ${border}`, borderRadius: 24, background: "#fff", padding: 24, boxShadow: "0 1px 2px rgba(16,24,40,0.04)" }}>
         <div style={{ fontWeight: 900, marginBottom: 10 }}>Paramètres import</div>
 
         {/* Preview clair demandé */}
         <div
           style={{
             border: `1px solid ${border}`,
-            borderRadius: 12,
-            padding: 10,
-            background: "#fafafa",
+            borderRadius: 16,
+            padding: 14,
+            background: "#FAFBFC",
             fontWeight: 800,
             color: "#111827",
             marginBottom: 12,
@@ -185,7 +185,7 @@ export default function ImportHousingPage({ params }: { params: { leaseId: strin
           {templatePreview}
         </div>
 
-        <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+        <div style={{ display: "grid", gap: 14, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
           <label style={labelStyle(muted)}>
             Typologie
             <select value={typology} onChange={(e) => setTypology(e.target.value)} style={inputStyle(border)}>
@@ -243,10 +243,11 @@ export default function ImportHousingPage({ params }: { params: { leaseId: strin
                   key={v}
                   onClick={() => toggleVariant(v)}
                   style={{
-                    padding: "8px 10px",
+                    padding: "10px 12px",
                     borderRadius: 999,
-                    border: `1px solid ${on ? "rgba(31,111,235,0.5)" : border}`,
-                    background: on ? "rgba(31,111,235,0.10)" : "#fff",
+                    border: `1px solid ${on ? "rgba(47,99,224,0.16)" : border}`,
+                    background: on ? "#EEF4FF" : "#fff",
+                    color: on ? "#2F63E0" : "#243247",
                     fontWeight: 800,
                     cursor: "pointer",
                   }}
@@ -276,7 +277,7 @@ export default function ImportHousingPage({ params }: { params: { leaseId: strin
       </section>
 
       {result && (
-        <section style={{ marginTop: 12, border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 12 }}>
+        <section style={{ marginTop: 18, border: `1px solid ${border}`, borderRadius: 24, background: "#fff", padding: 24, boxShadow: "0 1px 2px rgba(16,24,40,0.04)" }}>
           <div style={{ fontWeight: 900, marginBottom: 10 }}>Résultat</div>
 
           {"ok" in result && result.ok ? (
@@ -346,11 +347,12 @@ function btnPrimary(blue: string, disabled: boolean) {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: `1px solid rgba(31,111,235,0.35)`,
-    background: disabled ? "rgba(0,0,0,0.03)" : "rgba(31,111,235,0.12)",
-    color: disabled ? "#6b7280" : "#0b2a6f",
+    border: `1px solid rgba(47,99,224,0.18)`,
+    background: disabled ? "rgba(27,39,64,0.04)" : "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
+    color: disabled ? "#98A2B3" : "#fff",
     fontWeight: 900,
     cursor: disabled ? "not-allowed" : "pointer",
+    boxShadow: disabled ? "none" : "0 2px 6px rgba(47,99,224,0.18)",
   } as const;
 }
 function btnSecondary(border: string) {
@@ -361,5 +363,7 @@ function btnSecondary(border: string) {
     background: "#fff",
     cursor: "pointer",
     fontWeight: 800,
+    color: "#243247",
+    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
   } as const;
 }

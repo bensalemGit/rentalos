@@ -139,11 +139,11 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   // undo delete
   const undoTimers = useRef<Record<string, any>>({});
 
-  const blue = "#1f6feb";
-  const border = "#e5e7eb";
-  const muted = "#6b7280";
-  const green = "#16a34a";
-  const bg = "#f7f8fb";
+  const blue = "#2F63E0";
+  const border = "rgba(27,39,64,0.08)";
+  const muted = "#7C8AA5";
+  const green = "#2FA36B";
+  const bg = "#F5F7FB";
 
   // diff modal
   const [diffOpen, setDiffOpen] = useState(false);
@@ -970,11 +970,11 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     "260px";
 
   return (
-    <main style={{ maxWidth: 1400, margin: "0 auto", padding: 12, background: bg, minHeight: "100vh" }}>
+    <main style={{ maxWidth: 1440, margin: "0 auto", padding: "24px 28px 40px", background: bg, minHeight: "100vh", fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif" }}>
       {/* Toasts */}
-      <div style={{ position: "fixed", right: 12, bottom: 12, zIndex: 9999, display: "grid", gap: 8, width: 360, maxWidth: "calc(100vw - 24px)" }}>
+      <div style={{ position: "fixed", right: 20, bottom: 20, zIndex: 9999, display: "grid", gap: 8, width: 360, maxWidth: "calc(100vw - 40px)" }}>
         {toasts.map((t) => (
-          <div key={t.id} style={{ border: `1px solid ${border}`, borderRadius: 14, background: "#fff", padding: 12, boxShadow: "0 10px 30px rgba(16,24,40,0.10)" }}>
+          <div key={t.id} style={{ border: `1px solid ${border}`, borderRadius: 14, background: "#fff", padding: 12, boxShadow: "0 14px 34px rgba(16,24,40,0.10)" }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
               <span style={toastPill(t.kind)}>{t.kind.toUpperCase()}</span>
               <div style={{ fontWeight: 900 }}>{t.message}</div>
@@ -1180,160 +1180,74 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
       )}
 
       <div style={card(border, "#fff")}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
-          <div>
-            <h1 style={{ margin: 0, fontSize: 22, letterSpacing: -0.2 }}>EDL</h1>
-            <div style={{ color: muted, fontSize: 12 }}>Bail {leaseId.slice(0, 8)}… • sessions/items/photos</div>
-          </div>
-
-          <div style={chipGroup(border)}>
-            <span style={chipLabel(muted)}>Vue</span>
-            <button onClick={() => setViewMode("COMPARE")} style={chip(border, viewMode === "COMPARE")}>
-              Comparatif
-            </button>
-            <button onClick={() => setViewMode("ENTRY")} style={chip(border, viewMode === "ENTRY")}>
-              Entrée
-            </button>
-            <button onClick={() => setViewMode("EXIT")} style={chip(border, viewMode === "EXIT")}>
-              Sortie
-            </button>
-          </div>
-
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", justifyContent: "flex-end" }}>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Rechercher une désignation…"
-              style={{ ...inputStyle(border), width: 280, background: "#fbfbfd" }}
-            />
-
-            <select
-              value={sessionId}
-              onChange={(e) => {
-                const v = e.target.value;
-                userPickedSessionRef.current = true;
-                sessionIdRef.current = v;
-                setSessionId(v);
-              }}
-              style={{ ...inputStyle(border), width: 280, background: "#fbfbfd" }}
-              title="Session"
-            >
-              {sessions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {fmtDate(s.created_at)} • {s.status} • {s.id.slice(0, 4)}…
-                </option>
-              ))}
-              {!sessions.length && <option value="">Aucune session</option>}
-            </select>
-
-            <button onClick={() => openAddModal()} disabled={!sessionId} style={{ ...btnPrimary(blue), opacity: sessionId ? 1 : 0.5 }}>
-              + Ajouter item
-            </button>
-
-            <div style={chipGroup(border)}>
-              <span style={chipLabel(muted)}>Créer</span>
-              <button onClick={() => setCreateStatus("entry")} style={chip(border, createStatus === "entry")}>Entrée</button>
-              <button onClick={() => setCreateStatus("exit")} style={chip(border, createStatus === "exit")}>Sortie</button>
-              <button
-                onClick={createEmptySession}
-                disabled={creatingSession}
-                style={{ ...btnPrimary(blue), opacity: creatingSession ? 0.6 : 1 }}
-              >
-                {creatingSession ? "Création…" : "Nouvelle session"}
-              </button>
+        <div style={{ display: "grid", gap: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <div>
+              <h1 style={{ margin: 0, fontSize: 30, lineHeight: 1.05, letterSpacing: "-0.03em", color: "#1F2A3C" }}>EDL</h1>
+              <div style={{ color: muted, fontSize: 14, lineHeight: 1.6 }}>Bail {leaseId.slice(0, 8)}… · sessions, pièces et écarts d'état</div>
             </div>
 
-            <button onClick={() => loadSessions()} style={btnSecondary(border)}>Rafraîchir</button>
-
-            {viewMode !== "EXIT" && (
-              <button
-                onClick={copyEntryToExit}
-                disabled={!sessionId || copying}
-                style={{ ...btnPrimary(blue), opacity: !sessionId || copying ? 0.5 : 1 }}
-              >
-                {copying ? "Copie…" : "Copier entrée → sortie"}
-              </button>
-            )}
-
-            <button
-              onClick={saveAsUnitReferenceEdl}
-              disabled={!sessionId || savingReference}
-              style={{ ...btnSecondary(border), opacity: !sessionId || savingReference ? 0.6 : 1, fontWeight: 900 }}
-            >
-              {savingReference ? "Enregistrement…" : "Définir référence logement"}
-            </button>
-
-            <button
-              onClick={applyUnitReferenceToLeaseEdl}
-              disabled={applyingReference || !hasReference}
-              style={{
-                ...btnSecondary(border),
-                opacity: applyingReference || !hasReference ? 0.6 : 1,
-                fontWeight: 900,
-              }}
-              title={!hasReference ? "Aucune référence logement définie" : ""}
-            >
-              {applyingReference ? "Application…" : "Réinitialiser depuis référence"}
-            </button>
-
-            <button
-              onClick={openDiffModal}
-              disabled={!sessionId}
-              style={{ ...btnSecondary(border), opacity: sessionId ? 1 : 0.6, fontWeight: 900 }}
-              title="Voir les différences Entrée ↔ Sortie pour cette paire de sessions"
-            >
-              Différences
-            </button>
-
-            <button onClick={toggleFullscreen} style={btnSecondary(border)}>
-              {isFullscreen ? "Quitter plein écran" : "Plein écran"}
-            </button>
-
-            <Link href="/dashboard/leases">
-              <button style={btnSecondary(border)}>Retour baux</button>
-            </Link>
-          </div>
-        </div>
-
-        {lastReferenceInfo?.referenceEdlSessionId && (
-          <div style={{ marginTop: 10, color: muted, fontSize: 12 }}>
-            Référence EDL logement :{" "}
-            <b style={{ color: "#111" }}>{String(lastReferenceInfo.referenceEdlSessionId).slice(0, 8)}…</b>
-            {lastReferenceInfo.unitId ? (
-              <>
-                {" "}
-                • Unit <b style={{ color: "#111" }}>{String(lastReferenceInfo.unitId).slice(0, 8)}…</b>
-              </>
-            ) : null}
-          </div>
-        )}
-
-        <div style={{ marginTop: 6, color: muted, fontSize: 12 }}>
-          Référence (état) :{" "}
-          {hasReference ? (
-            <b style={{ color: "#111" }}>
-              OK ({String(referenceInfo?.referenceEdlSessionId || "").slice(0, 8)}…)
-            </b>
-          ) : (
-            <b style={{ color: "crimson" }}>Aucune</b>
-          )}
-        </div>
-
-        {sessions.length === 0 && hasReference && (
-          <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-            <div style={{ color: muted, fontSize: 12, fontWeight: 900 }}>
-              Ce bail n'a aucune session EDL.
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+              <div style={chipGroup(border)}>
+                <span style={chipLabel(muted)}>Vue</span>
+                <button onClick={() => setViewMode("COMPARE")} style={chip(border, viewMode === "COMPARE")}>Comparatif</button>
+                <button onClick={() => setViewMode("ENTRY")} style={chip(border, viewMode === "ENTRY")}>Entrée</button>
+                <button onClick={() => setViewMode("EXIT")} style={chip(border, viewMode === "EXIT")}>Sortie</button>
+              </div>
+              <Link href="/dashboard/leases"><button style={btnSecondary(border)}>Retour baux</button></Link>
             </div>
-            <button
-              onClick={bootstrapEntryFromReferenceEdl}
-              disabled={applyingReference}
-              style={{ ...btnPrimary(blue), opacity: applyingReference ? 0.6 : 1 }}
-              title="Crée automatiquement une session entrée clonée depuis la référence logement"
-            >
-              {applyingReference ? "Création…" : "Créer entrée depuis référence logement"}
-            </button>
           </div>
-        )}  
+
+          <div style={{ display: "grid", gap: 12, gridTemplateColumns: "minmax(0, 1fr) minmax(320px, 0.9fr)" }}>
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ border: `1px solid ${border}`, borderRadius: 18, background: "#FAFBFC", padding: 14 }}>
+                <div style={{ color: "#8D99AE", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 900, marginBottom: 10 }}>Navigation</div>
+                <div style={{ display: "grid", gap: 10, gridTemplateColumns: "minmax(0, 1fr) 280px auto" }}>
+                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Rechercher une désignation…" style={{ ...inputStyle(border), background: "#fff" }} />
+                  <select value={sessionId} onChange={(e) => { const v = e.target.value; userPickedSessionRef.current = true; sessionIdRef.current = v; setSessionId(v); }} style={{ ...inputStyle(border), background: "#fff" }} title="Session">
+                    {sessions.map((s) => (<option key={s.id} value={s.id}>{fmtDate(s.created_at)} · {s.status} · {s.id.slice(0, 4)}…</option>))}
+                    {!sessions.length && <option value="">Aucune session</option>}
+                  </select>
+                  <button onClick={() => openAddModal()} disabled={!sessionId} style={{ ...btnPrimary(blue), opacity: sessionId ? 1 : 0.5 }}>Ajouter item</button>
+                </div>
+              </div>
+
+              <div style={{ border: `1px solid ${border}`, borderRadius: 18, background: "#FAFBFC", padding: 14 }}>
+                <div style={{ color: "#8D99AE", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 900, marginBottom: 10 }}>Sessions</div>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                  <button onClick={() => setCreateStatus("entry")} style={chip(border, createStatus === "entry")}>Entrée</button>
+                  <button onClick={() => setCreateStatus("exit")} style={chip(border, createStatus === "exit")}>Sortie</button>
+                  <button onClick={createEmptySession} disabled={creatingSession} style={{ ...btnPrimary(blue), opacity: creatingSession ? 0.6 : 1 }}>{creatingSession ? "Création…" : "Nouvelle session"}</button>
+                  {viewMode !== "EXIT" && <button onClick={copyEntryToExit} disabled={!sessionId || copying} style={{ ...btnSecondary(border), opacity: !sessionId || copying ? 0.5 : 1 }}>{copying ? "Copie…" : "Copier entrée → sortie"}</button>}
+                  <button onClick={() => loadSessions()} style={btnSecondary(border)}>Rafraîchir</button>
+                  <button onClick={toggleFullscreen} style={btnSecondary(border)}>{isFullscreen ? "Quitter plein écran" : "Plein écran"}</button>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <div style={{ border: `1px solid ${border}`, borderRadius: 18, background: "#FAFBFC", padding: 14 }}>
+                <div style={{ color: "#8D99AE", fontSize: 12, textTransform: "uppercase", letterSpacing: "0.08em", fontWeight: 900, marginBottom: 10 }}>Référence logement</div>
+                <div style={{ color: muted, fontSize: 13, lineHeight: 1.6 }}>
+                  {hasReference ? <>Référence active · <b style={{ color: "#1F2A3C" }}>{String(referenceInfo?.referenceEdlSessionId || "").slice(0, 8)}…</b></> : <>Aucune référence définie</>}
+                </div>
+                {lastReferenceInfo?.referenceEdlSessionId && (
+                  <div style={{ marginTop: 8, color: muted, fontSize: 12 }}>Dernière référence logement · <b style={{ color: "#1F2A3C" }}>{String(lastReferenceInfo.referenceEdlSessionId).slice(0, 8)}…</b></div>
+                )}
+                <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button onClick={saveAsUnitReferenceEdl} disabled={!sessionId || savingReference} style={{ ...btnSecondary(border), opacity: !sessionId || savingReference ? 0.6 : 1 }}>{savingReference ? "Enregistrement…" : "Définir référence"}</button>
+                  <button onClick={applyUnitReferenceToLeaseEdl} disabled={applyingReference || !hasReference} style={{ ...btnSecondary(border), opacity: applyingReference || !hasReference ? 0.6 : 1 }} title={!hasReference ? "Aucune référence logement définie" : ""}>{applyingReference ? "Application…" : "Réinitialiser"}</button>
+                  <button onClick={openDiffModal} disabled={!sessionId} style={{ ...btnSecondary(border), opacity: sessionId ? 1 : 0.6 }}>Différences</button>
+                </div>
+                {sessions.length === 0 && hasReference && (
+                  <div style={{ marginTop: 12 }}>
+                    <button onClick={bootstrapEntryFromReferenceEdl} disabled={applyingReference} style={{ ...btnPrimary(blue), opacity: applyingReference ? 0.6 : 1 }}>{applyingReference ? "Création…" : "Créer entrée depuis référence"}</button>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
 
         {status && <div style={{ marginTop: 10, color: green, fontWeight: 800 }}>{status}</div>}
         {error && <div style={{ marginTop: 10, color: "crimson", fontWeight: 800 }}>{error}</div>}
@@ -1386,8 +1300,8 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
               {!isCol && (
                 <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
                   {arr.map((it) => (
-                    <div key={it.id} style={{ border: `1px solid ${border}`, borderRadius: 14, background: "#fff" }}>
-                      <div style={{ padding: 10 }}>
+                    <div key={it.id} style={{ border: `1px solid ${border}`, borderRadius: 18, background: "#fff", boxShadow: "0 1px 2px rgba(16,24,40,0.04)" }}>
+                      <div style={{ padding: 14 }}>
                         <div style={{ display: "grid", gridTemplateColumns: gridTemplate, gap: 10, alignItems: "center" }}>
                           <div style={{ minWidth: 0 }}>
                             <div style={{ fontWeight: 950, lineHeight: 1.1 }}>{it.label}</div>
@@ -1585,10 +1499,10 @@ function diffPill(kind: "added" | "removed" | "changed" | string) {
 function card(border: string, bg: string) {
   return {
     border: `1px solid ${border}`,
-    borderRadius: 18,
+    borderRadius: 24,
     background: bg,
-    padding: 14,
-    boxShadow: "0 8px 24px rgba(16,24,40,0.06)",
+    padding: 18,
+    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
   } as const;
 }
 function labelStyle(muted: string) {
@@ -1603,18 +1517,21 @@ function inputStyle(border: string) {
     minWidth: 0,
     boxSizing: "border-box" as const,
     outline: "none",
+    background: "#FAFBFC",
+    color: "#243247",
+    boxShadow: "none",
   };
 }
 function btnPrimary(_blue: string) {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    border: `1px solid rgba(31,111,235,0.25)`,
-    background: "rgba(31,111,235,0.10)",
-    color: "#0b2a6f",
+    border: `1px solid rgba(47,99,224,0.18)`,
+    background: "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
+    color: "#fff",
     fontWeight: 950,
     cursor: "pointer",
-    boxShadow: "0 1px 0 rgba(16,24,40,0.04)",
+    boxShadow: "0 2px 6px rgba(47,99,224,0.18)",
   } as const;
 }
 function btnSecondary(border: string) {
@@ -1625,7 +1542,8 @@ function btnSecondary(border: string) {
     background: "#fff",
     cursor: "pointer",
     fontWeight: 900,
-    boxShadow: "0 1px 0 rgba(16,24,40,0.04)",
+    color: "#243247",
+    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
   } as const;
 }
 function btnGhost(border: string) {
@@ -1637,6 +1555,7 @@ function btnGhost(border: string) {
     cursor: "pointer",
     fontWeight: 900,
     fontSize: 12,
+    color: "#243247",
   } as const;
 }
 function chipGroup(border: string) {
@@ -1647,7 +1566,7 @@ function chipGroup(border: string) {
     border: `1px solid ${border}`,
     borderRadius: 14,
     padding: 6,
-    background: "#fff",
+    background: "rgba(27,39,64,0.02)",
   } as const;
 }
 function chipLabel(muted: string) {
@@ -1657,11 +1576,12 @@ function chip(border: string, active: boolean) {
   return {
     padding: "8px 10px",
     borderRadius: 12,
-    border: `1px solid ${border}`,
+    border: `1px solid ${active ? "rgba(47,99,224,0.16)" : border}` ,
     cursor: "pointer",
     fontSize: 12,
     fontWeight: active ? 950 : 900,
-    background: active ? "rgba(31,111,235,0.10)" : "#fff",
+    background: active ? "#EEF4FF" : "#fff",
+    color: active ? "#2F63E0" : "#243247",
   } as const;
 }
 function collapseBtn(border: string) {
@@ -1669,19 +1589,20 @@ function collapseBtn(border: string) {
     width: 34,
     height: 34,
     borderRadius: 12,
-    border: `1px solid ${border}`,
+    border: `1px solid ${border}` ,
     display: "grid",
     placeItems: "center",
-    background: "#fff",
+    background: "#FAFBFC",
     fontWeight: 950,
+    color: "#243247",
   } as const;
 }
 function cell(border: string) {
   return {
-    border: `1px solid ${border}`,
+    border: `1px solid ${border}` ,
     borderRadius: 14,
-    padding: 6,
-    background: "#fbfbfd",
+    padding: 8,
+    background: "#F8FAFC",
   } as const;
 }
 function selectInline(border: string) {

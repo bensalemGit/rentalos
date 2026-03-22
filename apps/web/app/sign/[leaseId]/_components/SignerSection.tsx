@@ -48,7 +48,7 @@ export function SignerSection({
     <section
       style={{
         display: "grid",
-        gap: 20,
+        gap: 24,
         alignItems: "start",
         alignContent: "start",
         fontFamily:
@@ -73,10 +73,10 @@ export function SignerSection({
           style={{
             display: "grid",
             gridTemplateColumns: enableAutoScroll ? "repeat(2, minmax(0, 1fr))" : "1fr",
-            gap: 18,
+            gap: 24,
             alignItems: "stretch",
             alignContent: "start",
-            gridAutoRows: enableAutoScroll ? "1fr" : "auto",
+            gridAutoRows: "auto",
           }}
         >
           {tasks.map((task) => (

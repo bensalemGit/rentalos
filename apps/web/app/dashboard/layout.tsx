@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
+import { Building2, FolderOpen, Home, LayoutDashboard, LogOut, Users } from "lucide-react";
 
 function hasToken() {
   if (typeof window === "undefined") return false;
@@ -10,12 +11,12 @@ function hasToken() {
 }
 
 const NAV = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/dashboard/projects", label: "Projets" },
-  { href: "/dashboard/buildings", label: "Immeubles" },
-  { href: "/dashboard/units", label: "Logements" },
-  { href: "/dashboard/tenants", label: "Locataires" },
-  { href: "/dashboard/leases", label: "Baux" },
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/dashboard/projects", label: "Projets", icon: FolderOpen },
+  { href: "/dashboard/buildings", label: "Immeubles", icon: Building2 },
+  { href: "/dashboard/units", label: "Logements", icon: Home },
+  { href: "/dashboard/tenants", label: "Locataires", icon: Users },
+  { href: "/dashboard/leases", label: "Baux", icon: FolderOpen },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -68,83 +69,106 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
 
   return (
-    <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "280px 1fr" }}>
-      {/* Sidebar */}
+    <div style={{ minHeight: "100vh", display: "grid", gridTemplateColumns: "280px 1fr", background: "#F6F8FC" }}>
       <aside
         style={{
-          background: "var(--card)",
-          borderRight: "1px solid var(--border)",
-          padding: 16,
+          background: "#fff",
+          borderRight: "1px solid rgba(27,39,64,0.08)",
+          padding: 20,
           position: "sticky",
           top: 0,
           height: "100vh",
           overflow: "auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 18,
         }}
       >
-        {/* Brand */}
-        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 16 }}>
-          <div style={{ fontWeight: 900, fontSize: 18, letterSpacing: 0.2 }}>
-            Rental<span style={{ color: "var(--primary)" }}>OS</span>
-          </div>
-          <div style={{ fontSize: 12, color: "var(--muted)" }}>Admin • PROD</div>
-        </div>
-
-        <div style={{ fontSize: 12, color: "var(--muted)", fontWeight: 800, marginBottom: 10 }}>
-          Navigation
-        </div>
-
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center" }}>
+            <RentalosLogo />
+          </div>
+          <div style={{ fontSize: 12, color: "#7C8AA5", paddingLeft: 4 }}>Admin · PROD</div>
+        </div>
+
+        <div style={{ fontSize: 12, color: "#7C8AA5", fontWeight: 800, marginTop: 6 }}>Navigation</div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {NAV.map((n) => {
             const active = n.href === activeHref;
+            const Icon = n.icon;
             return (
               <Link
                 key={n.href}
                 href={n.href}
                 style={{
-                  padding: "10px 12px",
-                  borderRadius: 12,
-                  border: "1px solid var(--border)",
-                  background: active ? "rgba(37,99,235,0.10)" : "white",
-                  color: active ? "var(--primary)" : "var(--text)",
-                  fontWeight: 800,
-                  boxShadow: "var(--shadow)",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "12px 14px",
+                  borderRadius: 14,
+                  border: "1px solid transparent",
+                  background: active ? "#EEF4FF" : "transparent",
+                  color: active ? "#1E4FD6" : "#1F2A3C",
+                  fontWeight: active ? 900 : 700,
+                  boxShadow: "none",
                 }}
               >
-                {n.label}
+                <Icon size={18} strokeWidth={2.1} />
+                <span>{n.label}</span>
               </Link>
             );
           })}
         </div>
 
-        <div style={{ height: 14 }} />
+        <div style={{ marginTop: "auto", display: "grid", gap: 12 }}>
+          <button
+            onClick={() => {
+              localStorage.removeItem("token");
+              window.location.href = "/";
+            }}
+            style={{
+              width: "100%",
+              padding: "12px 14px",
+              borderRadius: 14,
+              border: "1px solid rgba(27,39,64,0.10)",
+              background: "#fff",
+              cursor: "pointer",
+              fontWeight: 800,
+              color: "#1F2A3C",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+              boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
+            }}
+          >
+            <LogOut size={18} strokeWidth={2.1} />
+            Déconnexion
+          </button>
 
-        <button
-          onClick={() => {
-            localStorage.removeItem("token");
-            window.location.href = "/";
-          }}
-          style={{
-            width: "100%",
-            padding: "10px 12px",
-            borderRadius: 12,
-            border: "1px solid var(--border)",
-            background: "white",
-            cursor: "pointer",
-            fontWeight: 800,
-          }}
-        >
-          Déconnexion
-        </button>
-
-        <div style={{ marginTop: 14, fontSize: 12, color: "var(--muted)" }}>
-          France — location meublée
+          <div style={{ fontSize: 12, color: "#7C8AA5", paddingLeft: 4 }}>France — location meublée</div>
         </div>
       </aside>
 
-      {/* Content */}
       <main style={{ padding: 24 }}>
-        <div style={{ maxWidth: 1200, margin: "0 auto" }}>{children}</div>
+        <div style={{ maxWidth: 1240, margin: "0 auto" }}>{children}</div>
       </main>
     </div>
+  );
+}
+
+function RentalosLogo() {
+  return (
+    <img
+      src="/rentalos-logo.png"
+      alt="Rentalos"
+      style={{
+        display: "block",
+        width: 108,
+        height: "auto",
+        objectFit: "contain",
+      }}
+    />
   );
 }

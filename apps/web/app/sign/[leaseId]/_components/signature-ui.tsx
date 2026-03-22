@@ -5,21 +5,21 @@ export const SIGN_UI = {
     '"Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
 
   colors: {
-    textStrong: "#14213D",
-    textSoft: "#5F6C85",
-    textMuted: "#8C97AB",
+    textStrong: "#1F2A3C",
+    textSoft: "#667085",
+    textMuted: "#98A2B3",
 
-    blue: "#2F6FED",
-    blueSoft: "#5B8CFF",
-    blueHover: "#245FE0",
+    blue: "#2F63E0",
+    blueSoft: "#EEF4FF",
+    blueHover: "#2A5BD7",
 
-    green: "#138A5B",
-    greenText: "#117A51",
-    greenBg: "#EAF7F1",
+    green: "#2F9366",
+    greenText: "#1E7A55",
+    greenBg: "#EDF7F1",
 
-    amber: "#C2872F",
-    amberText: "#A96D16",
-    amberBg: "#FBF2E3",
+    amber: "#B57B38",
+    amberText: "#A06A2C",
+    amberBg: "#F6F1E8",
 
     red: "#C65A5A",
     redBg: "#FCEEEE",
@@ -40,10 +40,10 @@ export const SIGN_UI = {
   },
 
   shadows: {
-    card: "0 6px 18px rgba(31,41,64,0.03), 0 1px 4px rgba(31,41,64,0.012)",
-    cardHover: "0 12px 28px rgba(31,41,64,0.055), 0 4px 12px rgba(31,41,64,0.02)",
-    button: "0 8px 18px rgba(47,111,237,0.18)",
-    soft: "0 2px 8px rgba(31,41,64,0.04)",
+    card: "0 6px 18px rgba(16,24,40,0.035), 0 2px 6px rgba(16,24,40,0.02)",
+    cardHover: "0 10px 24px rgba(16,24,40,0.06), 0 3px 10px rgba(16,24,40,0.03)",
+    button: "0 2px 4px rgba(47,99,224,0.12), inset 0 1px 0 rgba(255,255,255,0.14)",
+    soft: "0 1px 2px rgba(16,24,40,0.04)",
   },
 
   radius: {
@@ -79,27 +79,27 @@ export function statusToneFromLabel(label?: string): "success" | "warning" | "ne
 function getHeroChipTone(done: boolean, empty = false) {
   if (empty) {
     return {
-      bg: "#F3F6FA",
-      text: "#7B879C",
-      icon: "#9AA6BA",
-      border: "rgba(20,33,61,0.06)",
+      bg: "rgba(27,39,64,0.04)",
+      text: "#667085",
+      icon: "#98A2B3",
+      border: "rgba(27,39,64,0.05)",
     };
   }
 
   if (done) {
     return {
-      bg: "#EAF7F1",
-      text: "#117A51",
-      icon: "#138A5B",
-      border: "rgba(19,138,91,0.10)",
+      bg: "#EDF7F1",
+      text: "#1E7A55",
+      icon: "#2F9366",
+      border: "rgba(47,147,102,0.14)",
     };
   }
 
   return {
-    bg: "#FBF2E3",
-    text: "#A96D16",
-    icon: "#C2872F",
-    border: "rgba(194,135,47,0.12)",
+    bg: "#F6F1E8",
+    text: "#A06A2C",
+    icon: "#B57B38",
+    border: "rgba(160,106,44,0.14)",
   };
 }
 
@@ -187,14 +187,14 @@ export function PremiumButton({
       border: "none",
       background: disabled
         ? "#E8EDF5"
-        : "linear-gradient(180deg, #4C83F6 0%, #2F6FED 100%)",
+        : "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
       color: disabled ? "#9AA6BA" : "#FFFFFF",
       boxShadow: disabled ? "none" : SIGN_UI.shadows.button,
     };
   } else if (variant === "secondary") {
     style = {
-      border: `1px solid ${disabled ? "#D9E1EC" : "#D8E0EB"}`,
-      background: "#FFFFFF",
+      border: `1px solid ${disabled ? "#D9E1EC" : "rgba(27,39,64,0.08)"}`,
+      background: disabled ? "#FFFFFF" : "#FAFBFC",
       color: disabled ? "#9AA6BA" : SIGN_UI.colors.textStrong,
       boxShadow: "none",
     };
@@ -346,10 +346,11 @@ export function ActivityDot() {
   return (
     <span
       style={{
-        width: 6,
-        height: 6,
+        width: 5,
+        height: 5,
         borderRadius: 999,
-        background: SIGN_UI.colors.blue,
+        background: "#5E7FEF",
+        opacity: 0.9,
         display: "inline-block",
         flexShrink: 0,
       }}
