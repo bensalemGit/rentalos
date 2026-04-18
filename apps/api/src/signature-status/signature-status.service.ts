@@ -197,7 +197,6 @@ export class SignatureStatusService {
       }
     }
 
-
     // 4) Public links for this lease (tenant + landlord + guarant)
     const linksQ = await this.pool.query(
       `
@@ -221,6 +220,29 @@ export class SignatureStatusService {
       if (l.purpose === 'TENANT_SIGN_CONTRACT' && l.signer_tenant_id) {
         const tid = String(l.signer_tenant_id);
         if (!latestTenantLinkByTenantId.has(tid)) latestTenantLinkByTenantId.set(tid, l);
+      }
+    }
+
+    const latestEdlEntryTenantLinkByTenantId = new Map<string, PublicLinkRow>();
+    const latestInventoryEntryTenantLinkByTenantId = new Map<string, PublicLinkRow>();
+
+    for (const l of links) {
+      if (l.purpose === 'TENANT_SIGN_INVENTORY_ENTRY' && l.signer_tenant_id) {
+        const tid = String(l.signer_tenant_id);
+        if (!latestInventoryEntryTenantLinkByTenantId.has(tid)) {
+          latestInventoryEntryTenantLinkByTenantId.set(tid, l);
+        }
+      }
+    }
+    const latestEdlEntryLandlordLink =
+      links.find((l: PublicLinkRow) => l.purpose === 'LANDLORD_SIGN_EDL_ENTRY') || null;
+
+    for (const l of links) {
+      if (l.purpose === 'TENANT_SIGN_EDL_ENTRY' && l.signer_tenant_id) {
+        const tid = String(l.signer_tenant_id);
+        if (!latestEdlEntryTenantLinkByTenantId.has(tid)) {
+          latestEdlEntryTenantLinkByTenantId.set(tid, l);
+        }
       }
     }
 
@@ -257,6 +279,7 @@ export class SignatureStatusService {
       .map((g: GuaranteeRow) => g.guarantor_act_document_id)
       .filter((id: string | null): id is string => Boolean(id))
       .map((id: string) => String(id));
+
     const guarantSigsByDocId = new Map<string, DocSignatureRow[]>();
     if (guarantActIds.length) {
       const sigsQ = await this.pool.query(
@@ -268,13 +291,12 @@ export class SignatureStatusService {
         [guarantActIds],
       );
       const rows: DocSignatureRow[] = (sigsQ.rows || []) as DocSignatureRow[];
-      for (const s of sigsQ.rows || []) {
+      for (const s of rows) {
         const did = String(s.document_id);
         if (!guarantSigsByDocId.has(did)) guarantSigsByDocId.set(did, []);
         guarantSigsByDocId.get(did)!.push(s);
       }
     }
-
 
     // 7) Read acknowledgements (tenant "prise de connaissance" of signed final act)
     // We key by `${documentId}:${tenantId}`
@@ -289,13 +311,12 @@ export class SignatureStatusService {
         tenantId: g.tenant_id ? String(g.tenant_id) : null,
       }))
       .filter((x) => Boolean(x.signedFinalId) && Boolean(x.tenantId)) as Array<{
-        signedFinalId: string;
-        tenantId: string;
-      }>;
+      signedFinalId: string;
+      tenantId: string;
+    }>;
 
     if (ackTargets.length) {
       const docIds = Array.from(new Set(ackTargets.map((x) => x.signedFinalId)));
-      // tenantIds is optional; we can filter anyway
       const tenantIds = Array.from(new Set(ackTargets.map((x) => x.tenantId)));
 
       const ackQ = await this.pool.query(
@@ -398,45 +419,50 @@ export class SignatureStatusService {
           ? { guarantor: false, landlord: false }
           : { guarantor: !hasGuarantSig, landlord: !hasLandlordSig };
 
-      const signatureStatus: GuaranteeSigStatus =
-        isVisale
-          ? 'NOT_SENT'
-          : signedFinalDocumentId
-            ? 'SIGNED'
-            : hasAnySig
-              ? 'IN_PROGRESS'
-              : sent
-                ? 'SENT'
-                : 'NOT_SENT';
+      const signatureStatus: GuaranteeSigStatus = isVisale
+        ? 'NOT_SENT'
+        : signedFinalDocumentId
+          ? 'SIGNED'
+          : hasAnySig
+            ? 'IN_PROGRESS'
+            : sent
+              ? 'SENT'
+              : 'NOT_SENT';
 
-      const ack = (() => {
-      // ACK n'a de sens que si le SIGNED_FINAL existe
-      const finalId = signedFinalDocumentId;
-      const tenantId = String(g.tenant_id || '').trim();
-
-      if (!finalId || !tenantId) {
-        return {
-          required: false,
-          tenants: tenantId
-            ? [{ tenantId, acknowledged: false, acknowledgedAt: null }]
-            : [],
-        };
+      const remainingRoles: Array<'GUARANTOR' | 'LANDLORD'> = [];
+      if (!isVisale && !signedFinalDocumentId) {
+        if (!hasGuarantSig) remainingRoles.push('GUARANTOR');
+        if (!hasLandlordSig) remainingRoles.push('LANDLORD');
       }
 
-      const k = `${finalId}:${tenantId}`;
-      const row = ackByDocTenant.get(k) || null;
+      const ack = (() => {
+        // ACK n'a de sens que si le SIGNED_FINAL existe
+        const finalId = signedFinalDocumentId;
+        const tenantId = String(g.tenant_id || '').trim();
 
-      return {
-        required: true,
-        tenants: [
-          {
-            tenantId,
-            acknowledged: Boolean(row),
-            acknowledgedAt: row ? String(row.acknowledged_at) : null,
-          },
-        ],
-      };
-    })();
+        if (!finalId || !tenantId) {
+          return {
+            required: false,
+            tenants: tenantId
+              ? [{ tenantId, acknowledged: false, acknowledgedAt: null }]
+              : [],
+          };
+        }
+
+        const k = `${finalId}:${tenantId}`;
+        const row = ackByDocTenant.get(k) || null;
+
+        return {
+          required: true,
+          tenants: [
+            {
+              tenantId,
+              acknowledged: Boolean(row),
+              acknowledgedAt: row ? String(row.acknowledged_at) : null,
+            },
+          ],
+        };
+      })();
 
       return {
         guaranteeId,
@@ -451,7 +477,12 @@ export class SignatureStatusService {
         signedFinalDocumentId,
         signatureStatus,
         need,
-        ack, // ✅ NEW
+        signatures: {
+          guarantorSigned: isVisale ? false : hasGuarantSig,
+          landlordSigned: isVisale ? false : hasLandlordSig,
+          remainingRoles,
+        },
+        ack,
         lastLink: latestLink
           ? {
               createdAt: latestLink.created_at,
@@ -462,11 +493,12 @@ export class SignatureStatusService {
         guaranteeStatus: g.guarantee_status || null,
       };
     });
-    
+
     const contractNeed = {
       landlord: !landlordSigned,
       tenants: tenantsOut.filter((t) => t.signatureStatus !== 'SIGNED').map((t) => t.tenantId),
     };
+
     return {
       leaseId: cleanLeaseId,
       generatedAt: this.nowIso(),
@@ -486,13 +518,42 @@ export class SignatureStatusService {
       guarantees: guaranteesOut,
 
       edl: {
-        entry: this.buildDocBlock({
-          key: 'edl:entry',
-          label: 'EDL entrée',
-          doc: edlEntry,
-          leaseTenants,
-          signedByDoc,
-        }),
+        entry: (() => {
+          const block = this.buildDocBlock({
+            key: 'edl:entry',
+            label: 'EDL entrée',
+            doc: edlEntry,
+            leaseTenants,
+            signedByDoc,
+          });
+
+          return {
+            ...block,
+            landlordLastLink: latestEdlEntryLandlordLink
+              ? {
+                  createdAt: latestEdlEntryLandlordLink.created_at,
+                  expiresAt: latestEdlEntryLandlordLink.expires_at,
+                  consumedAt: latestEdlEntryLandlordLink.consumed_at,
+                }
+              : null,
+            tenantLastLinkByTenantId: Object.fromEntries(
+              leaseTenants.map((t) => {
+                const tid = String(t.tenant_id || '');
+                const row = latestEdlEntryTenantLinkByTenantId.get(tid) || null;
+                return [
+                  tid,
+                  row
+                    ? {
+                        createdAt: row.created_at,
+                        expiresAt: row.expires_at,
+                        consumedAt: row.consumed_at,
+                      }
+                    : null,
+                ];
+              }),
+            ),
+          };
+        })(),
         exit: this.buildDocBlock({
           key: 'edl:exit',
           label: 'EDL sortie',
@@ -502,13 +563,37 @@ export class SignatureStatusService {
         }),
       },
       inventory: {
-        entry: this.buildDocBlock({
-          key: 'inv:entry',
-          label: 'Inventaire entrée',
-          doc: invEntry,
-          leaseTenants,
-          signedByDoc,
-        }),
+        entry: (() => {
+          const block = this.buildDocBlock({
+            key: 'inventory:entry',
+            label: 'Inventaire entrée',
+            doc: invEntry,
+            leaseTenants,
+            signedByDoc,
+          });
+
+          if (!block) return null;
+
+          return {
+            ...block,
+            tenantLastLinkByTenantId: Object.fromEntries(
+              leaseTenants.map((t) => {
+                const tid = String(t.tenant_id || '');
+                const row = latestInventoryEntryTenantLinkByTenantId.get(tid) || null;
+                return [
+                  tid,
+                  row
+                    ? {
+                        createdAt: row.created_at,
+                        expiresAt: row.expires_at,
+                        consumedAt: row.consumed_at,
+                      }
+                    : null,
+                ];
+              }),
+            ),
+          };
+        })(),
         exit: this.buildDocBlock({
           key: 'inv:exit',
           label: 'Inventaire sortie',
@@ -536,69 +621,66 @@ export class SignatureStatusService {
     };
   }
 
-private buildDocBlock(params: {
-  key: string;
-  label: string;
-  doc: any | null;
-  leaseTenants: Array<{ tenant_id: any; full_name?: string }>;
-  signedByDoc: Map<string, { landlord: boolean; tenants: Set<string> }>;
-}) {
-  const { key, label, doc, leaseTenants, signedByDoc } = params;
+  private buildDocBlock(params: {
+    key: string;
+    label: string;
+    doc: any | null;
+    leaseTenants: Array<{ tenant_id: any; full_name?: string }>;
+    signedByDoc: Map<string, { landlord: boolean; tenants: Set<string> }>;
+  }) {
+    const { key, label, doc, leaseTenants, signedByDoc } = params;
 
-  if (!doc) {
+    if (!doc) {
+      return {
+        key,
+        label,
+        documentId: null,
+        filename: null,
+        signedFinalDocumentId: null,
+        status: 'NOT_GENERATED',
+        need: {
+          landlord: { required: true, signed: false },
+          tenants: leaseTenants.map((t) => ({
+            tenantId: String((t as any).tenant_id),
+            required: true,
+            signed: false,
+          })),
+        },
+        delivery: { lastLink: null },
+      };
+    }
+
+    const docId = String(doc.id);
+    const sig = signedByDoc.get(docId) || { landlord: false, tenants: new Set<string>() };
+
+    const signedFinalDocumentId = doc.signed_final_document_id ?? null;
+    const allTenantsSigned = leaseTenants.every((t) => sig.tenants.has(String((t as any).tenant_id)));
+    const allSigned = sig.landlord && allTenantsSigned;
+
+    const status = signedFinalDocumentId
+      ? 'SIGNED'
+      : allSigned
+        ? 'IN_PROGRESS'
+        : sig.landlord || sig.tenants.size > 0
+          ? 'IN_PROGRESS'
+          : 'DRAFT';
+
     return {
       key,
       label,
-      documentId: null,
-      filename: null,
-      signedFinalDocumentId: null,
-      status: 'NOT_GENERATED',
+      documentId: docId,
+      filename: doc.filename ?? null,
+      signedFinalDocumentId,
+      status,
       need: {
-        landlord: { required: true, signed: false },
+        landlord: { required: true, signed: sig.landlord },
         tenants: leaseTenants.map((t) => ({
           tenantId: String((t as any).tenant_id),
           required: true,
-          signed: false,
+          signed: sig.tenants.has(String((t as any).tenant_id)),
         })),
       },
       delivery: { lastLink: null },
     };
   }
-
-  const docId = String(doc.id);
-  const sig = signedByDoc.get(docId) || { landlord: false, tenants: new Set<string>() };
-
-  const signedFinalDocumentId = doc.signed_final_document_id ?? null;
-  const allTenantsSigned = leaseTenants.every((t) => sig.tenants.has(String((t as any).tenant_id)));
-  const allSigned = sig.landlord && allTenantsSigned;
-
-  const status =
-    signedFinalDocumentId
-      ? 'SIGNED'
-      : allSigned
-        ? 'IN_PROGRESS'
-        : (sig.landlord || sig.tenants.size > 0)
-          ? 'IN_PROGRESS'
-          : 'DRAFT';
-
-  return {
-    key,
-    label,
-    documentId: docId,
-    filename: doc.filename ?? null,
-    signedFinalDocumentId,
-    status,
-    need: {
-      landlord: { required: true, signed: sig.landlord },
-      tenants: leaseTenants.map((t) => ({
-        tenantId: String((t as any).tenant_id),
-        required: true,
-        signed: sig.tenants.has(String((t as any).tenant_id)),
-      })),
-    },
-    delivery: { lastLink: null },
-  };
 }
-
-}
-

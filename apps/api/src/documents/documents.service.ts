@@ -24,7 +24,8 @@ type DocType =
   | 'INVENTAIRE_ENTREE'
   | 'INVENTAIRE_SORTIE'
   | 'PACK_EDL_INV_ENTREE'
-  | 'PACK_EDL_INV_SORTIE';
+  | 'PACK_EDL_INV_SORTIE'
+  | 'ATTESTATION_SORTIE';
 
 type TemplateRow = {
   id: string;
@@ -340,6 +341,16 @@ private async getLatestSessionByPhase(args: {
     }));
   }
 
+  private summarizeDocsForDebug(docs: any[]) {
+    return (docs || []).map((d: any) => ({
+      id: d?.id || null,
+      type: d?.type || null,
+      filename: d?.filename || null,
+      parent_document_id: d?.parent_document_id || null,
+      signed_final_document_id: d?.signed_final_document_id || null,
+    }));
+  }
+
   // -------------------------------------
   // PDF merge helpers (PACK_FINAL)
   // -------------------------------------
@@ -510,6 +521,211 @@ private async getLatestSessionByPhase(args: {
     }
   }
 
+
+  private isMultiSignableDocType(type: string): boolean {
+    return [
+      'CONTRAT',
+      'GUARANTOR_ACT',
+      'EDL_ENTREE',
+      'INVENTAIRE_ENTREE',
+      'EDL_SORTIE',
+      'INVENTAIRE_SORTIE',
+    ].includes(String(type || '').toUpperCase());
+  }
+
+  private getRequiredRolesForDocument(type: string): Array<'LOCATAIRE' | 'BAILLEUR' | 'GARANT'> {
+    const docType = String(type || '').toUpperCase();
+
+    if (docType === 'GUARANTOR_ACT') {
+      return ['GARANT', 'BAILLEUR'];
+    }
+
+    if (
+      docType === 'CONTRAT' ||
+      docType === 'EDL_ENTREE' ||
+      docType === 'INVENTAIRE_ENTREE' ||
+      docType === 'EDL_SORTIE' ||
+      docType === 'INVENTAIRE_SORTIE'
+    ) {
+      return ['LOCATAIRE', 'BAILLEUR'];
+    }
+
+    return [];
+  }
+
+  private buildPackAuditBlock(documents: Array<{
+    id: string;
+    type: string;
+    filename?: string | null;
+    originalSha256?: string | null;
+    signedSha256?: string | null;
+    signatures?: Array<{
+      role: string;
+      name: string;
+      signedAt: string;
+      ip?: string;
+      userAgent?: string;
+    }>;
+  }>) {
+    return {
+      title: "Annexe technique — Journal de signature du pack",
+      generatedAt: new Date().toISOString(),
+      documents: documents.map((doc) => ({
+        documentId: doc.id,
+        type: doc.type,
+        filename: doc.filename ?? null,
+        sha256Original: doc.originalSha256 ?? null,
+        sha256Signed: doc.signedSha256 ?? null,
+        signatures: doc.signatures ?? [],
+      })),
+    };
+  }
+
+  private async getAuditEntryForSignedDocument(doc: any) {
+    if (!doc) return null;
+
+    const rootId = String(doc.parent_document_id || doc.id || '').trim();
+    if (!rootId) return null;
+
+    const rootQ = await this.pool.query(
+      `SELECT id, type, filename, sha256 FROM documents WHERE id=$1 LIMIT 1`,
+      [rootId],
+    );
+    const rootDoc = rootQ.rowCount ? rootQ.rows[0] : null;
+
+    const sigQ = await this.pool.query(
+      `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+      [rootId],
+    );
+    const signatures = sigQ.rows || [];
+
+
+    let originalSha = String(rootDoc?.sha256 || '');
+    if (!originalSha && rootId) {
+      const q = await this.pool.query(`SELECT sha256 FROM documents WHERE id=$1`, [rootId]);
+      if (q.rowCount) originalSha = String(q.rows[0].sha256 || '');
+    }
+
+    let signedSha = String(doc?.sha256 || '');
+    if (!signedSha) {
+      try {
+        const abs = this.absFromStoragePath(doc.storage_path);
+        if (fsSync.existsSync(abs)) signedSha = this.sha256File(abs);
+      } catch {}
+    }
+
+    return {
+      id: rootId,
+      type: String(doc.type || rootDoc?.type || ''),
+      filename: String(doc.filename || ''),
+      originalSha256: originalSha || null,
+      signedSha256: signedSha || null,
+      signatures: signatures.map((s: any) => ({
+        role: String(s?.signer_role || ''),
+        name: String(s?.signer_name || ''),
+        signedAt: s?.signed_at ? new Date(s.signed_at).toISOString() : '',
+        ip: String(s?.ip || ''),
+        userAgent: String(s?.user_agent || ''),
+        consent:
+          s?.audit_log?.consent === true ||
+          (typeof s?.audit_log === 'string' && s.audit_log.includes('"consent":true')),
+      })),
+    };
+  }
+
+  private async buildPackAuditPdf(
+    documents: Array<{
+      id: string;
+      type: string;
+      filename?: string | null;
+      originalSha256?: string | null;
+      signedSha256?: string | null;
+      signatures?: Array<{
+        role: string;
+        name: string;
+        signedAt: string;
+        ip?: string;
+        userAgent?: string;
+        consent?: boolean;
+      }>;
+    }>,
+  ) {
+    const audit = this.buildPackAuditBlock(documents);
+
+    const docsHtml = audit.documents
+      .map((doc: any, index: number) => {
+        const signaturesRows = (doc.signatures || [])
+          .map(
+            (s: any) => `
+              <tr>
+                <td>${this.escapeHtml(String(s.role || ''))}</td>
+                <td>${this.escapeHtml(String(s.name || ''))}</td>
+                <td>${this.escapeHtml(String(s.signedAt || ''))}</td>
+                <td>${this.escapeHtml(String(s.ip || ''))}</td>
+                <td style="font-size:10px;word-break:break-all">${this.escapeHtml(String(s.userAgent || ''))}</td>
+                <td>${s.consent === true ? 'true' : 'false'}</td>
+              </tr>
+            `,
+          )
+          .join('');
+
+        return `
+          <div style="margin-bottom:28px">
+            <h2 style="font-size:14px;margin:0 0 10px 0">
+              Document ${index + 1} — ${this.escapeHtml(String(doc.type || ''))}
+            </h2>
+
+            <p><strong>Document ID :</strong> ${this.escapeHtml(String(doc.documentId || ''))}</p>
+            <p><strong>Fichier :</strong> ${this.escapeHtml(String(doc.filename || ''))}</p>
+
+            <p><strong>SHA256 original :</strong><br/>
+              <span class="hash">${this.escapeHtml(String(doc.sha256Original || ''))}</span>
+            </p>
+
+            <p><strong>SHA256 signé :</strong><br/>
+              <span class="hash">${this.escapeHtml(String(doc.sha256Signed || ''))}</span>
+            </p>
+
+            <table>
+              <tr>
+                <th>Rôle</th>
+                <th>Nom</th>
+                <th>Date (ISO)</th>
+                <th>IP</th>
+                <th>User-Agent</th>
+                <th>Consent</th>
+              </tr>
+              ${signaturesRows || `<tr><td colspan="6">Aucune signature</td></tr>`}
+            </table>
+          </div>
+        `;
+      })
+      .join('');
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; padding: 36px; }
+    h1 { font-size: 18px; margin: 0 0 10px 0; }
+    h2 { font-size: 14px; margin-top: 18px; }
+    .hash { font-size: 10px; word-break: break-all; }
+    .small { font-size: 10px; color: #333; }
+    table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+    td, th { border: 1px solid #000; padding: 6px; vertical-align: top; }
+    th { background: #eee; }
+  </style>
+</head>
+<body>
+  <h1>${this.escapeHtml(audit.title)}</h1>
+  <p class="small">Généré le ${this.escapeHtml(String(audit.generatedAt || ''))}</p>
+  ${docsHtml}
+</body>
+</html>`;
+
+    return this.htmlToPdfBuffer(html);
+  }
 
   // -------------------------------------
   // Blocks
@@ -1134,6 +1350,18 @@ async listByLease(leaseId: string) {
         items.find((x) => x.type === 'PACK_FINAL' && String(x.filename || '').includes('PACK_FINAL_V2_')) ||
         items.find((x) => x.type === 'PACK_FINAL') ||
         null;
+      
+      const edlEntree =
+        items.find((x) => x.type === 'EDL_ENTREE') || null;
+
+      const inventaireEntree =
+        items.find((x) => x.type === 'INVENTAIRE_ENTREE') || null;
+
+      const edlSortie =
+        items.find((x) => x.type === 'EDL_SORTIE') || null;
+
+      const inventaireSortie =
+        items.find((x) => x.type === 'INVENTAIRE_SORTIE') || null;
 
       return {
         rootId,
@@ -1143,6 +1371,10 @@ async listByLease(leaseId: string) {
         original,
         signedFinal,
         packFinal,
+        edlEntree,
+        inventaireEntree,
+        edlSortie,
+        inventaireSortie,
         items: items.sort((a: any, b: any) => String(a.created_at).localeCompare(String(b.created_at))),
       };
     });
@@ -2519,14 +2751,198 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
     return { created: true, document: ins.rows[0] };
   }
 
-  
+    async generateExitDocsBundle(
+    leaseId: string,
+    opts?: { force?: boolean },
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const force = Boolean(opts?.force);
+
+    const edlRes = await this.generateEdlPdf(leaseId, {
+      phase: 'exit',
+      force,
+    });
+
+    const inventoryRes = await this.generateInventoryPdf(leaseId, {
+      phase: 'exit',
+      force,
+    });
+
+    return {
+      created: true,
+      leaseId,
+      edl: edlRes.document,
+      inventory: inventoryRes.document,
+    };
+  }
+
+  async getPackFinalReadiness(leaseId: string) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const row = await this.fetchLeaseBundle(leaseId);
+    const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
+    const docs: any[] = await this.listDocsForLease(leaseId);
+
+    const pickLatestDoc = (items: any[]) =>
+      items
+        .slice()
+        .sort((a: any, b: any) =>
+          String(b.created_at || '').localeCompare(String(a.created_at || '')),
+        )[0] || null;
+
+    const pickRootByType = (type: string) =>
+      pickLatestDoc(
+        docs.filter(
+          (d: any) =>
+            d.type === type &&
+            !d.parent_document_id,
+        ),
+      );
+
+    const resolveSignedFinalFromRoot = (rootDoc: any | null) => {
+      if (!rootDoc) return null;
+
+      if (rootDoc.signed_final_document_id) {
+        return (
+          docs.find((d: any) => String(d.id) === String(rootDoc.signed_final_document_id)) ||
+          null
+        );
+      }
+
+      return (
+        docs.find(
+          (d: any) =>
+            String(d.parent_document_id || '') === String(rootDoc.id) &&
+            String(d.filename || '').includes('_SIGNED_FINAL'),
+        ) || null
+      );
+    };
+
+    const contractSignedFinal =
+      docs
+        .filter((d: any) => d.type === 'CONTRAT')
+        .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+        .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
+
+    const guarantorActsSignedFinal = docs
+      .filter((d: any) => d.type === 'GUARANTOR_ACT')
+      .filter((d: any) => d.parent_document_id || String(d.filename || '').includes('_SIGNED_FINAL'))
+      .sort((a: any, b: any) => {
+        const fa = String(a.filename || '');
+        const fb = String(b.filename || '');
+        const c = fa.localeCompare(fb);
+        if (c !== 0) return c;
+        return String(a.created_at || '').localeCompare(String(b.created_at || ''));
+      });
+
+    const noticeRoot = pickRootByType('NOTICE');
+
+    const edlRootEntry = pickRootByType('EDL_ENTREE');
+    const inventaireRootEntry = pickRootByType('INVENTAIRE_ENTREE');
+
+    const edlRootExit = pickRootByType('EDL_SORTIE');
+    const inventaireRootExit = pickRootByType('INVENTAIRE_SORTIE');
+
+    const edlRoot = edlRootEntry || edlRootExit || null;
+    const inventaireRoot = inventaireRootEntry || inventaireRootExit || null;
+
+    const edlSignedFinal = resolveSignedFinalFromRoot(edlRoot);
+    const inventaireSignedFinal = resolveSignedFinalFromRoot(inventaireRoot);
+
+    const notice = noticeRoot || null;
+    const edl = edlSignedFinal || null;
+    const inventaire = inventaireSignedFinal || null;
+
+    const issues: string[] = [];
+
+    if (!contractSignedFinal) {
+      issues.push('CONTRACT_SIGNED_FINAL_MISSING');
+    }
+
+    if (leaseKind === 'MEUBLE_RP') {
+      if (!notice) {
+        issues.push('NOTICE_MISSING');
+      }
+
+      if (!edl) {
+        issues.push(edlRoot ? 'EDL_SIGNED_FINAL_MISSING' : 'EDL_MISSING');
+      }
+
+      if (!inventaire) {
+        issues.push(inventaireRoot ? 'INVENTAIRE_SIGNED_FINAL_MISSING' : 'INVENTAIRE_MISSING');
+      }
+    }
+
+    return {
+      ready: issues.length === 0,
+      leaseId,
+      leaseKind,
+      issues,
+      selected: {
+        contractSignedFinal: contractSignedFinal
+          ? { id: contractSignedFinal.id, filename: contractSignedFinal.filename, type: contractSignedFinal.type }
+          : null,
+        guarantorActsSignedFinal: guarantorActsSignedFinal.map((d: any) => ({
+          id: d.id,
+          filename: d.filename,
+          type: d.type,
+          parent_document_id: d.parent_document_id,
+        })),
+        notice: notice
+          ? { id: notice.id, filename: notice.filename, type: notice.type }
+          : null,
+        edlRoot: edlRoot
+          ? { id: edlRoot.id, filename: edlRoot.filename, type: edlRoot.type }
+          : null,
+        edlSignedFinal: edl
+          ? { id: edl.id, filename: edl.filename, type: edl.type, parent_document_id: edl.parent_document_id }
+          : null,
+        inventaireRoot: inventaireRoot
+          ? { id: inventaireRoot.id, filename: inventaireRoot.filename, type: inventaireRoot.type }
+          : null,
+        inventaireSignedFinal: inventaire
+          ? { id: inventaire.id, filename: inventaire.filename, type: inventaire.type, parent_document_id: inventaire.parent_document_id }
+          : null,
+      },
+      availableDocs: this.summarizeDocsForDebug(docs),
+    };
+  }  
 
   async generatePackFinalV2(leaseId: string, opts?: { force?: boolean }, parentDocumentId?: string) {
-    const force = !!opts?.force;
+ 
+  console.log('[PACK_FINAL_V2 ENTER]', {
+    leaseId,
+    force: !!opts?.force,
+  });
+
+  const force = !!opts?.force;
   const row = await this.fetchLeaseBundle(leaseId);
   const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
   const docs: any [] = await this.listDocsForLease(leaseId);
+
+  const readiness = await this.getPackFinalReadiness(leaseId);
+
+  console.log('[PACK_FINAL_V2 READINESS]', readiness);
+
+  if (!readiness.ready) {
+    throw new BadRequestException({
+      message: 'PACK_FINAL_V2 impossible : dossier incomplet pour génération du pack final.',
+      readiness,
+    } as any);
+  }
+
+  console.log(
+    '[PACK_FINAL_V2 DOCS]',
+    docs.map((d: any) => ({
+      id: d.id,
+      type: d.type,
+      filename: d.filename,
+      parent_document_id: d.parent_document_id,
+      signed_final_document_id: d.signed_final_document_id,
+    })),
+  );
 
   // 1) CONTRAT signé final (obligatoire)
   const contractSignedFinal =
@@ -2536,7 +2952,10 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       .sort((a: any, b: any) => String(b.created_at || '').localeCompare(String(a.created_at || '')))[0] || null;
 
   if (!contractSignedFinal) {
-    return { created: false, skipped: true, reason: 'No signed final contract yet' };
+    throw new BadRequestException({
+      message: 'PACK_FINAL_V2 impossible : contrat SIGNED_FINAL introuvable.',
+      readiness,
+    } as any);
   }
 
   const contractRootId = contractSignedFinal.parent_document_id || contractSignedFinal.id;
@@ -2563,62 +2982,166 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       return String(a.created_at || '').localeCompare(String(b.created_at || ''));
     });
 
-  // 3) Annexes originales
-  const notice = docs.find((d: any) => d.type === 'NOTICE' && !d.parent_document_id) || null;
-  const edl =
-    docs.find((d) => d.type === 'EDL_ENTREE' && !d.parent_document_id) ||
-    docs.find((d) => d.type === 'EDL_SORTIE' && !d.parent_document_id) ||
-    null;
+  // 3) Annexes documentaires
+  // Règle stricte :
+  // - NOTICE : document racine accepté (non signée)
+  // - EDL / INVENTAIRE : uniquement SIGNED_FINAL
+  const pickLatestDoc = (items: any[]) =>
+    items
+      .slice()
+      .sort((a: any, b: any) =>
+        String(b.created_at || '').localeCompare(String(a.created_at || '')),
+      )[0] || null;
 
-  const inventaire =
-    docs.find((d) => d.type === 'INVENTAIRE_ENTREE' && !d.parent_document_id) ||
-    docs.find((d) => d.type === 'INVENTAIRE_SORTIE' && !d.parent_document_id) ||
-    null;
+  const pickRootByType = (type: string) =>
+    pickLatestDoc(
+      docs.filter(
+        (d: any) =>
+          d.type === type &&
+          !d.parent_document_id,
+      ),
+    );
 
-  const annexesOrdered: any[] = [];
-  // 1️⃣ Contrat signé final (toujours premier)
-  annexesOrdered.push(contractSignedFinal);
-  // 2️⃣ Actes de caution signés (si présents)
-  for (const act of guarantorActsSignedFinal) {
-    annexesOrdered.push(act);
-  }
-  // 3️⃣ Notice (RP uniquement)
-  if (notice) {
-    annexesOrdered.push(notice);
-  }
-  // 4️⃣ État des lieux
-  if (edl) {
-    annexesOrdered.push(edl);
-  }
-  // 5️⃣ Inventaire (meublé)
-  if (inventaire) {
-    annexesOrdered.push(inventaire);
+  const resolveSignedFinalFromRoot = (rootDoc: any | null) => {
+    if (!rootDoc) return null;
+
+    if (rootDoc.signed_final_document_id) {
+      return (
+        docs.find((d: any) => String(d.id) === String(rootDoc.signed_final_document_id)) ||
+        null
+      );
+    }
+
+    return (
+      docs.find(
+        (d: any) =>
+          String(d.parent_document_id || '') === String(rootDoc.id) &&
+          String(d.filename || '').includes('_SIGNED_FINAL'),
+      ) || null
+    );
+  };
+
+  const noticeRoot = pickRootByType('NOTICE');
+
+  const edlRootEntry = pickRootByType('EDL_ENTREE');
+  const inventaireRootEntry = pickRootByType('INVENTAIRE_ENTREE');
+
+  const edlRootExit = pickRootByType('EDL_SORTIE');
+  const inventaireRootExit = pickRootByType('INVENTAIRE_SORTIE');
+
+  const edlRoot = edlRootEntry || edlRootExit || null;
+  const inventaireRoot = inventaireRootEntry || inventaireRootExit || null;
+
+  const edlSignedFinal = resolveSignedFinalFromRoot(edlRoot);
+  const inventaireSignedFinal = resolveSignedFinalFromRoot(inventaireRoot);
+
+  const notice = noticeRoot || null;
+  const edl = edlSignedFinal || null;
+  const inventaire = inventaireSignedFinal || null;
+
+
+  // Sécurité juridique :
+  // le pack final ne doit jamais embarquer un EDL ou un inventaire racine non signé.
+  // Si le document existe mais que son SIGNED_FINAL n'existe pas encore,
+  // on bloque explicitement la génération du pack.
+  if (leaseKind === 'MEUBLE_RP') {
+    if (!notice) {
+      throw new BadRequestException({
+        message: 'PACK_FINAL_V2 impossible : notice introuvable pour un bail meublé RP.',
+        selected: {
+          notice: null,
+          edl: edl ? { id: edl.id, filename: edl.filename, type: edl.type } : null,
+          inventaire: inventaire ? { id: inventaire.id, filename: inventaire.filename, type: inventaire.type } : null,
+        },
+        availableDocs: this.summarizeDocsForDebug(docs),
+      } as any);
+    }
+
+    if (!edl) {
+      throw new BadRequestException({
+        message: edlRoot
+          ? 'PACK_FINAL_V2 impossible : EDL présent mais SIGNED_FINAL introuvable.'
+          : 'PACK_FINAL_V2 impossible : EDL introuvable pour un bail meublé RP.',
+        selected: {
+          notice: notice ? { id: notice.id, filename: notice.filename, type: notice.type } : null,
+          edlRoot: edlRoot ? { id: edlRoot.id, filename: edlRoot.filename, type: edlRoot.type } : null,
+          edlSignedFinal: null,
+          inventaire: inventaire ? { id: inventaire.id, filename: inventaire.filename, type: inventaire.type } : null,
+        },
+        availableDocs: this.summarizeDocsForDebug(docs),
+      } as any);
+    }
+
+    if (!inventaire) {
+      throw new BadRequestException({
+        message: inventaireRoot
+          ? 'PACK_FINAL_V2 impossible : inventaire présent mais SIGNED_FINAL introuvable.'
+          : 'PACK_FINAL_V2 impossible : inventaire introuvable pour un bail meublé RP.',
+        selected: {
+          notice: notice ? { id: notice.id, filename: notice.filename, type: notice.type } : null,
+          edl: edl ? { id: edl.id, filename: edl.filename, type: edl.type } : null,
+          inventaireRoot: inventaireRoot ? { id: inventaireRoot.id, filename: inventaireRoot.filename, type: inventaireRoot.type } : null,
+          inventaireSignedFinal: null,
+        },
+        availableDocs: this.summarizeDocsForDebug(docs),
+      } as any);
+    }
   }
 
-  // 4) AUDIT — SHA du root (original) et du signed_final (signé)
-  const contractRoot =
-    docs.find((d: any) => String(d.id) === String(contractRootId)) || null;
-
-  let originalSha = String(contractRoot?.sha256 || '');
-  if (!originalSha) {
-    const q = await this.pool.query(`SELECT sha256 FROM documents WHERE id=$1`, [contractRootId]);
-    if (q.rowCount) originalSha = String(q.rows[0].sha256 || '');
-  }
-
-  let signedSha = String(contractSignedFinal?.sha256 || '');
-  if (!signedSha) {
-    try {
-      const abs = this.absFromStoragePath(contractSignedFinal.storage_path);
-      if (fsSync.existsSync(abs)) signedSha = this.sha256File(abs);
-    } catch {}
-  }
-
-  const auditPdfBuffer = await this.buildAuditPdf({
-    originalSha,
-    signedSha,
-    documentId: String(contractRootId), // ✅ stable et non ambigu
-    signatures: contractSignatures,
+  console.log('[PACK_FINAL_V2 SELECTED]', {
+    contractSignedFinal: contractSignedFinal
+      ? { id: contractSignedFinal.id, type: contractSignedFinal.type, filename: contractSignedFinal.filename }
+      : null,
+    guarantorActsSignedFinal: guarantorActsSignedFinal.map((d: any) => ({
+      id: d.id,
+      type: d.type,
+      filename: d.filename,
+      parent_document_id: d.parent_document_id,
+    })),
+    notice: notice
+      ? { id: notice.id, type: notice.type, filename: notice.filename }
+      : null,
+    edlRoot: edlRoot
+      ? { id: edlRoot.id, type: edlRoot.type, filename: edlRoot.filename }
+      : null,
+    edlSignedFinal: edl
+      ? { id: edl.id, type: edl.type, filename: edl.filename, parent_document_id: edl.parent_document_id }
+      : null,
+    inventaireRoot: inventaireRoot
+      ? { id: inventaireRoot.id, type: inventaireRoot.type, filename: inventaireRoot.filename }
+      : null,
+    inventaireSignedFinal: inventaire
+      ? { id: inventaire.id, type: inventaire.type, filename: inventaire.filename, parent_document_id: inventaire.parent_document_id }
+      : null,
   });
+
+  // 4) AUDIT GLOBAL DU PACK
+  const auditEntries = (
+    await Promise.all([
+      this.getAuditEntryForSignedDocument(contractSignedFinal),
+      ...guarantorActsSignedFinal.map((act: any) =>
+        this.getAuditEntryForSignedDocument(act),
+      ),
+      ...(edl ? [this.getAuditEntryForSignedDocument(edl)] : []),
+      ...(inventaire ? [this.getAuditEntryForSignedDocument(inventaire)] : []),
+    ])
+  ).filter(Boolean) as Array<{
+    id: string;
+    type: string;
+    filename?: string | null;
+    originalSha256?: string | null;
+    signedSha256?: string | null;
+    signatures?: Array<{
+      role: string;
+      name: string;
+      signedAt: string;
+      ip?: string;
+      userAgent?: string;
+      consent?: boolean;
+    }>;
+  }>;
+
+  const auditPdfBuffer = await this.buildPackAuditPdf(auditEntries); 
 
   const auditFilename = `AUDIT_PACK_FINAL_${String(leaseId).slice(0, 8)}.pdf`;
   const auditStoragePath = path.join(
@@ -2633,10 +3156,6 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   await fs.mkdir(path.dirname(auditAbs), { recursive: true });
   await fs.writeFile(auditAbs, auditPdfBuffer);
 
-  annexesOrdered.push({
-    storage_path: auditStoragePath,
-    filename: auditFilename,
-  });
 
   // 5) Filename stable v2
   const packV2Name = `PACK_FINAL_V2_${leaseKind}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
@@ -2650,8 +3169,24 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   });
 
   if (existing && !force) {
-    return { created: false, document: existing};
+    return {
+      created: false,
+      document: existing,
+      debug: {
+        reusedExisting: true,
+        reason:
+          'Un PACK_FINAL existant a été réutilisé car force=false. Si les annexes ont changé, il faut régénérer avec force=true.',
+        selected: {
+          contractSignedFinalId: contractSignedFinal?.id || null,
+          edlId: edl?.id || null,
+          inventaireId: inventaire?.id || null,
+          noticeId: notice?.id || null,
+          guarantorActsSignedFinalIds: guarantorActsSignedFinal.map((x: any) => x?.id).filter(Boolean),
+        },
+      },
+    };
   }
+
   // si force=true, on supprime puis on régénère
   if (existing && force) {
     try {
@@ -2695,6 +3230,80 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       return p ? { filename: n, buffer: p.buffer } : null; // ⚠️ override filename
     })
     .filter(Boolean) as Array<{ filename: string; buffer: Buffer }>;
+
+
+  console.log('[PACK_FINAL_V2 DEBUG]', {
+    leaseId,
+    force,
+    selected: {
+      contractSignedFinal: contractSignedFinal
+        ? {
+            id: contractSignedFinal.id,
+            type: contractSignedFinal.type,
+            filename: contractSignedFinal.filename,
+          }
+        : null,
+      notice: notice
+        ? {
+            id: notice.id,
+            type: notice.type,
+            filename: notice.filename,
+          }
+        : null,
+      edl: edl
+        ? {
+            id: edl.id,
+            type: edl.type,
+            filename: edl.filename,
+          }
+        : null,
+      inventaire: inventaire
+        ? {
+            id: inventaire.id,
+            type: inventaire.type,
+            filename: inventaire.filename,
+          }
+        : null,
+      guarantorActsSignedFinal: guarantorActsSignedFinal.map((x: any) => ({
+        id: x?.id || null,
+        type: x?.type || null,
+        filename: x?.filename || null,
+      })),
+    },
+    ordered: ordered.map((x: any) => ({
+      filename: x.n,
+      docId: x.doc?.id || null,
+      docType: x.doc?.type || null,
+      docFilename: x.doc?.filename || null,
+    })),
+    parts: this.summarizeParts(parts),
+  });
+
+
+
+  if (leaseKind === 'MEUBLE_RP') {
+  const hasNoticePart = parts.some((p) => p.filename.includes('_NOTICE.pdf'));
+  const hasEdlPart = parts.some((p) => p.filename.includes('_EDL.pdf'));
+  const hasInventairePart = parts.some((p) => p.filename.includes('_INVENTAIRE.pdf'));
+
+  if (!hasNoticePart || !hasEdlPart || !hasInventairePart) {
+    throw new BadRequestException({
+      message: 'PACK_FINAL_V2 impossible : annexes meublé manquantes dans le merge.',
+      expected: {
+        notice: true,
+        edl: true,
+        inventaire: true,
+      },
+      actualParts: this.summarizeParts(parts),
+      selected: {
+        notice: notice ? { id: notice.id, filename: notice.filename, type: notice.type } : null,
+        edl: edl ? { id: edl.id, filename: edl.filename, type: edl.type } : null,
+        inventaire: inventaire ? { id: inventaire.id, filename: inventaire.filename, type: inventaire.type } : null,
+      },
+    } as any);
+  }
+}
+  
 
   // 🔐 AUDIT ajouté ici
   const auditPart = this.safeReadPdfPartByFilename(
@@ -2874,117 +3483,422 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
   // ---------------------------------------------
 // PACK EDL+INV (Entrée/Sortie) = merge (EDL + Inventory)
 // ---------------------------------------------
-async generatePackEdlInvPdf(
-  leaseId: string,
-  opts?: { phase: 'entry' | 'exit'; force?: boolean },
-) {
-  if (!leaseId) throw new BadRequestException('Missing leaseId');
+  async generatePackEdlInvPdf(
+    leaseId: string,
+    opts?: { phase: 'entry' | 'exit'; force?: boolean },
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-  const phase = opts?.phase;
-  const force = Boolean(opts?.force);
-  if (phase !== 'entry' && phase !== 'exit') {
-    throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
-  }
+    const phase = opts?.phase;
+    const force = Boolean(opts?.force);
+    if (phase !== 'entry' && phase !== 'exit') {
+      throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
+    }
 
-  const row = await this.fetchLeaseBundle(leaseId);
+    const row = await this.fetchLeaseBundle(leaseId);
 
-  const phaseLabel = phase === 'entry' ? 'ENTREE' : 'SORTIE';
-  const docType: DocType = phase === 'entry' ? 'PACK_EDL_INV_ENTREE' : 'PACK_EDL_INV_SORTIE';
+    const phaseLabel = phase === 'entry' ? 'ENTREE' : 'SORTIE';
+    const docType: DocType = phase === 'entry' ? 'PACK_EDL_INV_ENTREE' : 'PACK_EDL_INV_SORTIE';
 
-  // ✅ IDEMPOTENCE: if same pack already exists (same filename), return it (unless force)
-  const packName = `PACK_EDL_INV_${phaseLabel}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
-  const existing = await this.findExistingDocByFilename({
-    leaseId,
-    type: docType,
-    filename: packName,
-    parentNullOnly: true,
-  });
-
-  if (existing && !force) return { created: false, document: existing };
-
-  // if already finalized, refuse rebuild even with force (same logic as contract/avenant)
-  if (existing?.signed_final_document_id) {
-    throw new BadRequestException('Cannot force rebuild: pack already finalized (SIGNED_FINAL exists)');
-  }
-
-  // Ensure EDL + Inventory docs exist for this phase
-  // Reco: auto-generate if missing (smooth UX)
-  const edlRes = await this.generateEdlPdf(leaseId, { phase, force: false });
-  const invRes = await this.generateInventoryPdf(leaseId, { phase, force: false });
-
-  // ----- Variables template (reuse pack style) -----
-  const signature_date_fr = this.formatDateFr(new Date());
-  const signature_place =
-    row.unit_city && /^\d{5}$/.test(String(row.unit_city).trim()) ? '' : row.unit_city;
-
-  const lease_start_date_fr = this.formatDateFr(row.start_date);
-  const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
-
-  let annexes_list_html = '<ul>';
-  if (edlRes) annexes_list_html += `<li>État des lieux (${phaseLabel.toLowerCase()})</li>`;
-  if (invRes) annexes_list_html += `<li>Inventaire (${phaseLabel.toLowerCase()})</li>`;
-  annexes_list_html += '</ul>';
-
-  const parts: Array<{ filename: string; buffer: Buffer }> = [];
-
-  const pEdl = this.safeReadPdfPart(edlRes?.document);
-  if (pEdl) parts.push({ filename: `01_EDL_${phaseLabel}.pdf`, buffer: pEdl.buffer });
-
-  const pInv = this.safeReadPdfPart(invRes?.document);
-  if (pInv) parts.push({ filename: `02_INVENTAIRE_${phaseLabel}.pdf`, buffer: pInv.buffer });
-
-  if (!parts.length) {
-    throw new BadRequestException('PACK_EDL_INV: no PDFs found to merge');
-  }
-
-  const infoHtml = `
-  <html><head><style>body { font-family: Arial; font-size: 10pt; }</style></head><body>
-    <h2>Pack EDL + Inventaire (${this.escapeHtml(phaseLabel)})</h2>
-    <p>Date : ${signature_date_fr}</p>
-    <p>Lieu : ${this.escapeHtml(signature_place || '')}</p>
-    <p>Bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
-    <p>Annexes incluses :</p>
-    ${annexes_list_html}
-  </body></html>`;
-
-  const infoPdfBuf = await this.htmlToPdfBuffer(infoHtml);
-  parts.unshift({ filename: 'info_pack_edl_inv.pdf', buffer: infoPdfBuf });
-
-  let mergedBuf: Buffer;
-  try {
-    mergedBuf = await this.mergePdfsGotenberg(parts);
-  } catch (e) {
-    console.error('[PACK_EDL_INV MERGE ERROR]', {
+    // ✅ IDEMPOTENCE: if same pack already exists (same filename), return it (unless force)
+    const packName = `PACK_EDL_INV_${phaseLabel}_${row.unit_code}_${this.isoDate(row.start_date)}.pdf`;
+    const existing = await this.findExistingDocByFilename({
       leaseId,
-      phase,
-      parts: this.summarizeParts(parts),
-      error: e,
+      type: docType,
+      filename: packName,
+      parentNullOnly: true,
     });
-    throw e;
+
+    if (existing && !force) return { created: false, document: existing };
+
+    // if already finalized, refuse rebuild even with force (same logic as contract/avenant)
+    if (existing?.signed_final_document_id) {
+      throw new BadRequestException('Cannot force rebuild: pack already finalized (SIGNED_FINAL exists)');
+    }
+
+    // Ensure EDL + Inventory docs exist for this phase
+    // Reco: auto-generate if missing (smooth UX)
+    const edlRes = await this.generateEdlPdf(leaseId, { phase, force: false });
+    const invRes = await this.generateInventoryPdf(leaseId, { phase, force: false });
+
+    // ----- Variables template (reuse pack style) -----
+    const signature_date_fr = this.formatDateFr(new Date());
+    const signature_place =
+      row.unit_city && /^\d{5}$/.test(String(row.unit_city).trim()) ? '' : row.unit_city;
+
+    const lease_start_date_fr = this.formatDateFr(row.start_date);
+    const lease_end_date_fr = this.formatDateFr(row.end_date_theoretical);
+
+    let annexes_list_html = '<ul>';
+    if (edlRes) annexes_list_html += `<li>État des lieux (${phaseLabel.toLowerCase()})</li>`;
+    if (invRes) annexes_list_html += `<li>Inventaire (${phaseLabel.toLowerCase()})</li>`;
+    annexes_list_html += '</ul>';
+
+    const parts: Array<{ filename: string; buffer: Buffer }> = [];
+
+    const pEdl = this.safeReadPdfPart(edlRes?.document);
+    if (pEdl) parts.push({ filename: `01_EDL_${phaseLabel}.pdf`, buffer: pEdl.buffer });
+
+    const pInv = this.safeReadPdfPart(invRes?.document);
+    if (pInv) parts.push({ filename: `02_INVENTAIRE_${phaseLabel}.pdf`, buffer: pInv.buffer });
+
+    if (!parts.length) {
+      throw new BadRequestException('PACK_EDL_INV: no PDFs found to merge');
+    }
+
+    const infoHtml = `
+    <html><head><style>body { font-family: Arial; font-size: 10pt; }</style></head><body>
+      <h2>Pack EDL + Inventaire (${this.escapeHtml(phaseLabel)})</h2>
+      <p>Date : ${signature_date_fr}</p>
+      <p>Lieu : ${this.escapeHtml(signature_place || '')}</p>
+      <p>Bail : ${lease_start_date_fr} → ${lease_end_date_fr}</p>
+      <p>Annexes incluses :</p>
+      ${annexes_list_html}
+    </body></html>`;
+
+    const infoPdfBuf = await this.htmlToPdfBuffer(infoHtml);
+    parts.unshift({ filename: 'info_pack_edl_inv.pdf', buffer: infoPdfBuf });
+
+    let mergedBuf: Buffer;
+    try {
+      mergedBuf = await this.mergePdfsGotenberg(parts);
+    } catch (e) {
+      console.error('[PACK_EDL_INV MERGE ERROR]', {
+        leaseId,
+        phase,
+        parts: this.summarizeParts(parts),
+        error: e,
+      });
+      throw e;
+    }
+
+    const mergedSha = this.sha256Buffer(mergedBuf);
+
+    const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
+    this.ensureDir(outDir);
+    const outPdfPath = path.join(outDir, packName);
+    fsSync.writeFileSync(outPdfPath, mergedBuf);
+
+    const ins = await this.pool.query(
+      `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
+      VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
+      [
+        row.unit_id,
+        leaseId,
+        docType,
+        packName,
+        outPdfPath.replace(this.storageBase, ''),
+        mergedSha,
+      ],
+    );
+
+    return { created: true, document: ins.rows[0], parts: { edlId: edlRes?.document?.id || null, invId: invRes?.document?.id || null } };
   }
 
-  const mergedSha = this.sha256Buffer(mergedBuf);
+  async generateExitCertificatePdf(
+    leaseId: string,
+    opts?: { force?: boolean },
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    const force = Boolean(opts?.force);
 
-  const outDir = path.join(this.storageBase, 'units', row.unit_id, 'leases', leaseId, 'documents');
-  this.ensureDir(outDir);
-  const outPdfPath = path.join(outDir, packName);
-  fsSync.writeFileSync(outPdfPath, mergedBuf);
+    const row = await this.fetchLeaseBundle(leaseId);
+    const docs: any[] = await this.listDocsForLease(leaseId);
 
-  const ins = await this.pool.query(
-    `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
-     VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-    [
-      row.unit_id,
+    const pickLatestDoc = (items: any[]) =>
+      items
+        .slice()
+        .sort((a: any, b: any) =>
+          String(b.created_at || '').localeCompare(String(a.created_at || '')),
+        )[0] || null;
+
+    const pickRootByType = (type: string) =>
+      pickLatestDoc(
+        docs.filter(
+          (d: any) =>
+            d.type === type &&
+            !d.parent_document_id,
+        ),
+      );
+
+    const resolveSignedFinalFromRoot = (rootDoc: any | null) => {
+      if (!rootDoc) return null;
+
+      if (rootDoc.signed_final_document_id) {
+        return (
+          docs.find((d: any) => String(d.id) === String(rootDoc.signed_final_document_id)) ||
+          null
+        );
+      }
+
+      return (
+        docs.find(
+          (d: any) =>
+            String(d.parent_document_id || '') === String(rootDoc.id) &&
+            String(d.filename || '').includes('_SIGNED_FINAL'),
+        ) || null
+      );
+    };
+
+    const edlRoot = pickRootByType('EDL_SORTIE');
+    const inventaireRoot = pickRootByType('INVENTAIRE_SORTIE');
+
+    const edlSignedFinal = resolveSignedFinalFromRoot(edlRoot);
+    const inventaireSignedFinal = resolveSignedFinalFromRoot(inventaireRoot);
+
+    if (!edlSignedFinal) {
+      throw new BadRequestException(
+        edlRoot
+          ? 'Exit certificate impossible: EDL_SORTIE présent mais SIGNED_FINAL introuvable.'
+          : 'Exit certificate impossible: EDL_SORTIE introuvable.',
+      );
+    }
+
+    if (!inventaireSignedFinal) {
+      throw new BadRequestException(
+        inventaireRoot
+          ? 'Exit certificate impossible: INVENTAIRE_SORTIE présent mais SIGNED_FINAL introuvable.'
+          : 'Exit certificate impossible: INVENTAIRE_SORTIE introuvable.',
+      );
+    }
+
+    const pdfName = `ATTESTATION_SORTIE_${row.unit_code}_${this.isoDate(new Date())}.pdf`;
+
+    const existing = await this.findExistingDocByFilename({
       leaseId,
-      docType,
-      packName,
-      outPdfPath.replace(this.storageBase, ''),
-      mergedSha,
-    ],
-  );
+      type: 'ATTESTATION_SORTIE',
+      filename: pdfName,
+      parentNullOnly: true,
+    });
 
-  return { created: true, document: ins.rows[0], parts: { edlId: edlRes?.document?.id || null, invId: invRes?.document?.id || null } };
-}
+    if (existing && !force) {
+      return { created: false, document: existing };
+    }
+
+    if (existing && force) {
+      const abs = this.absFromStoragePath(existing.storage_path);
+      await this.deleteDocumentRow(existing.id);
+      await this.safeUnlinkAbs(abs);
+    }
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <style>
+    body{font-family:Arial,sans-serif;font-size:11pt;line-height:1.4;padding:24px}
+    h1{font-size:18pt;margin:0 0 12px 0}
+    .box{border:1px solid #ddd;padding:12px;border-radius:8px;margin:12px 0}
+    .small{color:#555;font-size:10pt}
+    table{border-collapse:collapse;width:100%;margin-top:10px}
+    td{border:1px solid #eee;padding:8px;vertical-align:top}
+    .k{width:30%;background:#fafafa;font-weight:700}
+  </style>
+</head>
+<body>
+  <h1>Attestation de sortie</h1>
+
+  <div class="box">
+    <b>Bail :</b> ${this.escapeHtml(String(leaseId))}<br/>
+    <b>Logement :</b> ${this.escapeHtml(String(row.unit_label || ''))} (${this.escapeHtml(String(row.unit_code || ''))})<br/>
+    <b>Adresse :</b> ${this.escapeHtml(String(row.unit_address_line1 || ''))}, ${this.escapeHtml(String(row.unit_postal_code || ''))} ${this.escapeHtml(String(row.unit_city || ''))}<br/>
+    <b>Locataire principal :</b> ${this.escapeHtml(String(row.tenant_name || ''))}
+  </div>
+
+  <table>
+    <tr>
+      <td class="k">EDL de sortie signé final</td>
+      <td>${this.escapeHtml(String(edlSignedFinal.filename || ''))}</td>
+    </tr>
+    <tr>
+      <td class="k">Inventaire de sortie signé final</td>
+      <td>${this.escapeHtml(String(inventaireSignedFinal.filename || ''))}</td>
+    </tr>
+    <tr>
+      <td class="k">Date d’émission</td>
+      <td>${this.escapeHtml(this.formatDateFr(new Date()))}</td>
+    </tr>
+  </table>
+
+  <div class="box">
+    La présente attestation constate que le dossier de sortie comporte un état des lieux de sortie signé
+    ainsi qu’un inventaire de sortie signé pour le bail concerné.
+  </div>
+
+  <p class="small">
+    Document généré par RentalOS.
+  </p>
+</body>
+</html>`;
+
+    const pdfBuf = await this.htmlToPdfBuffer(html);
+
+    const outDir = path.join(
+      this.storageBase,
+      'units',
+      row.unit_id,
+      'leases',
+      leaseId,
+      'documents',
+    );
+    this.ensureDir(outDir);
+
+    const outPdfPath = path.join(outDir, pdfName);
+    fsSync.writeFileSync(outPdfPath, pdfBuf);
+
+    const sha = this.sha256File(outPdfPath);
+
+    const ins = await this.pool.query(
+      `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [
+        row.unit_id,
+        leaseId,
+        'ATTESTATION_SORTIE',
+        pdfName,
+        outPdfPath.replace(this.storageBase, ''),
+        sha,
+      ],
+    );
+
+    return { created: true, document: ins.rows[0] };
+  }
+
+  async generateExitPackPdf(
+    leaseId: string,
+    opts?: { force?: boolean },
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    const force = Boolean(opts?.force);
+
+    const row = await this.fetchLeaseBundle(leaseId);
+    const docs: any[] = await this.listDocsForLease(leaseId);
+
+    const pickLatestDoc = (items: any[]) =>
+      items
+        .slice()
+        .sort((a: any, b: any) =>
+          String(b.created_at || '').localeCompare(String(a.created_at || '')),
+        )[0] || null;
+
+    const pickRootByType = (type: string) =>
+      pickLatestDoc(
+        docs.filter(
+          (d: any) =>
+            d.type === type &&
+            !d.parent_document_id,
+        ),
+      );
+
+    const resolveSignedFinalFromRoot = (rootDoc: any | null) => {
+      if (!rootDoc) return null;
+
+      if (rootDoc.signed_final_document_id) {
+        return (
+          docs.find((d: any) => String(d.id) === String(rootDoc.signed_final_document_id)) ||
+          null
+        );
+      }
+
+      return (
+        docs.find(
+          (d: any) =>
+            String(d.parent_document_id || '') === String(rootDoc.id) &&
+            String(d.filename || '').includes('_SIGNED_FINAL'),
+        ) || null
+      );
+    };
+
+    const edlRoot = pickRootByType('EDL_SORTIE');
+    const inventaireRoot = pickRootByType('INVENTAIRE_SORTIE');
+
+    const edlSignedFinal = resolveSignedFinalFromRoot(edlRoot);
+    const inventaireSignedFinal = resolveSignedFinalFromRoot(inventaireRoot);
+
+    if (!edlSignedFinal || !inventaireSignedFinal) {
+      throw new BadRequestException('Exit pack impossible: missing signed final exit documents');
+    }
+
+    const attestationRes = await this.generateExitCertificatePdf(leaseId, { force });
+    const attestationDoc = attestationRes.document;
+
+    const packName = `PACK_SORTIE_${row.unit_code}_${this.isoDate(new Date())}.pdf`;
+
+    const existing = await this.findExistingDocByFilename({
+      leaseId,
+      type: 'PACK_EDL_INV_SORTIE',
+      filename: packName,
+      parentNullOnly: true,
+    });
+
+    if (existing && !force) {
+      return { created: false, document: existing };
+    }
+
+    if (existing && force) {
+      const abs = this.absFromStoragePath(existing.storage_path);
+      await this.deleteDocumentRow(existing.id);
+      await this.safeUnlinkAbs(abs);
+    }
+
+    const ordered: Array<{ filename: string; doc: any }> = [
+      { filename: '01_EDL_SORTIE_SIGNED_FINAL.pdf', doc: edlSignedFinal },
+      { filename: '02_INVENTAIRE_SORTIE_SIGNED_FINAL.pdf', doc: inventaireSignedFinal },
+      { filename: '03_ATTESTATION_SORTIE.pdf', doc: attestationDoc },
+    ];
+
+    const parts = ordered
+      .map(({ filename, doc }) => {
+        const p = this.safeReadPdfPart(doc);
+        return p ? { filename, buffer: p.buffer } : null;
+      })
+      .filter(Boolean) as Array<{ filename: string; buffer: Buffer }>;
+
+    if (!parts.length) {
+      throw new BadRequestException('Exit pack: no PDFs found to merge');
+    }
+
+    const mergedBuf = await this.mergePdfsGotenberg(parts);
+    const mergedSha = this.sha256Buffer(mergedBuf);
+
+    const outDir = path.join(
+      this.storageBase,
+      'units',
+      row.unit_id,
+      'leases',
+      leaseId,
+      'documents',
+    );
+    this.ensureDir(outDir);
+
+    const outPdfPath = path.join(outDir, packName);
+    fsSync.writeFileSync(outPdfPath, mergedBuf);
+
+    const ins = await this.pool.query(
+      `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       RETURNING *`,
+      [
+        row.unit_id,
+        leaseId,
+        'PACK_EDL_INV_SORTIE',
+        packName,
+        outPdfPath.replace(this.storageBase, ''),
+        mergedSha,
+      ],
+    );
+
+    return {
+      created: true,
+      document: ins.rows[0],
+      parts: {
+        edlId: edlSignedFinal.id,
+        invId: inventaireSignedFinal.id,
+        attestationId: attestationDoc?.id || null,
+      },
+    };
+  }
 
     private safeReadPdfPart(doc: any): { filename: string; buffer: Buffer } | null {
       const d = doc?.document ? doc.document : doc; // accepte {created, document} OU document direct
@@ -3136,470 +4050,560 @@ code{word-break:break-all}
   return this.htmlToPdfBuffer(html);
 }
 
-async signDocumentMulti(documentId: string, body: any, req: any) {
-  const { signerName, signerRole, signatureDataUrl, signerTenantId } = body || {};
-  if (!signerName || !signerRole || !signatureDataUrl) {
-    throw new BadRequestException('Missing signerName/signerRole/signatureDataUrl');
-  }
-  const allowedRoles = new Set(['BAILLEUR', 'LOCATAIRE', 'GARANT']);
-  if (!allowedRoles.has(String(signerRole))) {
-    throw new BadRequestException('signerRole must be BAILLEUR, LOCATAIRE or GARANT');
-  }
-
-  const docR = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [documentId]);
-  if (!docR.rowCount) throw new BadRequestException('Unknown document');
-  const doc = docR.rows[0];
-
-  // ✅ Guard: lease + tenants
-  const leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
-  const tenants = this.getTenantsFromLeaseRow(leaseRow);
-
-  // --- GARANT guard (MVP: legacy columns OR guarantors_json) ---
-  const hasLegacyGuarantor =
-    Boolean(String(leaseRow?.guarantor_full_name || '').trim()) ||
-    Boolean(String(leaseRow?.guarantor_email || '').trim()) ||
-    Boolean(String(leaseRow?.guarantor_phone || '').trim()) ||
-    Boolean(String(leaseRow?.guarantor_address || '').trim());
-
-  const gArr = this.parseJsonSafe((leaseRow as any)?.guarantors_json);
-  const hasGuarantorsJson = Array.isArray(gArr) && gArr.length > 0;
-
-  if (signerRole === 'GARANT') {
-    // Only allowed for GUARANTOR_ACT document
-    if (String(doc.type) !== 'GUARANTOR_ACT') {
-      throw new BadRequestException('GARANT signature only allowed on GUARANTOR_ACT documents');
+  async signDocumentMulti(documentId: string, body: any, req: any) {
+    const { signerName, signerRole, signatureDataUrl, signerTenantId } = body || {};
+    if (!signerName || !signerRole || !signatureDataUrl) {
+      throw new BadRequestException('Missing signerName/signerRole/signatureDataUrl');
     }
-    // ✅ source robuste: lease_guarantees
-    const gq = await this.pool.query(
-      `SELECT 1
-       FROM lease_guarantees
-       WHERE lease_id=$1 AND type='CAUTION' AND selected=true
-       LIMIT 1`,
-      [doc.lease_id],
-    );
-    if (!gq.rowCount && !hasLegacyGuarantor && !hasGuarantorsJson) {
-      throw new BadRequestException('No guarantor configured on this lease');
-    }
-  }
-
-  // helper: normalize
-  const norm = (s: any) => String(s || '').trim().toLowerCase();
-
-  // accepte tenant_id OU id (au cas où)
-  let tenantIds = tenants
-    .map(t => t?.tenant_id || t?.id)
-    .filter(Boolean);
-
-  // fallback sur la colonne principale du bail (l.tenant_id)
-  if (tenantIds.length === 0 && leaseRow?.tenant_id) {
-    tenantIds = [leaseRow.tenant_id];
-  }
-
-  // ✅ resolve effectiveTenantId (required when LOCATAIRE)
-  let effectiveTenantId = '';
-  if (signerRole === 'LOCATAIRE') {
-    // mono-locataire: auto
-    if (tenantIds.length <= 1) {
-      effectiveTenantId = tenantIds[0] || String(signerTenantId || '').trim();
-    } else {
-      // multi-locataires: 1) explicit id
-      effectiveTenantId = String(signerTenantId || '').trim();
-
-      // 2) auto-resolve by signerName if not provided
-      if (!effectiveTenantId) {
-        const matches = tenants.filter((t: any) => norm(t?.full_name) === norm(signerName));
-        if (matches.length === 1) {
-          effectiveTenantId = String(matches[0]?.tenant_id || '').trim();
-        }
-      }
-
-      // still missing => send UI-friendly error
-      if (!effectiveTenantId) {
-        throw new BadRequestException({
-          message: 'Missing signerTenantId (required when multiple tenants)',
-          tenants: tenants.map((t: any) => ({
-            tenantId: String(t?.tenant_id || '').trim(),
-            fullName: t?.full_name || '',
-            role: t?.role || '',
-          })),
-        } as any);
-      }
+    const allowedRoles = new Set(['BAILLEUR', 'LOCATAIRE', 'GARANT']);
+    if (!allowedRoles.has(String(signerRole))) {
+      throw new BadRequestException('signerRole must be BAILLEUR, LOCATAIRE or GARANT');
     }
 
-    // validate tenantId belongs to lease
-    const allowed = new Set(tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean));
-    if (effectiveTenantId && allowed.size && !allowed.has(effectiveTenantId)) {
-      throw new BadRequestException('signerTenantId is not a tenant of this lease');
+    const docR = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [documentId]);
+    if (!docR.rowCount) throw new BadRequestException('Unknown document');
+    const doc = docR.rows[0];
+
+    if (!this.isMultiSignableDocType(doc.type)) {
+      throw new BadRequestException(`Unsupported signable document type: ${doc.type}`);
     }
-    if (!effectiveTenantId) {
-      throw new BadRequestException('Unable to resolve signerTenantId for tenant signature');
-    }
-  }
 
-  const absPdf = this.absFromStoragePath(doc.storage_path);
-  if (!fsSync.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
-
-  const originalPdfBuf = fsSync.readFileSync(absPdf);
-  const originalSha = this.sha256Buffer(originalPdfBuf);
-
-    // ✅ anti double signature (guarantor)
-  if (signerRole === 'GARANT') {
-    const already = await this.pool.query(
-      `SELECT id, signed_at
-       FROM signatures
-       WHERE document_id=$1
-         AND signer_role='GARANT'
-       ORDER BY signed_at DESC
-       LIMIT 1`,
-      [doc.id],
-    );
-
-    if (already.rowCount) {
-      const sigsNow = await this.pool.query(
-        `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
-        [doc.id],
-      );
-
-      return {
-        ok: true,
-        pending: false,
-        alreadySigned: true,
-        signatures: sigsNow.rows,
-      };
-    }
-  }
-
-  // ✅ anti double signature (tenant)
-  if (signerRole === 'LOCATAIRE') {
-    const already = await this.pool.query(
-      `SELECT id, signed_at
-       FROM signatures
-       WHERE document_id=$1
-         AND signer_role='LOCATAIRE'
-         AND COALESCE(audit_log->>'tenantId','') = $2
-       ORDER BY signed_at DESC
-       LIMIT 1`,
-      [doc.id, effectiveTenantId],
-    );
-    if (already.rowCount) {
-      // Return current state without creating another signature row
-      const sigsNow = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
-      // rebuild latest maps
-      const latestTenantSigByTenantId: Record<string, any> = {};
-      let latestGuarantSig: any = null;
-      let latestLandlordSig: any = null;
-      for (const s of sigsNow.rows) {
-        if (s.signer_role === 'BAILLEUR') {
-          if (!latestLandlordSig) latestLandlordSig = s;
-          continue;
-        }
-
-        if (s.signer_role === 'GARANT') {
-          if (!latestGuarantSig) latestGuarantSig = s;
-          continue;
-        }
-
-        if (s.signer_role === 'LOCATAIRE') {
-          const tid = this.pickTenantIdFromSignature(s);
-          if (!tid) continue;
-          if (!latestTenantSigByTenantId[tid]) latestTenantSigByTenantId[tid] = s;
-        }
-      }
-
-      const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
-      const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
-      const hasAllTenants = tenantIds.length ? signedTenantIds.length === tenantIds.length : Boolean(Object.keys(latestTenantSigByTenantId).length);
-      const hasLandlord = Boolean(latestLandlordSig);
-
-      return {
-        ok: true,
-        pending: !(hasAllTenants && hasLandlord),
-        alreadySigned: true,
-        need: {
-          landlord: !hasLandlord,
-          tenantsMissing: missingTenantIds,
-          tenantsSigned: signedTenantIds,
-          tenantsTotal: tenantIds.length,
-        },
-        signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
-      };
-    }
-  }
-
-  const m = String(signatureDataUrl).match(/^data:image\/png;base64,(.+)$/);
-  if (!m) throw new BadRequestException('Signature must be PNG data URL');
-  const imgBuf = Buffer.from(m[1], 'base64');
-  if (imgBuf.length > 2_000_000) {
-  throw new BadRequestException('Signature too large');
-  }
-
-  const sigDir = path.join(this.storageBase, 'units', doc.unit_id, 'leases', doc.lease_id, 'signatures');
-  this.ensureDir(sigDir);
-
-  const sigFile =
-    signerRole === 'LOCATAIRE'
-      ? `signature_${documentId}_${signerRole}_${effectiveTenantId}_${Date.now()}.png`
-      : `signature_${documentId}_${signerRole}_${Date.now()}.png`;
-
-  const sigAbs = path.join(sigDir, sigFile);
-  fsSync.writeFileSync(sigAbs, imgBuf);
-
-  const signedAt = new Date().toISOString();
-
-  // ✅ sequence: locataires d’abord (dans l’ordre tenants_json), bailleur en dernier
-  const tenantIndexById = new Map<string, number>();
-  tenants.forEach((t: any, idx: number) => {
-    const id = String(t?.tenant_id || '').trim();
-    if (id) tenantIndexById.set(id, idx);
-  });
-
-  const isGuarantorAct = String(doc.type) === 'GUARANTOR_ACT';
-
-  const sequence =
-    isGuarantorAct
-      ? (signerRole === 'GARANT' ? 1 : signerRole === 'BAILLEUR' ? 2 : 99)
-      : signerRole === 'BAILLEUR'
-        ? tenants.length + 1
-        : signerRole === 'GARANT'
-          ? tenants.length + 2
-          : (tenantIndexById.get(effectiveTenantId) ?? 0) + 1;
-
-  const audit = {
-    consent: true,
-    signedAt,
-    ip: req.ip,
-    userAgent: req.headers['user-agent'],
-    documentId,
-    signerRole,
-    signerName,
-    tenantId: signerRole === 'LOCATAIRE' ? effectiveTenantId : null,
-    originalPdfSha256: originalSha,
-  };
-
-  await this.pool.query(
-    `INSERT INTO signatures (document_id, signer_role, signer_name, signer_tenant_id, signature_image_path, ip, user_agent, pdf_sha256, audit_log, sequence)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-    [
-      doc.id,
-      signerRole as SignRole,
+    console.log('[SIGN DOC INPUT]', {
+      documentId,
+      docType: doc.type,
+      filename: doc.filename,
+      leaseId: doc.lease_id,
+      signerRole,
       signerName,
-      signerRole === 'LOCATAIRE' ? (effectiveTenantId || null) : null,
-      sigAbs.replace(this.storageBase, ''),
-      req.ip,
-      req.headers['user-agent'],
-      originalSha,
-      audit,
-      sequence,
-    ],
-  );
-
-  const sigs = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
-
-  const latestTenantSigByTenantId: Record<string, any> = {};
-  let latestLandlordSig: any = null;
-  let latestGuarantSig: any = null;
-
-  for (const s of sigs.rows) {
-    if (s.signer_role === 'BAILLEUR') {
-      if (!latestLandlordSig) latestLandlordSig = s;
-      continue;
-    }
-    // ✅ AJOUTER CE BLOC
-    if (s.signer_role === 'GARANT') {
-      if (!latestGuarantSig) latestGuarantSig = s;
-      continue;
-    }
-    if (s.signer_role === 'LOCATAIRE') {
-      const tid = this.pickTenantIdFromSignature(s);
-      if (!tid) continue;
-      if (!latestTenantSigByTenantId[tid]) latestTenantSigByTenantId[tid] = s;
-    }
-  }
-
-  const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
-  const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
-
-  const hasAllTenants = tenantIds.length
-    ? signedTenantIds.length === tenantIds.length
-    : Boolean(Object.keys(latestTenantSigByTenantId).length);
-
-  const hasLandlord = Boolean(latestLandlordSig);
-  const hasGuarantor = Boolean(latestGuarantSig);
-
-  const readyToFinalize =
-    isGuarantorAct
-      ? (hasGuarantor && hasLandlord)
-      : (hasAllTenants && hasLandlord);
-
-
-  if (readyToFinalize) {
-    if (doc.signed_final_document_id) {
-      const finalDoc = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [doc.signed_final_document_id]);
-      const finalSignedDocument = finalDoc.rowCount ? finalDoc.rows[0] : null;
-
-      // Option: récupérer signatures existantes pour renvoyer un état cohérent
-      const sigQ = await this.pool.query(
-        `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
-        [doc.id],
-      );
-      return {
-        ok: true,
-        pending: false,
-        alreadyFinalized: true,
-        finalSignedDocument,
-        signatures: sigQ.rows,
-        signaturesPdfSha256: doc.signed_final_sha256 || finalSignedDocument?.sha256 || null,
-      };
-    }
-
-    const unitQ = await this.pool.query(`SELECT code FROM units WHERE id=$1`, [doc.unit_id]);
-    const unitCode = unitQ.rowCount ? unitQ.rows[0].code : 'UNIT';
-
-    const tenantSigsOrdered = tenantIds
-      .map((id) => latestTenantSigByTenantId[id])
-      .filter(Boolean)
-      .sort((a: any, b: any) => (a.sequence ?? 0) - (b.sequence ?? 0));
-
-    const sigOrder: any[] = isGuarantorAct
-      ? [latestGuarantSig, latestLandlordSig].filter(Boolean)
-      : [...tenantSigsOrdered, latestLandlordSig].filter(Boolean);
-
-    const sigPages: Buffer[] = [];
-    for (const s of sigOrder) {
-      const sigImgAbs = this.absFromStoragePath(s.signature_image_path);
-      const sigDataUrl = this.fileToDataUrlPng(sigImgAbs);
-
-      const pageBuf = await this.generateSignaturePagePdf({
-        unitCode,
-        leaseId: doc.lease_id,
-        signerName: s.signer_name,
-        signerRole: s.signer_role,
-        signatureDataUrl: sigDataUrl,
-        originalPdfSha256: originalSha,
-        signedAtIso: new Date(s.signed_at).toISOString(),
-        auditJson: s.audit_log,
-      });
-      sigPages.push(pageBuf);
-    }
-
-    const mergeParts: Array<{ filename: string; buffer: Buffer }> = [];
-    mergeParts.push({ filename: doc.filename || 'document.pdf', buffer: originalPdfBuf });
-
-    sigOrder.forEach((s: any, idx: number) => {
-      if (s.signer_role === 'LOCATAIRE') {
-        const tid = this.pickTenantIdFromSignature(s) || `tenant_${idx + 1}`;
-        mergeParts.push({
-          filename: `signature_locataire_${idx + 1}_${tid}.pdf`,
-          buffer: sigPages[idx],
-        });
-      } else if (s.signer_role === 'GARANT') {
-        mergeParts.push({
-          filename: `signature_garant.pdf`,
-          buffer: sigPages[idx],
-        });
-      } else {
-        mergeParts.push({
-          filename: `signature_bailleur.pdf`,
-          buffer: sigPages[idx],
-        });
-      }
+      signerTenantId,
     });
 
-    const mergedBuf = await this.mergePdfsGotenberg(mergeParts);
-    const mergedSha = this.sha256Buffer(mergedBuf);
+    // ✅ Guard: lease + tenants
+    const leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
+    const tenants = this.getTenantsFromLeaseRow(leaseRow);
 
-    const signedDir = path.join(this.storageBase, 'units', doc.unit_id, 'leases', doc.lease_id, 'documents');
-    this.ensureDir(signedDir);
+    // --- GARANT guard (MVP: legacy columns OR guarantors_json) ---
+    const hasLegacyGuarantor =
+      Boolean(String(leaseRow?.guarantor_full_name || '').trim()) ||
+      Boolean(String(leaseRow?.guarantor_email || '').trim()) ||
+      Boolean(String(leaseRow?.guarantor_phone || '').trim()) ||
+      Boolean(String(leaseRow?.guarantor_address || '').trim());
 
-    const signedName = (doc.filename || 'document.pdf').replace(/\.pdf$/i, '') + `_SIGNED_FINAL.pdf`;
-    const signedAbs2 = path.join(signedDir, signedName);
-    fsSync.writeFileSync(signedAbs2, mergedBuf);
+    const gArr = this.parseJsonSafe((leaseRow as any)?.guarantors_json);
+    const hasGuarantorsJson = Array.isArray(gArr) && gArr.length > 0;
 
-    const finalType = isGuarantorAct ? 'GUARANTOR_ACT' : 'CONTRAT';
+    if (signerRole === 'GARANT') {
+      // Only allowed for GUARANTOR_ACT document
+      if (String(doc.type) !== 'GUARANTOR_ACT') {
+        throw new BadRequestException('GARANT signature only allowed on GUARANTOR_ACT documents');
+      }
+      // ✅ source robuste: lease_guarantees
+      const gq = await this.pool.query(
+        `SELECT 1
+        FROM lease_guarantees
+        WHERE lease_id=$1 AND type='CAUTION' AND selected=true
+        LIMIT 1`,
+        [doc.lease_id],
+      );
+      if (!gq.rowCount && !hasLegacyGuarantor && !hasGuarantorsJson) {
+        throw new BadRequestException('No guarantor configured on this lease');
+      }
+    }
 
-    const insDoc = await this.pool.query(
-      `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
-      VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+    // helper: normalize
+    const norm = (s: any) => String(s || '').trim().toLowerCase();
+
+    // accepte tenant_id OU id (au cas où)
+    let tenantIds = tenants
+      .map(t => t?.tenant_id || t?.id)
+      .filter(Boolean);
+
+    // fallback sur la colonne principale du bail (l.tenant_id)
+    if (tenantIds.length === 0 && leaseRow?.tenant_id) {
+      tenantIds = [leaseRow.tenant_id];
+    }
+
+    // ✅ resolve effectiveTenantId (required when LOCATAIRE)
+    let effectiveTenantId = '';
+    if (signerRole === 'LOCATAIRE') {
+      // mono-locataire: auto
+      if (tenantIds.length <= 1) {
+        effectiveTenantId = tenantIds[0] || String(signerTenantId || '').trim();
+      } else {
+        // multi-locataires: 1) explicit id
+        effectiveTenantId = String(signerTenantId || '').trim();
+
+        // 2) auto-resolve by signerName if not provided
+        if (!effectiveTenantId) {
+          const matches = tenants.filter((t: any) => norm(t?.full_name) === norm(signerName));
+          if (matches.length === 1) {
+            effectiveTenantId = String(matches[0]?.tenant_id || '').trim();
+          }
+        }
+
+        // still missing => send UI-friendly error
+        if (!effectiveTenantId) {
+          throw new BadRequestException({
+            message: 'Missing signerTenantId (required when multiple tenants)',
+            tenants: tenants.map((t: any) => ({
+              tenantId: String(t?.tenant_id || '').trim(),
+              fullName: t?.full_name || '',
+              role: t?.role || '',
+            })),
+          } as any);
+        }
+      }
+
+      // validate tenantId belongs to lease
+      const allowed = new Set(tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean));
+      if (effectiveTenantId && allowed.size && !allowed.has(effectiveTenantId)) {
+        throw new BadRequestException('signerTenantId is not a tenant of this lease');
+      }
+      if (!effectiveTenantId) {
+        throw new BadRequestException('Unable to resolve signerTenantId for tenant signature');
+      }
+    }
+
+    const absPdf = this.absFromStoragePath(doc.storage_path);
+    if (!fsSync.existsSync(absPdf)) throw new BadRequestException('PDF file missing');
+
+    const originalPdfBuf = fsSync.readFileSync(absPdf);
+    const originalSha = this.sha256Buffer(originalPdfBuf);
+
+      // ✅ anti double signature (guarantor)
+    if (signerRole === 'GARANT') {
+      const already = await this.pool.query(
+        `SELECT id, signed_at
+        FROM signatures
+        WHERE document_id=$1
+          AND signer_role='GARANT'
+        ORDER BY signed_at DESC
+        LIMIT 1`,
+        [doc.id],
+      );
+
+      if (already.rowCount) {
+        const sigsNow = await this.pool.query(
+          `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+          [doc.id],
+        );
+
+        return {
+          ok: true,
+          pending: false,
+          alreadySigned: true,
+          signatures: sigsNow.rows,
+        };
+      }
+    }
+
+    // ✅ anti double signature (tenant)
+    if (signerRole === 'LOCATAIRE') {
+      const already = await this.pool.query(
+        `SELECT id, signed_at
+        FROM signatures
+        WHERE document_id=$1
+          AND signer_role='LOCATAIRE'
+          AND COALESCE(audit_log->>'tenantId','') = $2
+        ORDER BY signed_at DESC
+        LIMIT 1`,
+        [doc.id, effectiveTenantId],
+      );
+      if (already.rowCount) {
+        // Return current state without creating another signature row
+        const sigsNow = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
+        // rebuild latest maps
+        const latestTenantSigByTenantId: Record<string, any> = {};
+        let latestGuarantSig: any = null;
+        let latestLandlordSig: any = null;
+        for (const s of sigsNow.rows) {
+          if (s.signer_role === 'BAILLEUR') {
+            if (!latestLandlordSig) latestLandlordSig = s;
+            continue;
+          }
+
+          if (s.signer_role === 'GARANT') {
+            if (!latestGuarantSig) latestGuarantSig = s;
+            continue;
+          }
+
+          if (s.signer_role === 'LOCATAIRE') {
+            const tid = this.pickTenantIdFromSignature(s);
+            if (!tid) continue;
+            if (!latestTenantSigByTenantId[tid]) latestTenantSigByTenantId[tid] = s;
+          }
+        }
+
+        const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
+        const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
+        const hasAllTenants = tenantIds.length ? signedTenantIds.length === tenantIds.length : Boolean(Object.keys(latestTenantSigByTenantId).length);
+        const hasLandlord = Boolean(latestLandlordSig);
+
+        return {
+          ok: true,
+          pending: !(hasAllTenants && hasLandlord),
+          alreadySigned: true,
+          need: {
+            landlord: !hasLandlord,
+            tenantsMissing: missingTenantIds,
+            tenantsSigned: signedTenantIds,
+            tenantsTotal: tenantIds.length,
+          },
+          signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
+        };
+      }
+    }
+
+    const m = String(signatureDataUrl).match(/^data:image\/png;base64,(.+)$/);
+    if (!m) throw new BadRequestException('Signature must be PNG data URL');
+    const imgBuf = Buffer.from(m[1], 'base64');
+    if (imgBuf.length > 2_000_000) {
+    throw new BadRequestException('Signature too large');
+    }
+
+    const sigDir = path.join(this.storageBase, 'units', doc.unit_id, 'leases', doc.lease_id, 'signatures');
+    this.ensureDir(sigDir);
+
+    const sigFile =
+      signerRole === 'LOCATAIRE'
+        ? `signature_${documentId}_${signerRole}_${effectiveTenantId}_${Date.now()}.png`
+        : `signature_${documentId}_${signerRole}_${Date.now()}.png`;
+
+    const sigAbs = path.join(sigDir, sigFile);
+    fsSync.writeFileSync(sigAbs, imgBuf);
+
+    const signedAt = new Date().toISOString();
+
+    // ✅ sequence: locataires d’abord (dans l’ordre tenants_json), bailleur en dernier
+    const tenantIndexById = new Map<string, number>();
+    tenants.forEach((t: any, idx: number) => {
+      const id = String(t?.tenant_id || '').trim();
+      if (id) tenantIndexById.set(id, idx);
+    });
+
+    const docType = String(doc.type || '').toUpperCase();
+    const isGuarantorAct = docType === 'GUARANTOR_ACT';
+
+    const isEdl =
+      docType === 'EDL_ENTREE' || docType === 'EDL_SORTIE';
+
+    const isInventory =
+      docType === 'INVENTAIRE_ENTREE' || docType === 'INVENTAIRE_SORTIE';
+
+    const sequence =
+      isGuarantorAct
+        ? (signerRole === 'GARANT' ? 1 : signerRole === 'BAILLEUR' ? 2 : 99)
+        : signerRole === 'BAILLEUR'
+          ? tenants.length + 1
+          : signerRole === 'GARANT'
+            ? tenants.length + 2
+            : (tenantIndexById.get(effectiveTenantId) ?? 0) + 1;
+
+    const audit = {
+      consent: true,
+      signedAt,
+      ip: req.ip,
+      userAgent: req.headers['user-agent'],
+      documentId,
+      signerRole,
+      signerName,
+      tenantId: signerRole === 'LOCATAIRE' ? effectiveTenantId : null,
+      originalPdfSha256: originalSha,
+    };
+
+    await this.pool.query(
+      `INSERT INTO signatures (document_id, signer_role, signer_name, signer_tenant_id, signature_image_path, ip, user_agent, pdf_sha256, audit_log, sequence)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
-        doc.unit_id,
-        doc.lease_id,
-        finalType,
-        signedName,
-        signedAbs2.replace(this.storageBase, ''),
-        mergedSha,
         doc.id,
+        signerRole as SignRole,
+        signerName,
+        signerRole === 'LOCATAIRE' ? (effectiveTenantId || null) : null,
+        sigAbs.replace(this.storageBase, ''),
+        req.ip,
+        req.headers['user-agent'],
+        originalSha,
+        audit,
+        sequence,
       ],
     );
 
-    await this.pool.query(`UPDATE documents SET signed_final_document_id=$1, finalized_at = NOW(), signed_final_sha256 = $3 WHERE id=$2`, [insDoc.rows[0].id, doc.id, mergedSha]);
+    const sigs = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
 
-    // ✅ PATCH 3.B: sync lease_guarantees.signed_final_document_id for guarantor acts
-    if (isGuarantorAct) {
-      try {
-        await this.pool.query(
-          `
-          UPDATE lease_guarantees
-          SET signed_final_document_id = $1
-          WHERE lease_id = $2
-            AND type = 'CAUTION'
-            AND guarantor_act_document_id = $3
-          `,
-          [insDoc.rows[0].id, doc.lease_id, doc.id],
-        );
-      } catch (e) {
-        console.warn('[GUARANTOR_ACT] failed to sync lease_guarantees.signed_final_document_id', e);
+    const latestTenantSigByTenantId: Record<string, any> = {};
+    let latestLandlordSig: any = null;
+    let latestGuarantSig: any = null;
+
+    for (const s of sigs.rows) {
+      if (s.signer_role === 'BAILLEUR') {
+        if (!latestLandlordSig) latestLandlordSig = s;
+        continue;
+      }
+      // ✅ AJOUTER CE BLOC
+      if (s.signer_role === 'GARANT') {
+        if (!latestGuarantSig) latestGuarantSig = s;
+        continue;
+      }
+      if (s.signer_role === 'LOCATAIRE') {
+        const tid = this.pickTenantIdFromSignature(s);
+        if (!tid) continue;
+        if (!latestTenantSigByTenantId[tid]) latestTenantSigByTenantId[tid] = s;
       }
     }
 
-    const finalSignedDocument = insDoc.rows[0];
+    const signedTenantIds = tenantIds.filter((id) => Boolean(latestTenantSigByTenantId[id]));
+    const missingTenantIds = tenantIds.filter((id) => !latestTenantSigByTenantId[id]);
 
-    if (isGuarantorAct) {
-      // ✅ si le contrat signé final existe déjà, ça va rebuild le pack avec la caution
-      const packV2 = await this.generatePackFinalV2(finalSignedDocument.lease_id);
+    const hasAllTenants = tenantIds.length
+      ? signedTenantIds.length === tenantIds.length
+      : Boolean(Object.keys(latestTenantSigByTenantId).length);
+
+    const hasLandlord = Boolean(latestLandlordSig);
+    const hasGuarantor = Boolean(latestGuarantSig);
+
+    const requiredRoles = this.getRequiredRolesForDocument(doc.type);
+
+    const needTenant = requiredRoles.includes('LOCATAIRE');
+    const needLandlord = requiredRoles.includes('BAILLEUR');
+    const needGuarantor = requiredRoles.includes('GARANT');
+
+    const readyToFinalize =
+      (!needTenant || hasAllTenants) &&
+      (!needLandlord || hasLandlord) &&
+      (!needGuarantor || hasGuarantor);
+
+    console.log('[SIGN READY CHECK]', {
+      documentId: doc.id,
+      docType: doc.type,
+      isGuarantorAct,
+      signerRole,
+      hasAllTenants,
+      hasLandlord,
+      hasGuarantor,
+      readyToFinalize,
+      signedTenantIds,
+      missingTenantIds,
+    });    
+
+      if (readyToFinalize) {
+      if (doc.signed_final_document_id) {
+        const finalDoc = await this.pool.query(
+          `SELECT * FROM documents WHERE id=$1`,
+          [doc.signed_final_document_id],
+        );
+        const finalSignedDocument = finalDoc.rowCount ? finalDoc.rows[0] : null;
+
+        const sigQ = await this.pool.query(
+          `SELECT * FROM signatures WHERE document_id=$1 ORDER BY sequence ASC`,
+          [doc.id],
+        );
+
+        return {
+          ok: true,
+          pending: false,
+          alreadyFinalized: true,
+          finalSignedDocument,
+          signatures: sigQ.rows,
+          signaturesPdfSha256:
+            doc.signed_final_sha256 || finalSignedDocument?.sha256 || null,
+        };
+      }
+
+      const unitQ = await this.pool.query(`SELECT code FROM units WHERE id=$1`, [
+        doc.unit_id,
+      ]);
+      const unitCode = unitQ.rowCount ? unitQ.rows[0].code : 'UNIT';
+
+      const tenantSigsOrdered = tenantIds
+        .map((id) => latestTenantSigByTenantId[id])
+        .filter(Boolean)
+        .sort((a: any, b: any) => (a.sequence ?? 0) - (b.sequence ?? 0));
+
+      const sigOrder: any[] = isGuarantorAct
+        ? [latestGuarantSig, latestLandlordSig].filter(Boolean)
+        : [...tenantSigsOrdered, latestLandlordSig].filter(Boolean);
+
+      const sigPages: Buffer[] = [];
+      for (const s of sigOrder) {
+        const sigImgAbs = this.absFromStoragePath(s.signature_image_path);
+        const sigDataUrl = this.fileToDataUrlPng(sigImgAbs);
+
+        const pageBuf = await this.generateSignaturePagePdf({
+          unitCode,
+          leaseId: doc.lease_id,
+          signerName: s.signer_name,
+          signerRole: s.signer_role,
+          signatureDataUrl: sigDataUrl,
+          originalPdfSha256: originalSha,
+          signedAtIso: new Date(s.signed_at).toISOString(),
+          auditJson: s.audit_log,
+        });
+        sigPages.push(pageBuf);
+      }
+
+      const mergeParts: Array<{ filename: string; buffer: Buffer }> = [];
+      mergeParts.push({
+        filename: doc.filename || 'document.pdf',
+        buffer: originalPdfBuf,
+      });
+
+      sigOrder.forEach((s: any, idx: number) => {
+        if (s.signer_role === 'LOCATAIRE') {
+          const tid = this.pickTenantIdFromSignature(s) || `tenant_${idx + 1}`;
+          mergeParts.push({
+            filename: `signature_locataire_${idx + 1}_${tid}.pdf`,
+            buffer: sigPages[idx],
+          });
+        } else if (s.signer_role === 'GARANT') {
+          mergeParts.push({
+            filename: `signature_garant.pdf`,
+            buffer: sigPages[idx],
+          });
+        } else {
+          mergeParts.push({
+            filename: `signature_bailleur.pdf`,
+            buffer: sigPages[idx],
+          });
+        }
+      });
+
+      const mergedBuf = await this.mergePdfsGotenberg(mergeParts);
+      const mergedSha = this.sha256Buffer(mergedBuf);
+
+      const signedDir = path.join(
+        this.storageBase,
+        'units',
+        doc.unit_id,
+        'leases',
+        doc.lease_id,
+        'documents',
+      );
+      this.ensureDir(signedDir);
+
+      const signedName =
+        (doc.filename || 'document.pdf').replace(/\.pdf$/i, '') +
+        `_SIGNED_FINAL.pdf`;
+      const signedAbs2 = path.join(signedDir, signedName);
+      fsSync.writeFileSync(signedAbs2, mergedBuf);
+
+      const finalType: DocType = doc.type as DocType;
+
+      const insDoc = await this.pool.query(
+        `INSERT INTO documents (unit_id, lease_id, type, filename, storage_path, sha256, parent_document_id)
+        VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,
+        [
+          doc.unit_id,
+          doc.lease_id,
+          finalType,
+          signedName,
+          signedAbs2.replace(this.storageBase, ''),
+          mergedSha,
+          doc.id,
+        ],
+      );
+
+      await this.pool.query(
+        `UPDATE documents
+        SET signed_final_document_id=$1,
+            finalized_at = NOW(),
+            signed_final_sha256 = $3
+        WHERE id=$2`,
+        [insDoc.rows[0].id, doc.id, mergedSha],
+      );
+
+      if (isGuarantorAct) {
+        try {
+          await this.pool.query(
+            `
+            UPDATE lease_guarantees
+            SET signed_final_document_id = $1
+            WHERE lease_id = $2
+              AND type = 'CAUTION'
+              AND guarantor_act_document_id = $3
+            `,
+            [insDoc.rows[0].id, doc.lease_id, doc.id],
+          );
+        } catch (e) {
+          console.warn(
+            '[GUARANTOR_ACT] failed to sync lease_guarantees.signed_final_document_id',
+            e,
+          );
+        }
+      }
+
+      const finalSignedDocument = insDoc.rows[0];
+
+      console.log('[SIGNED FINAL CREATED]', {
+        sourceDocumentId: doc.id,
+        sourceType: doc.type,
+        finalSignedDocumentId: finalSignedDocument.id,
+        finalType: finalSignedDocument.type,
+        filename: finalSignedDocument.filename,
+      });
+
+      if (isGuarantorAct) {
+        return {
+          ok: true,
+          pending: false,
+          finalSignedDocument,
+          packFinalDocument: null,
+          signatures: sigOrder,
+          signedPdfSha256: mergedSha,
+        };
+      }
+
+      const leaseRowForPack = await this.fetchLeaseBundle(
+        finalSignedDocument.lease_id,
+      );
+      const leaseKindForPack = String(leaseRowForPack.kind || '').toUpperCase();
+
+      if (leaseKindForPack === 'MEUBLE_RP') {
+        // Prépare les documents racine nécessaires à la suite du parcours
+        // sans générer le PACK_FINAL à ce stade.
+        await this.generateNoticePdf(finalSignedDocument.lease_id);
+        await this.generateEdlPdf(finalSignedDocument.lease_id, {
+          phase: 'entry',
+        });
+        await this.generateInventoryPdf(finalSignedDocument.lease_id, {
+          phase: 'entry',
+        });
+      }
+
+      // Important :
+      // ne pas générer le PACK_FINAL à la finalisation du contrat.
+      // Le parcours prévoit que l'EDL et l'inventaire peuvent être signés après.
       return {
         ok: true,
         pending: false,
-        finalSignedDocument,                 // ✅ le doc signé final (acte)
-        packFinalDocument: packV2?.document || null, // ✅ le pack v2
+        finalSignedDocument,
+        packFinalDocument: null,
         signatures: sigOrder,
         signedPdfSha256: mergedSha,
       };
     }
 
-    // ✅ rebuild PACK_FINAL v2 dès que le contrat est finalisé
-    const packV2 = await this.generatePackFinalV2(finalSignedDocument.lease_id);
+    if (requiredRoles.includes('GARANT')) {
+      return {
+        ok: true,
+        pending: true,
+        need: {
+          guarantor: !hasGuarantor,
+          landlord: !hasLandlord,
+        },
+        signatures: [latestGuarantSig, latestLandlordSig].filter(Boolean),
+      };
+    }
 
     return {
       ok: true,
-      pending: false,
-      finalSignedDocument,
-      packFinalDocument: packV2?.document || null,
-      signatures: sigOrder,
-      signedPdfSha256: mergedSha,
+      pending: true,
+      need: {
+        landlord: !hasLandlord,
+        tenantsMissing: missingTenantIds,
+        tenantsSigned: signedTenantIds,
+        tenantsTotal: tenantIds.length,
+      },
+      signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
     };
   }
-  if (isGuarantorAct) {
-  return {
-    ok: true,
-    pending: true,
-    need: {
-      guarantor: !hasGuarantor,
-      landlord: !hasLandlord,
-    },
-    signatures: [latestGuarantSig, latestLandlordSig].filter(Boolean),
-  };
-}
-
-  return {
-    ok: true,
-    pending: true,
-    need: {
-      landlord: !hasLandlord,
-      tenantsMissing: missingTenantIds,
-      tenantsSigned: signedTenantIds,
-      tenantsTotal: tenantIds.length,
-    },
-    signatures: [...Object.values(latestTenantSigByTenantId), latestLandlordSig].filter(Boolean),
-  };
-}
 }

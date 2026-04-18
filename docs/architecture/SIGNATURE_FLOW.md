@@ -1,22 +1,29 @@
-# Signature Flow — Public Tokens, Signature, Finalisation, Download
+# Signature Flow — Documents, rôles, finalisation, liens publics
 
 ## 1) Overview
-Le flow supporte :
-1) création de liens publics (tokens)
-2) signature locataire / bailleur
-3) finalisation automatique PDF final
-4) création d’un token download du PDF final
-5) téléchargement public one-time
 
+Le moteur de signature fonctionne par document.
+
+Le flow supporte :
+1) génération du document racine
+2) création éventuelle de liens publics
+3) collecte des signatures par rôle
+4) vérification des signatures requises
+5) génération du PDF `SIGNED_FINAL`
+6) téléchargement du document signé ou d’un pack final
 ---
 
 ## 2) Public links (purpose enforced)
 
-Purposes :
+Purposes principaux observés dans le système :
 - `TENANT_SIGN_CONTRACT`
 - `LANDLORD_SIGN_CONTRACT`
+- `GUARANTOR_SIGN_ACT`
 - `FINAL_PDF_DOWNLOAD`
+- `FINAL_PACK_DOWNLOAD`
 
+Remarque :
+le code contient des flux legacy et des flux plus récents ; tous les usages ne passent pas exactement par les mêmes endpoints historiques.
 Règle :
 - un token doit être utilisé uniquement pour son purpose.
 - signature ≠ download.
@@ -26,54 +33,78 @@ Règle :
 ## 3) Endpoints
 
 ### Admin
-- `POST /api/auth/login` -> JWT
-
-- `POST /api/public-links/tenant-sign/send`
-  - purpose : `TENANT_SIGN_CONTRACT`
-  - si contrat déjà finalisé -> `409 Conflict`
-
-- `POST /api/public-links/landlord-sign`
-  - purpose : `LANDLORD_SIGN_CONTRACT`
-  - si contrat déjà finalisé -> `409 Conflict`
-  - publicUrl : `/public/sign/<token>?role=landlord`
-
-- `POST /api/public-links/final-pdf`
-  - purpose : `FINAL_PDF_DOWNLOAD`
-  - prérequis : contrat finalisé
+Exemples de familles d’endpoints utilisées :
+- génération de documents
+- envoi de liens de signature
+- envoi de liens de téléchargement
+- lecture du `signature-status`
+- téléchargement de documents / signed final / pack
 
 ### Public
+Exemples de familles d’endpoints utilisées :
 - `GET /api/public/info?token=...`
-  - valide token non expiré/non invalidé
-
 - `POST /api/public/sign?token=...`
-  - accepte uniquement purpose tenant/landlord
-  - payload : `signatureDataUrl`, `signerRole`, `signerTenantId` (si multi-tenant)
-  - si déjà finalisé : renvoie 200 `alreadyFinalized: true` (pas de nouvelle signature)
+- endpoints de download public document / final / pack selon le `purpose`
 
-- `GET /api/public/download-final?token=...`
-  - accepte uniquement purpose `FINAL_PDF_DOWNLOAD`
-  - token one-time :
-    - 1er download => 200 PDF
-    - 2e download => 410 Gone
+Important :
+les flux publics coexistent en plusieurs générations :
+- flux historiques centrés contrat
+- flux plus récents couvrant aussi garanties et téléchargements pack
 
 ---
 
 ## 4) Finalisation (DocumentsService)
-Conditions :
-- tous les locataires requis signés
-- bailleur signé
-=> générer doc final `*_SIGNED_FINAL.pdf`
-=> update doc parent :
-- `signed_final_document_id`
-- `finalized_at`
-- `signed_final_sha256`
+
+La finalisation est gérée par document.
+
+Cycle :
+- signatures persistées dans `signatures`
+- calcul des rôles requis selon le type de document
+- génération de pages de signature
+- fusion avec le PDF original
+- création du document enfant `*_SIGNED_FINAL.pdf`
+- mise à jour du document parent :
+  - `signed_final_document_id`
+  - `finalized_at`
+  - `signed_final_sha256`
+
+Documents supportés par la finalisation signée :
+- `CONTRAT`
+- `GUARANTOR_ACT`
+- `EDL_ENTREE`
+- `EDL_SORTIE`
+- `INVENTAIRE_ENTREE`
+- `INVENTAIRE_SORTIE`
 
 ---
+## 5) Rôles requis par document
 
-## 5) Idempotence / anti-spam
-- si contrat finalisé :
-  - création liens signature => 409
-  - tentative de signature => retour 200 `alreadyFinalized` (pas d’insert signature)
-- download token :
-  - consommé sur 1er download
-  - replay => 410 Gone
+| Document | Signataires requis |
+|----------|--------------------|
+| CONTRAT | LOCATAIRE + BAILLEUR |
+| GUARANTOR_ACT | GARANT + BAILLEUR |
+| EDL_ENTREE | LOCATAIRE + BAILLEUR |
+| EDL_SORTIE | LOCATAIRE + BAILLEUR |
+| INVENTAIRE_ENTREE | LOCATAIRE + BAILLEUR |
+| INVENTAIRE_SORTIE | LOCATAIRE + BAILLEUR |
+
+---
+## 6) Idempotence / anti-spam
+
+Règles observées :
+- si un document est déjà finalisé :
+  - création de certains liens de signature refusée selon le flux
+  - tentative de signature publique peut renvoyer un état du type `alreadyFinalized`
+- les liens de download one-time sont consommés au premier usage
+- signature et download restent séparés par `purpose`
+
+---
+## 7) Limite actuelle connue
+
+Le pack final n’est pas encore strictement `SIGNED_FINAL only`.
+
+Pour certains documents secondaires (notamment EDL / inventaire), le système peut encore utiliser :
+- le `SIGNED_FINAL` si présent
+- sinon le document racine
+
+Ce comportement est legacy / transitoire.

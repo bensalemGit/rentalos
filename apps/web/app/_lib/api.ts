@@ -1,5 +1,6 @@
 // app/_lib/api.ts
-
+import type { CanonicalSignatureWorkflow } from "./canonical-signature.types";
+import type { CreateCanonicalPublicLinkInput } from "./canonical-public-links.types";
 export const API_BASE =
   process.env.NEXT_PUBLIC_API_BASE?.replace(/\/+$/, "") || "/api";
 
@@ -78,4 +79,21 @@ export async function apiFetchBlob(path: string, init: RequestInit = {}): Promis
   }
 
   return await resp.blob();
+}
+
+export async function fetchSignatureWorkflow(
+  leaseId: string,
+): Promise<CanonicalSignatureWorkflow> {
+  return apiFetch<CanonicalSignatureWorkflow>(
+    `/signature-workflow?leaseId=${encodeURIComponent(leaseId)}`,
+  );
+}
+
+export async function createCanonicalPublicLink(
+  input: CreateCanonicalPublicLinkInput,
+) {
+  return apiFetch("/canonical-public-links", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
 }

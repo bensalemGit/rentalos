@@ -11,6 +11,13 @@ export type SignerTaskStatus =
   | "SIGNED"
   | "BLOCKED";
 
+export type SignatureGlobalStatus =
+  | "PREPARATION"
+  | "SIGNATURE"
+  | "SIGNED"
+  | "INCOMPLETE_CLOSURE"
+  | "CLOSED";
+
 export type SignerTask = {
   id: string;
   kind: SignerKind;
@@ -23,6 +30,12 @@ export type SignerTask = {
   helperLabel?: string | null;
   progressLabel?: string | null;
   counterpartySigned?: boolean | null;
+
+  signatureDetails?: {
+    guarantorSigned?: boolean;
+    landlordSigned?: boolean;
+    remainingRoles?: Array<"GUARANTOR" | "LANDLORD">;
+  };
 
   documentId: string | null;
   documentLabel: string;
@@ -55,7 +68,6 @@ export type SignerTask = {
   isOptional?: boolean;
   isBlocked?: boolean;
   blockedReason?: string | null;
-
 };
 
 export type SignatureOverview = {
@@ -65,6 +77,10 @@ export type SignatureOverview = {
 
   progressPercent: number;
   remainingCount: number;
+
+  globalStatus?: SignatureGlobalStatus;
+  globalStatusLabel?: string;
+  globalStatusHelp?: string | null;
 
   tenants: {
     total: number;
@@ -104,4 +120,66 @@ export type SignatureSessionDraft = {
   documentLabel: string;
   tenantId?: string;
   guaranteeId?: string;
+};
+
+export type PackFinalReadinessIssue =
+  | "CONTRACT_SIGNED_FINAL_MISSING"
+  | "NOTICE_MISSING"
+  | "EDL_MISSING"
+  | "EDL_SIGNED_FINAL_MISSING"
+  | "INVENTAIRE_MISSING"
+  | "INVENTAIRE_SIGNED_FINAL_MISSING";
+
+export type PackFinalReadiness = {
+  ready: boolean;
+  leaseId: string;
+  leaseKind: string;
+  issues: PackFinalReadinessIssue[];
+  selected?: {
+    contractSignedFinal?: {
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+    } | null;
+    guarantorActsSignedFinal?: Array<{
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+      parent_document_id?: string | null;
+    }>;
+    notice?: {
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+    } | null;
+    edlRoot?: {
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+    } | null;
+    edlSignedFinal?: {
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+      parent_document_id?: string | null;
+    } | null;
+    inventaireRoot?: {
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+    } | null;
+    inventaireSignedFinal?: {
+      id: string;
+      filename?: string | null;
+      type?: string | null;
+      parent_document_id?: string | null;
+    } | null;
+  };
+  availableDocs?: Array<{
+    id: string | null;
+    type: string | null;
+    filename: string | null;
+    parent_document_id: string | null;
+    signed_final_document_id: string | null;
+  }>;
 };

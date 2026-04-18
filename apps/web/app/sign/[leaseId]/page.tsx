@@ -4,280 +4,38 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
-import { SignableCard } from "./_components/SignableCard";
 import { mapSignatureData } from "./_lib/mapSignatureData";
 import { SignatureHero } from "./_components/SignatureHero";
 import { SignerSection } from "./_components/SignerSection";
-import type { SignerTask } from "./_types/signature-center.types";
+import type {
+  SignerTask,
+  PackFinalReadiness,
+} from "./_types/signature-center.types";
 import { DocumentsSection } from "./_components/DocumentsSection";
 import { HistorySection, type HistoryItem } from "./_components/HistorySection";
-import { SIGN_UI, PremiumButton } from "./_components/signature-ui";
+import { SignatureSessionPanel } from "./_components/SignatureSessionPanel";
+import { SIGN_UI } from "./_components/signature-ui";
+import {
+  fetchSignatureWorkflow,
+  createCanonicalPublicLink,
+} from "../../_lib/api";
+import type {
+  CanonicalSignatureWorkflow,
+  CanonicalSignatureTask,
+} from "../../_lib/canonical-signature.types";
+import {
+  canCreateCanonicalLink,
+  toCanonicalPublicLinkInput,
+} from "./_lib/canonical-link-mapper";
 
 
 const brandBlue = "#2F63E0";
-const brandBlueHover = "#2A5BD7";
 const brandBlueBorder = "#2A5BD7";
-
 const textStrong = "#1D273B";
-const textSoft = "#667085";
-const textMuted = "#98A2B3";
-
-const borderSoft = "#D9E2EC";
 const borderSoftStrong = "#C8D4E3";
-const borderUltraSoft = "#E8EEF5";
-
-const bgSoft = "#F7F9FC";
-const panelBg = "#FBFCFE";
-
-const successBg = "#EAF6EE";
-const successBorder = "#CEE6D5";
-const successText = "#4C9A70";
-
-const warningBg = "#FBF1E4";
-const warningBorder = "#EBCFA8";
-const warningText = "#B7791F";
-
-const neutralBg = "#F7F8FB";
-const neutralBorder = "#D8E1EC";
-const neutralText = "#66758F";
-
-const dangerBg = "#FCEAEA";
-const dangerBorder = "#F2CFCF";
-const dangerText = "#C35B5B";
 
 const UI_FONT =
   '"Inter", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
-
-const ui = {
-  card: {
-    background: "linear-gradient(180deg, #FFFFFF 0%, #FCFDFF 100%)",
-    border: `1px solid ${borderSoft}`,
-    borderRadius: 24,
-    boxShadow: "0 8px 22px rgba(16,24,40,0.04), 0 2px 6px rgba(16,24,40,0.02)",
-    transition: "transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease",
-  } as React.CSSProperties,
-  hTitle: {
-    fontSize: 18,
-    fontWeight: 700,
-    margin: 0,
-    letterSpacing: -0.03,
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  } as React.CSSProperties,
-  sub: {
-    fontSize: 13.5,
-    color: textSoft,
-    marginTop: 4,
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  } as React.CSSProperties,
-};
-
-
-const heroHeaderButtonStyle: React.CSSProperties = {
-  appearance: "none",
-  border: `1px solid ${SIGN_UI.colors.cardBorder}`,
-  background: "#FFFFFF",
-  borderRadius: 14,
-  height: 40,
-  padding: "0 16px",
-  fontSize: 13.5,
-  fontWeight: 600,
-  cursor: "pointer",
-  color: SIGN_UI.colors.textStrong,
-  display: "inline-flex",
-  alignItems: "center",
-  gap: 8,
-  boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-  fontFamily: UI_FONT,
-};
-
-function Badge({
-  tone,
-  children,
-}: {
-  tone: "success" | "warning" | "danger" | "neutral" | "primary";
-  children: React.ReactNode;
-}) {
-  const map: Record<string, React.CSSProperties> = {
-    success: {
-      background: "#EAF7F1",
-      color: "#147A55",
-      border: "none",
-    },
-    warning: {
-      background: "#F6F1E8",
-      color: "#A06A2C",
-      border: "none",
-    },
-    danger: {
-      background: "#FCECEC",
-      color: "#C45A5A",
-      border: "none",
-    },
-    neutral: {
-      background: "#F3F6FA",
-      color: "#66758F",
-      border: "none",
-    },
-    primary: {
-      background: "#F2F6FF",
-      color: "#4D6FD6",
-      border: "none",
-    },
-  };
-
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: 34,
-        padding: "0 14px",
-        borderRadius: 999,
-        fontWeight: 700,
-        fontSize: 12.5,
-        letterSpacing: -0.01,
-        whiteSpace: "nowrap",
-        boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
-        fontFamily:
-          'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-        ...map[tone],
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-const Btn = React.forwardRef<
-  HTMLButtonElement,
-  React.ButtonHTMLAttributes<HTMLButtonElement> & {
-    variant: "primary" | "secondary" | "ghost";
-  }
->(function Btn({ variant, children, ...rest }, ref) {
-  const base: React.CSSProperties = {
-    padding: "10px 14px",
-    borderRadius: 15,
-    fontWeight: 700,
-    cursor: "pointer",
-    border: `1px solid ${borderSoft}`,
-    transition: "background 140ms ease, box-shadow 140ms ease, border-color 140ms ease, transform 140ms ease",
-    fontFamily:
-      'Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
-  };
-
-  const styles: any = {
-    primary: {
-      ...base,
-      background: "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
-      border: `1px solid #2F63E0`,
-      color: "white",
-      boxShadow: "0 2px 4px rgba(47,99,224,0.12), inset 0 1px 0 rgba(255,255,255,0.14)",
-    },
-    secondary: {
-      ...base,
-      background: "#FAFBFC",
-      color: "#243041",
-      border: `1px solid rgba(27,39,64,0.08)`,
-      boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-    },
-    ghost: {
-      ...base,
-      background: "transparent",
-      color: "#356AE6",
-      border: "1px solid transparent",
-    },
-  };
-
-  return (
-    <button ref={ref} {...rest} style={{ ...(styles[variant] || styles.secondary), ...(rest.style || {}) }}>
-      {children}
-    </button>
-  );
-});
-
-
-function toneFromStatus(s?: string) {
-  const v = String(s || "").toUpperCase();
-  if (v.includes("SIGNED")) return "success";
-  if (v.includes("IN_PROGRESS")) return "warning";
-  if (v.includes("GENERATED")) return "primary";
-  if (v.includes("NOT") || v.includes("DRAFT")) return "neutral";
-  if (v.includes("MISSING") || v.includes("ERROR")) return "danger";
-  return "neutral";
-}
-
-function isMissingStatus(s?: string) {
-  const v = String(s || "").toUpperCase();
-  return v === "NOT_GENERATED" || v === "DRAFT" || v === "MISSING" || v === "NOT_SENT" || v === "NONE";
-}
-
-function humanDocStatus(s?: string) {
-  const v = String(s || "").toUpperCase();
-
-  if (v === "NOT_GENERATED") return "Non généré";
-  if (v === "DRAFT") return "Brouillon";
-  if (v === "MISSING") return "Manquant";
-  if (v === "NOT_SENT") return "Non envoyé";
-  if (v === "NONE") return "—";
-  if (v.includes("SIGNED")) return "Signé";
-  if (v.includes("IN_PROGRESS")) return "En cours";
-  if (v.includes("GENERATED")) return "Généré";
-
-  return s || "—";
-}
-
-function countMissingFromSignatureStatus(sigStatus: any) {
-  if (!sigStatus) return { missing: 0, label: "—", firstAnchor: "contract" as const };
-
-  const missing: { anchor: "contract" | "tenants" | "guarantees" | "edl-inv"; msg: string }[] = [];
-
-  // Contrat
-  const contractStatus = String(sigStatus?.contract?.status || "").toUpperCase();
-  if (contractStatus !== "SIGNED") {
-    missing.push({ anchor: "contract", msg: "Contrat à finaliser" });
-  }
-
-  // Locataires
-  const tenants = sigStatus?.contract?.tenants || [];
-  const tenantsUnsigned = Array.isArray(tenants)
-    ? tenants.filter((t: any) => String(t.signatureStatus || "").toUpperCase() !== "SIGNED")
-    : [];
-  if (tenantsUnsigned.length > 0) {
-    missing.push({ anchor: "tenants", msg: `${tenantsUnsigned.length} signature(s) locataire manquante(s)` });
-  }
-
-  // Garanties
-  const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus.guarantees : [];
-  const guaranteesMissing = guarantees.filter((g: any) => String(g.signatureStatus || "").toUpperCase() !== "SIGNED");
-  if (guaranteesMissing.length > 0) {
-    missing.push({ anchor: "guarantees", msg: `${guaranteesMissing.length} garantie(s) non signée(s)` });
-  }
-
-  // EDL/Inv/Packs
-  const edlDocs = [sigStatus?.edl?.entry, sigStatus?.edl?.exit].filter(Boolean);
-  const invDocs = [sigStatus?.inventory?.entry, sigStatus?.inventory?.exit].filter(Boolean);
-  const packEdlInvDocs = [(sigStatus as any)?.packEdlInv?.entry, (sigStatus as any)?.packEdlInv?.exit].filter(Boolean);
-
-  const edlInvMissing = [...edlDocs, ...invDocs, ...packEdlInvDocs].filter(
-    (d: any) => !d?.documentId || isMissingStatus(d?.status)
-  );
-  if (edlInvMissing.length > 0) {
-    missing.push({ anchor: "edl-inv", msg: `${edlInvMissing.length} doc(s) EDL/Inventaire à faire` });
-  }
-
-  const missingCount = missing.length;
-  const firstAnchor = missingCount > 0 ? missing[0].anchor : ("contract" as const);
-
-
-  const label =
-    missingCount === 0 ? "Tout est prêt" : missingCount === 1 ? missing[0].msg : `${missingCount} actions à faire`;
-
-  return { missing: missingCount, label, firstAnchor };
-}
-
 
 const API =
   typeof window !== "undefined"
@@ -302,20 +60,6 @@ type LeaseTenant = {
   role?: "principal" | "cotenant" | string;
 };
 
-type LandlordSignable = {
-  key: string; // "contract" | "guarantee:<id>"
-  label: string;
-  documentId: string;
-};
-
-type GuarantorSignable = {
-  key: string;               // guaranteeId
-  label: string;             // "Jean Dupont (xxxxxx)"
-  guaranteeId: string;
-  documentId: string | null; // actDocumentId (peut être null)
-  defaultName: string;       // guarantorFullName
-  hasAct: boolean;           // actDocumentId != null
-};
 
 type HistoryDocument = {
   id: string;
@@ -423,6 +167,10 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   // ✅ NEW: pack final v2
   const [packFinalV2Doc, setPackFinalV2Doc] = useState<Doc | null>(null);
 
+  const [packFinalReadiness, setPackFinalReadiness] = useState<PackFinalReadiness | null>(null);
+  const [loadingPackFinalReadiness, setLoadingPackFinalReadiness] = useState(false);
+  const [packFinalReadinessError, setPackFinalReadinessError] = useState<string | null>(null);
+
   // lease kind
   const [leaseKind, setLeaseKind] = useState("");
 
@@ -434,16 +182,13 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [error, setError] = useState("");
 
   // ✅ NEW: panneau signature unique (droite)
-  const [role, setRole] = useState<"LOCATAIRE" | "BAILLEUR" | "GARANT">("LOCATAIRE");
-
-
-  const [showLegacyPanelForm, setShowLegacyPanelForm] = useState(false);
   const [isWideScreen, setIsWideScreen] = useState(true);
 
   // canvas unique
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const signatureDirty = useRef(false);
+  const [isSignatureDirty, setIsSignatureDirty] = useState(false);
   const signaturePanelRef = useRef<HTMLDivElement | null>(null);
 
 
@@ -451,6 +196,10 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [landlordName, setLandlordName] = useState("Bailleur");
 
   const [sigStatus, setSigStatus] = useState<SignatureStatusPayload | null>(null);
+  const [canonicalWorkflow, setCanonicalWorkflow] =
+    useState<CanonicalSignatureWorkflow | null>(null);
+  const [loadingCanonicalWorkflow, setLoadingCanonicalWorkflow] = useState(false);
+  const [canonicalWorkflowError, setCanonicalWorkflowError] = useState<string | null>(null);
   // ✅ Local override: permet d'utiliser immédiatement l'id d'acte renvoyé par /documents/guarantor-act
   const [guaranteeActOverride, setGuaranteeActOverride] = useState<Record<string, string>>({});
   const [loadingSigStatus, setLoadingSigStatus] = useState(false);
@@ -458,6 +207,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 
   const [pendingModeSwitchTask, setPendingModeSwitchTask] = useState<SignerTask | null>(null);
 
+  const [isSubmittingSession, setIsSubmittingSession] = useState(false);
+ 
   const [sessionDraft, setSessionDraft] = useState({
     open: false,
     signerTaskId: null as string | null,
@@ -469,11 +220,6 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
     tenantId: undefined as string | undefined,
     guaranteeId: undefined as string | undefined,
   });
-
-
-  const blue = "#1d4ed8";
-  const border = "#e5e7eb";
-  const muted = "#6b7280";
 
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
@@ -685,10 +431,74 @@ useEffect(() => {
     if (!token) return;
     if (!leaseId) return;
 
-    loadDocs(); // gère déjà ses erreurs
-    fetchSignatureStatus(leaseId).catch(() => {}); // safety
+    loadDocs();
+    fetchSignatureStatus(leaseId).catch(() => {});
+    fetchCanonicalWorkflow(leaseId).catch(() => {});
+    fetchPackFinalReadiness(leaseId).catch(() => {});
   }, [token, leaseId]);
 
+
+async function generateExitCertificate() {
+  setError("");
+  setStatus("Génération attestation de sortie…");
+
+  try {
+    const r = await fetch(`${API}/documents/exit-certificate`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+      body: JSON.stringify({ leaseId }),
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
+      setStatus("");
+      setError(j?.message || JSON.stringify(j));
+      return;
+    }
+
+    setStatus("Attestation générée ✅");
+    await refreshAll();
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
+  }
+}
+
+async function generateExitPack() {
+  setError("");
+  setStatus("Génération pack sortie…");
+
+  try {
+    const r = await fetch(`${API}/documents/exit-pack`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+      body: JSON.stringify({ leaseId }),
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
+      setStatus("");
+      setError(j?.message || JSON.stringify(j));
+      return;
+    }
+
+    setStatus("Pack sortie généré ✅");
+    await refreshAll();
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
+  }
+}
 
   async function generateContract() {
     setError("");
@@ -707,8 +517,7 @@ useEffect(() => {
         return;
       }
       setStatus("Contrat généré ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -732,8 +541,7 @@ useEffect(() => {
         return;
       }
       setStatus("Notice générée ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -757,8 +565,7 @@ useEffect(() => {
         return;
       }
       setStatus("EDL généré ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -782,8 +589,7 @@ useEffect(() => {
         return;
       }
       setStatus("Inventaire généré ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -807,8 +613,7 @@ useEffect(() => {
         return;
       }
       setStatus("Pack EDL+Inventaire généré ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -888,8 +693,7 @@ useEffect(() => {
         return;
       }
       setStatus("Pack généré ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -913,8 +717,7 @@ useEffect(() => {
         return;
       }
       setStatus("PACK_FINAL_V2 généré ✅");
-      await loadDocs();
-      await fetchSignatureStatus(leaseId);
+      await refreshAll();
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
@@ -962,6 +765,21 @@ useEffect(() => {
     downloadDoc(packDoc.id, packDoc.filename);
   }
 
+  function closeSessionDraft() {
+    setSessionDraft({
+      open: false,
+      signerTaskId: null,
+      signerKind: null,
+      signerName: "",
+      roleLabel: "",
+      documentId: null,
+      documentLabel: "",
+      tenantId: undefined,
+      guaranteeId: undefined,
+    });
+    clearCanvas();
+  }
+
   function openOnSiteSession(task: SignerTask) {
     setSessionDraft({
       open: true,
@@ -974,7 +792,6 @@ useEffect(() => {
       tenantId: task.tenantId,
       guaranteeId: task.guaranteeId,
     });
-    setShowLegacyPanelForm(false);
     clearCanvas();
   }
 
@@ -998,7 +815,95 @@ useEffect(() => {
     setPendingModeSwitchTask(null);
   }
 
+
+  function findCanonicalTaskForLegacyTask(task: SignerTask): CanonicalSignatureTask | null {
+    const tasks = canonicalWorkflow?.tasks ?? [];
+
+    // CONTRAT / BAILLEUR
+    if (task.kind === "LANDLORD" && task.documentLabel === "Contrat de location") {
+      return (
+        tasks.find(
+          (t) =>
+            t.documentType === "LEASE_CONTRACT" &&
+            t.signerRole === "LANDLORD" &&
+            t.phase === "ENTRY",
+        ) || null
+      );
+    }
+
+    // ACTE DE CAUTION / GARANT
+    if (task.kind === "GUARANTOR" && task.guaranteeId) {
+      return (
+        tasks.find(
+          (t) =>
+            t.documentType === "GUARANTEE_ACT" &&
+            t.signerRole === "GUARANTOR" &&
+            t.signerRef.kind === "GUARANTOR" &&
+            t.signerRef.guaranteeId === task.guaranteeId,
+        ) || null
+      );
+    }
+
+    // EDL ENTREE / BAILLEUR
+    if (task.kind === "LANDLORD" && task.documentLabel === "EDL entrée") {
+      return (
+        tasks.find(
+          (t) =>
+            t.documentType === "EDL_ENTRY" &&
+            t.signerRole === "LANDLORD" &&
+            t.phase === "ENTRY",
+        ) || null
+      );
+    }
+
+    return null;
+  }
+async function trySendCanonicalLink(task: SignerTask, force = false): Promise<boolean> {
+  const canonicalTask = findCanonicalTaskForLegacyTask(task);
+  if (!canonicalTask) return false;
+
+  if (!canCreateCanonicalLink(canonicalTask)) return false;
+
+  const input = toCanonicalPublicLinkInput(canonicalTask, force);
+  if (!input) return false;
+
+  await createCanonicalPublicLink(input);
+  await fetchCanonicalWorkflow(leaseId);
+  await fetchSignatureStatus(leaseId);
+
+  return true;
+}
+
 async function sendSignatureLink(task: SignerTask) {
+  try {
+    const usedCanonical = await trySendCanonicalLink(task, false);
+    if (usedCanonical) {
+      setUiInfo(`Lien envoyé ✅ (${task.displayName})`);
+      return;
+    }
+  } catch (e: any) {
+    setUiError(String(e?.message || e));
+    return;
+  }
+
+  if (task.documentLabel === "EDL entrée") {
+    if (task.kind === "TENANT") {
+      await sendEdlEntryTenantLinks(false);
+      return;
+    }
+    if (task.kind === "LANDLORD") {
+      await sendEdlEntryLandlordLink(false);
+      return;
+    }
+  }
+
+  if (task.documentLabel === "Inventaire entrée") {
+    if (task.kind === "TENANT") {
+      await sendInventoryEntryTenantLinks(false);
+      return;
+    }
+  }
+
   if (task.kind === "TENANT") {
     setUiInfo(`Envoi des liens locataires depuis le bail… (${task.displayName})`);
     await sendPublicLink(false);
@@ -1018,6 +923,35 @@ async function sendSignatureLink(task: SignerTask) {
 }
 
 async function resendSignatureLink(task: SignerTask) {
+  try {
+    const usedCanonical = await trySendCanonicalLink(task, true);
+    if (usedCanonical) {
+      setUiInfo(`Lien renvoyé ✅ (${task.displayName})`);
+      return;
+    }
+  } catch (e: any) {
+    setUiError(String(e?.message || e));
+    return;
+  }
+
+  if (task.documentLabel === "EDL entrée") {
+    if (task.kind === "TENANT") {
+      await sendEdlEntryTenantLinks(true);
+      return;
+    }
+    if (task.kind === "LANDLORD") {
+      await sendEdlEntryLandlordLink(true);
+      return;
+    }
+  }
+
+  if (task.documentLabel === "Inventaire entrée") {
+    if (task.kind === "TENANT") {
+      await sendInventoryEntryTenantLinks(true);
+      return;
+    }
+  }
+
   if (task.kind === "TENANT") {
     setUiInfo(`Renvoi des liens locataires depuis le bail… (${task.displayName})`);
     await sendPublicLink(true);
@@ -1035,7 +969,6 @@ async function resendSignatureLink(task: SignerTask) {
     return;
   }
 }
-
 
 function setUiInfo(message: string) {
   setError("");
@@ -1148,25 +1081,21 @@ async function confirmSessionDraftSignature() {
         ? "BAILLEUR"
         : "GARANT";
 
-  await signDocOnPlace({
-    documentId: sessionDraft.documentId,
-    signerRole,
-    signerName: sessionDraft.signerName,
-    signerTenantId: sessionDraft.tenantId,
-    optimisticGuaranteeId: sessionDraft.guaranteeId,
-  });
+  try {
+    setIsSubmittingSession(true);
 
-  setSessionDraft({
-    open: false,
-    signerTaskId: null,
-    signerKind: null,
-    signerName: "",
-    roleLabel: "",
-    documentId: null,
-    documentLabel: "",
-    tenantId: undefined,
-    guaranteeId: undefined,
-  });
+    await signDocOnPlace({
+      documentId: sessionDraft.documentId,
+      signerRole,
+      signerName: sessionDraft.signerName,
+      signerTenantId: sessionDraft.tenantId,
+      optimisticGuaranteeId: sessionDraft.guaranteeId,
+    });
+
+    closeSessionDraft();
+  } finally {
+    setIsSubmittingSession(false);
+  }
 }
 
   async function fetchSignatureStatus(currentLeaseId: string) {
@@ -1190,6 +1119,52 @@ async function confirmSessionDraftSignature() {
       setSigStatusError(String(e?.message || e));
     } finally {
       setLoadingSigStatus(false);
+    }
+  }
+
+  async function fetchCanonicalWorkflow(currentLeaseId: string) {
+    setLoadingCanonicalWorkflow(true);
+    setCanonicalWorkflowError(null);
+
+    try {
+      const data = await fetchSignatureWorkflow(currentLeaseId);
+      setCanonicalWorkflow(data);
+    } catch (e: any) {
+      setCanonicalWorkflowError(String(e?.message || e));
+    } finally {
+      setLoadingCanonicalWorkflow(false);
+    }
+  }
+
+
+  async function fetchPackFinalReadiness(currentLeaseId: string) {
+    setLoadingPackFinalReadiness(true);
+    setPackFinalReadinessError(null);
+
+    try {
+      const res = await fetch(
+        `${API}/documents/pack-final/readiness?leaseId=${currentLeaseId}`,
+        {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          credentials: "include",
+        },
+      );
+
+      if (!res.ok) {
+        const txt = await res.text().catch(() => "");
+        throw new Error(`pack-final/readiness failed (${res.status}): ${txt}`);
+      }
+
+      const data = (await res.json()) as PackFinalReadiness;
+      setPackFinalReadiness(data);
+      setPackFinalReadinessError(null);
+    } catch (e: any) {
+      const message = String(e?.message || e);
+      console.error("[PACK FINAL READINESS ERROR]", message);
+      setPackFinalReadiness(null);
+      setPackFinalReadinessError(message);
+    } finally {
+      setLoadingPackFinalReadiness(false);
     }
   }
 
@@ -1292,12 +1267,13 @@ function clearCanvas() {
   setupCanvasHiDpi(c);
 
   signatureDirty.current = false;
+  setIsSignatureDirty(false);
 }
 
-  function dataUrl(c: HTMLCanvasElement | null) {
-    if (!c) return "";
+function dataUrl(c: HTMLCanvasElement | null) {
+  if (!c) return "";
     return c.toDataURL("image/png");
-  }
+}
 
 function onPointerDown(e: any) {
   const c = canvasRef.current;
@@ -1305,6 +1281,7 @@ function onPointerDown(e: any) {
 
   drawing.current = true;
   signatureDirty.current = true;
+  setIsSignatureDirty(true);
 
   try {
     (e.currentTarget as HTMLCanvasElement)?.setPointerCapture?.(e.pointerId);
@@ -1357,6 +1334,96 @@ function onPointerUp(e: any) {
 
   const { overview, signerTasks, documents } = signatureCenter;
 
+  console.log(
+    "[SIGNER TASKS RUNTIME]",
+    signerTasks.map((t) => ({
+      id: t.id,
+      kind: t.kind,
+      label: t.documentLabel,
+      tenantId: (t as any).tenantId || null,
+      hasSubTasks: Array.isArray((t as any).subTasks) ? (t as any).subTasks.length : 0,
+    })),
+  );
+
+function groupTasksBySigner(tasks: SignerTask[]) {
+  const map = new Map<string, SignerTask[]>();
+
+  for (const task of tasks) {
+    let key = "";
+
+    if (task.kind === "TENANT") {
+      key = `tenant:${task.tenantId}`;
+    } else if (task.kind === "LANDLORD") {
+      key = "landlord";
+    } else if (task.kind === "GUARANTOR") {
+      key = `guarantor:${task.guaranteeId}`;
+    }
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+
+    map.get(key)!.push(task);
+  }
+
+  function pickMainTask(group: SignerTask[]) {
+    return (
+      group.find((t) => t.status === "READY" && !t.isBlocked) ||
+      group.find((t) => t.status === "IN_PROGRESS" && !t.isBlocked) ||
+      group.find((t) => t.status === "LINK_SENT" && !t.isBlocked) ||
+      group.find((t) => t.requiresPreparation) ||
+      group.find((t) => t.documentLabel === "Contrat de location") ||
+      group[0]
+    );
+  }
+
+  return Array.from(map.entries()).map(([key, group]) => {
+    const mainTask = pickMainTask(group);
+
+    return {
+      key,
+      tasks: group,
+      mainTask,
+    };
+  });
+}
+
+  const signerGroups = groupTasksBySigner(signerTasks);
+
+  console.log(
+    "[SIGNER GROUPS RUNTIME]",
+    signerGroups.map((g) => ({
+      key: g.key,
+      mainTaskId: g.mainTask.id,
+      mainTaskLabel: g.mainTask.documentLabel,
+      taskIds: g.tasks.map((t) => t.id),
+      taskLabels: g.tasks.map((t) => t.documentLabel),
+    })),
+  );
+
+  const displayTasks = signerGroups.flatMap((group) => {
+  const main = group.mainTask;
+  const sub = group.tasks.filter((t) => t.id !== main.id);
+
+  return [
+    {
+      ...main,
+      subTasks: sub,
+    } as SignerTask,
+    ...sub,
+  ];
+});
+
+  const signerCards = signerGroups.map((group) => {
+    const main = group.mainTask;
+    const sub = group.tasks.filter((t) => t.id !== main.id);
+
+    return {
+      ...main,
+      subTasks: sub,
+    } as SignerTask;
+  });
+
   const historyItems = useMemo(() => {
   return buildHistoryItems(signerTasks, documents);
 }, [signerTasks, documents]);
@@ -1369,7 +1436,6 @@ function onPointerUp(e: any) {
 
 
   const hasMultipleTenants = useMemo(() => (tenants?.length || 0) > 1, [tenants]);
-  const dossier = useMemo(() => countMissingFromSignatureStatus(sigStatus), [sigStatus]);
 
   const selectedTenant = useMemo(() => {
     const id = String(selectedTenantId || "").trim();
@@ -1381,156 +1447,6 @@ function onPointerUp(e: any) {
   useEffect(() => {
     if (selectedTenant) setTenantName(normalizeTenantName(selectedTenant));
   }, [selectedTenant]);
-
-
-
-  // ✅ Patch 4.A — documents signables par le bailleur (contrat + actes caution)
-  const landlordSignables: LandlordSignable[] = useMemo(() => {
-    const items: LandlordSignable[] = [];
-
-    const contractDocId = sigStatus?.contract?.documentId;
-    if (contractDocId) {
-      items.push({
-        key: "contract",
-        label: "Contrat",
-        documentId: contractDocId,
-      });
-    }
-
-    const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
-    const acts = guarantees
-      .filter((g) => Boolean(guaranteeActOverride[g.guaranteeId] || g.actDocumentId))
-      .sort((a, b) => String(a.tenantFullName || "").localeCompare(String(b.tenantFullName || "")))
-      .map((g) => ({
-        key: `guarantee:${g.guaranteeId}`,
-        label: `Acte caution — ${String(g.guarantorFullName || g.tenantFullName || "Garant").trim()} (${String(
-          g.guaranteeId,
-        ).slice(0, 6)})`,
-        documentId: (guaranteeActOverride[g.guaranteeId] || g.actDocumentId) as string,
-      }));
-
-    items.push(...acts);
-    // ✅ NEW: EDL & Inventaires (entrée/sortie)
-    const edlEntryId = sigStatus?.edl?.entry?.documentId;
-    if (edlEntryId) items.push({ key: "edl_entry", label: "EDL entrée", documentId: edlEntryId });
-
-    const invEntryId = sigStatus?.inventory?.entry?.documentId;
-    if (invEntryId) items.push({ key: "inv_entry", label: "Inventaire entrée", documentId: invEntryId });
-
-    const edlExitId = sigStatus?.edl?.exit?.documentId;
-    if (edlExitId) items.push({ key: "edl_exit", label: "EDL sortie", documentId: edlExitId });
-
-    const invExitId = sigStatus?.inventory?.exit?.documentId;
-    if (invExitId) items.push({ key: "inv_exit", label: "Inventaire sortie", documentId: invExitId });
-
-    // ✅ NEW: Pack EDL+Inventaire (entrée/sortie)
-    const packEntryId = (sigStatus as any)?.packEdlInv?.entry?.documentId;
-    if (packEntryId) {
-      items.push({
-        key: "pack_edl_inv_entry",
-        label: "Pack EDL+Inventaire (entrée)",
-        documentId: packEntryId,
-      });
-    }
-
-    const packExitId = (sigStatus as any)?.packEdlInv?.exit?.documentId;
-    if (packExitId) {
-      items.push({
-        key: "pack_edl_inv_exit",
-        label: "Pack EDL+Inventaire (sortie)",
-        documentId: packExitId,
-      });
-    }
-    
-    return items;
-  }, [sigStatus, guaranteeActOverride]);
-
-  const guarantorSignables: GuarantorSignable[] = useMemo(() => {
-    const gs = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
-
-    return gs
-      .slice()
-      .sort((a, b) =>
-        String(a.guarantorFullName || "").localeCompare(String(b.guarantorFullName || ""))
-      )
-      .map((g) => {
-        const overrideDocId = guaranteeActOverride[g.guaranteeId];
-        const effectiveDocId = overrideDocId || g.actDocumentId;
-
-        return {
-          key: g.guaranteeId,
-          label: `${String(g.guarantorFullName || "Garant").trim()} (${String(g.guaranteeId).slice(0, 6)})`,
-          guaranteeId: g.guaranteeId,
-          documentId: effectiveDocId, // peut être null
-          defaultName: String(g.guarantorFullName || "Garant").trim(),
-          hasAct: Boolean(effectiveDocId),
-        };
-      });
-  }, [sigStatus, guaranteeActOverride]);
-
-  const [selectedLandlordDocKey, setSelectedLandlordDocKey] = useState<string>("contract");
-  const [selectedTenantDocKey, setSelectedTenantDocKey] = useState<string>("contract");
-
-  const [selectedGuaranteeId, setSelectedGuaranteeId] = useState("");
-
-  const selectedGuarantor = useMemo(
-    () => guarantorSignables.find((g) => g.guaranteeId === selectedGuaranteeId) || null,
-    [guarantorSignables, selectedGuaranteeId]
-  );
-
-  // nom garant: on va le pré-remplir avec le garant choisi
-  useEffect(() => {
-    if (!selectedGuaranteeId && guarantorSignables.length) {
-      setSelectedGuaranteeId(guarantorSignables[0].guaranteeId);
-    }
-  }, [guarantorSignables, selectedGuaranteeId]);
-
-  useEffect(() => {
-    if (selectedGuarantor) {
-      setGuarantorName(selectedGuarantor.defaultName || "Garant");
-    }
-  }, [selectedGuarantor]);
-
-  // garde une sélection valide après refresh des statuts
-  useEffect(() => {
-    if (!landlordSignables.length) return;
-
-  const stillThere = landlordSignables.some((x) => x.key === selectedLandlordDocKey);
-    if (!stillThere) {
-      const hasContract = landlordSignables.some((x) => x.key === "contract");
-      setSelectedLandlordDocKey(hasContract ? "contract" : landlordSignables[0].key);
-      return;
-    }
-
-    // si "contract" mais pas dispo → fallback premier acte
-    if (selectedLandlordDocKey === "contract" && !landlordSignables.some((x) => x.key === "contract")) {
-      setSelectedLandlordDocKey(landlordSignables[0].key);
-    }
-  }, [landlordSignables, selectedLandlordDocKey]);
-
-  // ✅ NEW: garde une sélection valide côté locataire
-  useEffect(() => {
-    if (!landlordSignables.length) return;
-
-    const stillThere = landlordSignables.some((x) => x.key === selectedTenantDocKey);
-    if (!stillThere) {
-      const hasContract = landlordSignables.some((x) => x.key === "contract");
-      setSelectedTenantDocKey(hasContract ? "contract" : landlordSignables[0].key);
-      return;
-    }
-
-    if (selectedTenantDocKey === "contract" && !landlordSignables.some((x) => x.key === "contract")) {
-      setSelectedTenantDocKey(landlordSignables[0].key);
-    }
-  }, [landlordSignables, selectedTenantDocKey]);
-
-  const selectedLandlordDoc = useMemo(() => {
-    return landlordSignables.find((x) => x.key === selectedLandlordDocKey) || null;
-  }, [landlordSignables, selectedLandlordDocKey]);
-
-  const selectedTenantDoc = useMemo(() => {
-    return landlordSignables.find((x) => x.key === selectedTenantDocKey) || null;
-  }, [landlordSignables, selectedTenantDocKey]);
 
 async function signDocOnPlace(args: {
   documentId: string;
@@ -1592,71 +1508,13 @@ async function signDocOnPlace(args: {
     clearCanvas();
     setStatus("✅ Signature enregistrée");
 
-    await loadDocs();
-    await fetchSignatureStatus(leaseId);
+    await refreshAll();
   } catch (e: any) {
     setStatus("");
     setError(String(e?.message || e));
   }
 }
 
-async function signTenantOnPlace() {
-  const docId = selectedTenantDoc?.documentId;
-  if (!docId) {
-    setError("Aucun document sélectionné à signer (locataire).");
-    return;
-  }
-
-  // ✅ signerTenantId si multi-locataires
-  let signerTenantId: string | undefined = undefined;
-  if (hasMultipleTenants) {
-    signerTenantId = String(selectedTenantId || "").trim();
-    if (!signerTenantId) {
-      setError("Sélectionne le locataire signataire (multi-locataires).");
-      return;
-    }
-  } else {
-    const only = tenants?.[0];
-    const id = only ? normalizeTenantId(only) : "";
-    if (id) signerTenantId = id;
-  }
-
-  return signDocOnPlace({
-    documentId: docId,
-    signerRole: "LOCATAIRE",
-    signerName: tenantName || "Locataire",
-    signerTenantId,
-  });
-}
-
-async function signLandlordOnPlace() {
-  const docId = selectedLandlordDoc?.documentId;
-  if (!docId) {
-    setError("Aucun document sélectionné à signer (bailleur).");
-    return;
-  }
-
-  return signDocOnPlace({
-    documentId: docId,
-    signerRole: "BAILLEUR",
-    signerName: landlordName || "Bailleur",
-  });
-}
-
-async function signGuarantorOnPlace() {
-  const docId = selectedGuarantor?.documentId;
-  if (!docId || !selectedGuarantor) {
-    setError("Acte non généré : génère l’acte pour permettre la signature sur place.");
-    return;
-  }
-
-  return signDocOnPlace({
-    documentId: docId,
-    signerRole: "GARANT",
-    signerName: guarantorName || selectedGuarantor.defaultName || "Garant",
-    optimisticGuaranteeId: selectedGuarantor.guaranteeId,
-  });
-}
   async function sendPublicLink(force = false) {
     setError("");
     setStatus(force ? "Renvoi (force) des liens locataires…" : "Envoi des liens locataires…");
@@ -1694,20 +1552,104 @@ async function signGuarantorOnPlace() {
     }
   }
 
+  async function sendEdlEntryTenantLinks(force = false) {
+    setStatus(force ? "Renvoi (force) des liens EDL entrée locataires…" : "Envoi des liens EDL entrée locataires…");
+    setError("");
+
+    try {
+      const r = await fetch(`${API}/public-links/edl-entry/tenant/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, ttlHours: 48, force }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      setStatus(`✅ ${j.sentCount || 0} lien(s) EDL entrée locataire envoyé(s)`);
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+
+  async function sendInventoryEntryTenantLinks(force = false) {
+    setStatus(
+      force
+        ? "Renvoi (force) des liens inventaire entrée locataires…"
+        : "Envoi des liens inventaire entrée locataires…",
+    );
+    setError("");
+
+    try {
+      const r = await fetch(`${API}/public-links/inventory-entry/tenant/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, ttlHours: 48, force }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      setStatus(`✅ ${j.sentCount || 0} lien(s) inventaire entrée locataire envoyé(s)`);
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+  
+
+
+  async function sendEdlEntryLandlordLink(force = false) {
+    setStatus(force ? "Renvoi (force) du lien bailleur EDL entrée…" : "Envoi du lien bailleur EDL entrée…");
+    setError("");
+
+    try {
+      const r = await fetch(`${API}/public-links/edl-entry/landlord/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        credentials: "include",
+        body: JSON.stringify({ leaseId, ttlHours: 48, force }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        setStatus("");
+        setError(j?.message || JSON.stringify(j));
+        return;
+      }
+
+      setStatus("✅ Lien bailleur EDL entrée envoyé");
+      await fetchSignatureStatus(leaseId);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    }
+  }
+
   async function refreshAll() {
-    await loadDocs(); // recharge les documents
-    await fetchSignatureStatus(leaseId); // recharge les statuts contrat + garanties
+    await loadDocs();
+    await fetchSignatureStatus(leaseId);
+    await fetchCanonicalWorkflow(leaseId);
+    await fetchPackFinalReadiness(leaseId);
   }
 
   function openGuarantees() {
     window.location.href = `/guarantees/${leaseId}`;
   }
 
-
-
-const isSessionDriven = sessionDraft.open;
-const showManualPanel = !isSessionDriven && showLegacyPanelForm;
-const showPanelEmptyState = !isSessionDriven && !showLegacyPanelForm;
 
 function getRecommendedActionLabel(tasks: SignerTask[]): string {
   const firstToPrepare = tasks.find((task) => task.requiresPreparation);
@@ -1774,47 +1716,43 @@ const canStartNextOnSite = signerTasks.some(
   (task) => task.status === "READY" && task.canSignOnSite
 );
 
-const panelRoleValue = isSessionDriven
-  ? sessionDraft.signerKind === "TENANT"
-    ? "LOCATAIRE"
-    : sessionDraft.signerKind === "LANDLORD"
-      ? "BAILLEUR"
-      : "GARANT"
-  : role;
 
-const panelSignerNameValue = isSessionDriven
-  ? sessionDraft.signerName
-  : role === "LOCATAIRE"
-    ? tenantName
-    : role === "BAILLEUR"
-      ? landlordName
-      : guarantorName;
+console.log(
+  "[SIGNER SECTION INPUT]",
+  signerGroups.map((group) => {
+    const main = group.mainTask;
+    const siblingSubTasks = group.tasks.filter((t) => t.id !== main.id);
+    const existingSubTasks = Array.isArray((main as any).subTasks) ? (main as any).subTasks : [];
 
-const panelDocumentLabel = isSessionDriven
-  ? sessionDraft.documentLabel
-  : role === "GARANT"
-    ? selectedGuarantor?.label || "Document garant"
-    : role === "LOCATAIRE"
-      ? selectedTenantDoc?.label || "Contrat"
-      : selectedLandlordDoc?.label || "Contrat";
+    return {
+      key: group.key,
+      mainTaskId: main.id,
+      mainTaskLabel: main.documentLabel,
+      existingSubTasks: existingSubTasks.map((t: any) => ({
+        id: t.id,
+        label: t.documentLabel,
+        status: t.status,
+      })),
+      siblingSubTasks: siblingSubTasks.map((t) => ({
+        id: t.id,
+        label: t.documentLabel,
+        status: t.status,
+      })),
+    };
+  }),
+);
 
-const flatFieldStyle: React.CSSProperties = {
-  width: "100%",
-  height: 42,
-  padding: "0 14px",
-  borderRadius: 12,
-  border: "1px solid rgba(27,39,64,0.08)",
-  background: "#FAFBFC",
-  fontWeight: 400,
-  fontSize: 14,
-  color: "#1F2A3C",
-  boxShadow: "none",
-  fontFamily: UI_FONT,
-  WebkitFontSmoothing: "antialiased",
-  MozOsxFontSmoothing: "grayscale",
-  boxSizing: "border-box",
-};
-      
+const flatTasksForSession = signerTasks.flatMap((task) => [
+  task,
+  ...(((task as any).subTasks || []) as SignerTask[]),
+]);
+
+console.log("[PACK FINAL READINESS PAGE]", {
+  packFinalReadiness,
+  loadingPackFinalReadiness,
+  hasPackFinal: Boolean(packFinalV2Doc),
+});
+    
   return (
     <div
       style={{
@@ -1977,697 +1915,89 @@ const flatFieldStyle: React.CSSProperties = {
 
           <DocumentsSection
             documents={documents}
+            packFinalReadiness={packFinalReadiness}
+            packFinalReadinessError={packFinalReadinessError}
+            loadingPackFinalReadiness={loadingPackFinalReadiness}
+            hasPackFinal={Boolean(packFinalV2Doc)}
+            onGeneratePackFinal={generatePackFinalV2}
             onDownloadDocument={downloadDocumentResource}
             onDownloadSignedDocument={downloadSignedDocumentResource}
+            onGenerateExitCertificate={generateExitCertificate}
+            onGenerateExitPack={generateExitPack}
           />
         </div>
 
-        <div
-          ref={signaturePanelRef}
-          className="sign-sticky"
-          style={{
-            position: isWideScreen ? "sticky" : "static",
-            top: isWideScreen ? 12 : "auto",
-            display: "grid",
-            gap: 20,
-            alignSelf: "start",
-            minWidth: 0,
-            marginTop: 0,
-          }}
-        >
-  <div
-    style={{
-      background: SIGN_UI.colors.cardBg,
-      border: `1px solid ${SIGN_UI.colors.cardBorder}`,
-      borderRadius: 24,
-      padding: 24,
-      boxShadow: "0 8px 22px rgba(16,24,40,0.04), 0 2px 6px rgba(16,24,40,0.02)",
-      fontFamily: UI_FONT,
-      WebkitFontSmoothing: "antialiased",
-      MozOsxFontSmoothing: "grayscale",
-    }}
-  >
-            <div
-              style={{
-                fontSize: 17,
-                fontWeight: 600,
-                color: "#1C2434",
-                letterSpacing: -0.015,
-                marginBottom: 6,
-                fontFamily: UI_FONT,
-              }}
-            >
-              {isSessionDriven ? "Session de signature" : "Poste de signature"}
-</div>
-
-            <div
-              style={{
-                marginBottom: 16,
-                fontSize: 13.5,
-                lineHeight: 1.65,
-                color: "#6B7688",
-                fontWeight: 400,
-                fontFamily: UI_FONT,
-              }}
-            >
-              {isSessionDriven
-                ? "Vérifiez l’identité du signataire puis recueillez sa signature."
-                : "Ouvrez une session guidée depuis un signataire, ou utilisez le mode manuel."}
-            </div>
-
-            {showPanelEmptyState ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  marginBottom: 16,
-                  padding: 20,
-                  borderRadius: 20,
-                  border: "1px solid rgba(27,39,64,0.06)",
-                  background: "#FCFDFE",
-                  boxShadow: "none",
-                  display: "grid",
-                  gap: 14,
-                  fontFamily: UI_FONT,
-                }}
-              >
                 <div
+                  ref={signaturePanelRef}
+                  className="sign-sticky"
                   style={{
-                    fontSize: 15.5,
-                    fontWeight: 600,
-                    color: "#172033",
-                    letterSpacing: -0.015,
-                    lineHeight: 1.25,
-                  }}
-                >
-                  Commencez par choisir un signataire
-                </div>
-
-                <div
-                  style={{
+                    position: isWideScreen ? "sticky" : "static",
+                    top: isWideScreen ? 12 : "auto",
                     display: "grid",
-                    gridTemplateColumns: "64px minmax(0,1fr)",
-                    gap: 14,
-                    alignItems: "start",
+                    gap: 20,
+                    alignSelf: "start",
+                    minWidth: 0,
+                    marginTop: 0,
                   }}
                 >
-                  <div
-                    aria-hidden="true"
-                    style={{
-                      width: 60,
-                      height: 60,
-                      borderRadius: 14,
-                      background: "linear-gradient(180deg,#E8F6F4 0%,#DDF1EE 100%)",
-                      border: "1px solid rgba(155,206,202,0.52)",
-                      boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-                      position: "relative",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                    }}
-                  >
-                    {/* document */}
-                    <div
-                      style={{
-                        width: 30,
-                        height: 36,
-                        borderRadius: 7,
-                        background: "#FFFDF9",
-                        border: "1.5px solid #A9CEC9",
-                        position: "relative",
-                        boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-                      }}
-                    >
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 7,
-                          left: 6,
-                          width: 17,
-                          height: 2.5,
-                          borderRadius: 999,
-                          background: "#88A6C2",
-                        }}
-                      />
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 13,
-                          left: 6,
-                          width: 13,
-                          height: 2.5,
-                          borderRadius: 999,
-                          background: "#88A6C2",
-                        }}
-                      />
-                      <div
-                        style={{
-                          position: "absolute",
-                          top: 19,
-                          left: 6,
-                          width: 10,
-                          height: 2.5,
-                          borderRadius: 999,
-                          background: "#88A6C2",
-                        }}
-                      />
-                    </div>
-
-                    {/* check */}
-                    <div
-                      style={{
-                        position: "absolute",
-                        right: 8,
-                        bottom: 11,
-                        width: 18,
-                        height: 10,
-                        borderLeft: "4px solid #D98A4C",
-                        borderBottom: "4px solid #D98A4C",
-                        transform: "rotate(-45deg)",
-                        borderRadius: 2,
-                      }}
-                    />
-                  </div>
-
-                  <div
-                    style={{
-                      fontSize: 13.5,
-                      lineHeight: 1.72,
-                      color: "#6B7688",
-                      fontWeight: 400,
-                    }}
-                  >
-                    Sélectionnez un locataire, un garant ou le bailleur dans la section
-                    signataires pour ouvrir une session guidée de signature sur place.
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setShowLegacyPanelForm(true)}
-                  style={{
-                    width: "100%",
-                    height: 42,
-                    padding: "0 16px",
-                    borderRadius: 12,
-                    border: "1px solid #D6DFEB",
-                    background: "#FFFFFF",
-                    color: "#2A3345",
-                    fontWeight: 600,
-                    fontSize: 14,
-                    cursor: "pointer",
-                    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-                    fontFamily: UI_FONT,
-                  }}
-                >
-                  Ouvrir le mode manuel
-                </button>
-              </div>
-            ) : null}
-
-            {isSessionDriven ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  marginBottom: 16,
-                  padding: "12px 14px",
-                  borderRadius: 14,
-                  border: "1px solid rgba(47,99,224,0.12)",
-                  background: "#F2F6FF",
-                  display: "grid",
-                  gap: 4,
-                  fontFamily: UI_FONT,
-                }}
-              >
-               <div
-                style={{
-                  fontSize: 11,
-                  color: "#7B8799",
-                  fontWeight: 500,
-                  textTransform: "uppercase",
-                  letterSpacing: 0.04,
-                }}
-              >
-                Session guidée active
-              </div>
-
-                <div style={{ fontSize: 15.5, fontWeight: 600, color: "#172033", letterSpacing: -0.01 }}>
-                  {sessionDraft.signerName}
-                </div>
-
-                <div style={{ fontSize: 13, color: "#6B7688", lineHeight: 1.6, fontWeight: 400 }}>
-                  {sessionDraft.roleLabel} • {sessionDraft.documentLabel}
-                </div>
-              </div>
-            ) : null}
-
-            {isSessionDriven || showManualPanel ? (
-              <>
-                {showManualPanel ? (
-                  <div style={{ marginBottom: 12 }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setShowLegacyPanelForm(false);
-                        clearCanvas();
-                      }}
-                      style={{
-                        width: "100%",
-                        padding: "10px 12px",
-                        borderRadius: 14,
-                        border: `1px solid ${borderSoftStrong}`,
-                        background: "#fff",
-                        color: "#243041",
-                        fontWeight: 500,
-                        cursor: "pointer",
-                        fontFamily: UI_FONT,
-                      }}
-                    >
-                      Quitter le mode manuel
-                    </button>
-                  </div>
-                ) : null}
-
-                {!isSessionDriven ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "#8A94A6",
-                        fontWeight: 500,
-                        letterSpacing: 0.04,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Signer en tant que
-                    </div>
-                    <select
-                      value={panelRoleValue}
-                      disabled={isSessionDriven}
-                      onChange={(e) => {
-                        if (isSessionDriven) return;
-                        setRole(e.target.value as any);
-                        clearCanvas();
-                      }}
-                      style={flatFieldStyle}
-                    >
-                      <option value="LOCATAIRE">Locataire</option>
-                      <option value="BAILLEUR">Bailleur</option>
-                      <option value="GARANT">Garant</option>
-                    </select>
-                  </div>
-                ) : null}
-
-                <div style={{ height: 10 }} />
-
-                {!isSessionDriven && role === "LOCATAIRE" && hasMultipleTenants ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "#8A94A6",
-                        fontWeight: 500,
-                        letterSpacing: 0.04,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Locataire signataire <span style={{ color: "#dc2626" }}>*</span>
-                    </div>
-                    <select
-                      value={selectedTenantId}
-                      onChange={(e) => setSelectedTenantId(e.target.value)}
-                      style={{ ...flatFieldStyle, height: 38 }}
-                    >
-                      <option value="">— Sélectionner —</option>
-                      {tenants.map((t) => {
-                        const id = normalizeTenantId(t);
-                        const label = `${normalizeTenantName(t)}${t.role ? ` (${t.role})` : ""}`;
-                        return (
-                          <option key={id || label} value={id}>
-                            {label}
-                          </option>
-                        );
-                      })}
-                    </select>
-                  </div>
-                ) : null}
-
-                <div style={{ height: 10 }} />
-
-                {!isSessionDriven ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <div
-                      style={{
-                        fontSize: 11,
-                        color: "#8A94A6",
-                        fontWeight: 500,
-                        letterSpacing: 0.04,
-                        textTransform: "uppercase",
-                      }}
-                    >
-                      Document à signer
-                    </div>
-
-                    {role === "GARANT" ? (
-                      <select
-                        value={isSessionDriven ? sessionDraft.guaranteeId || "" : selectedGuaranteeId}
-                        onChange={(e) => {
-                          if (isSessionDriven) return;
-                          setSelectedGuaranteeId(e.target.value);
-                        }}
-                        disabled={isSessionDriven || guarantorSignables.length === 0}
-                        style={{
-                          ...flatFieldStyle,
-                          height: 38,
-                          cursor: guarantorSignables.length ? "pointer" : "not-allowed",
-                        }}
-                      >
-                        {guarantorSignables.length === 0 ? <option value="">— Aucun garant —</option> : null}
-                        {guarantorSignables.map((g) => (
-                          <option key={g.key} value={g.guaranteeId}>
-                            {g.label}
-                            {g.hasAct ? "" : " — (acte non généré)"}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <select
-                        value={
-                          isSessionDriven
-                            ? sessionDraft.signerKind === "TENANT"
-                              ? sessionDraft.signerTaskId || ""
-                              : sessionDraft.signerKind === "LANDLORD"
-                                ? sessionDraft.signerTaskId || ""
-                                : ""
-                            : role === "LOCATAIRE"
-                              ? selectedTenantDocKey
-                              : selectedLandlordDocKey
-                        }
-                        onChange={(e) => {
-                          if (isSessionDriven) return;
-                          if (role === "LOCATAIRE") setSelectedTenantDocKey(e.target.value);
-                          else setSelectedLandlordDocKey(e.target.value);
-                          clearCanvas();
-                        }}
-                        disabled={isSessionDriven || !landlordSignables.length}
-                        style={{
-                          ...flatFieldStyle,
-                          height: 42,
-                          cursor: landlordSignables.length ? "pointer" : "not-allowed",
-                        }}
-                      >
-                        {landlordSignables.length === 0 ? <option value="">— Aucun document —</option> : null}
-                        {landlordSignables.map((d) => (
-                          <option key={d.key} value={d.key}>
-                            {d.label}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    {role === "GARANT" && selectedGuarantor && !selectedGuarantor.documentId ? (
-                      <div style={{ fontSize: 12, color: textSoft, marginTop: 6 }}>
-                        Acte non généré. Va dans “Garanties (caution)” puis clique “Générer acte”.
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                <div style={{ height: 10 }} />
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#8A94A6",
-                      fontWeight: 500,
-                      letterSpacing: 0.04,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Nom affiché sur la signature
-                  </div>
-                  <input
-                    value={panelSignerNameValue}
-                    onChange={(e) => {
-                      if (isSessionDriven) {
-                        setSessionDraft((prev) => ({
-                          ...prev,
-                          signerName: e.target.value,
-                        }));
-                        return;
-                      }
-
-                      if (role === "LOCATAIRE") setTenantName(e.target.value);
-                      else if (role === "BAILLEUR") setLandlordName(e.target.value);
-                      else setGuarantorName(e.target.value);
-                    }}
-                    style={{ ...flatFieldStyle, height: 38 }}
-                  />
-                </div>
-
-                <div style={{ height: 12 }} />
-
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: "#8A94A6",
-                    fontWeight: 500,
-                    letterSpacing: 0.04,
-                    textTransform: "uppercase",
-                    marginBottom: 6,
-                  }}
-                >
-                  Signature manuscrite
-                </div>
-
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      color: "#8A94A6",
-                      fontWeight: 500,
-                      letterSpacing: 0.04,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Document concerné
-                  </div>
-                  <div
-                    style={{
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      background: "#FAFBFC",
-                      border: "1px solid rgba(27,39,64,0.08)",
-                      fontWeight: 500,
-                      fontSize: 14,
-                      color: "#243041",
-                      fontFamily: UI_FONT,
-                    }}
-                  >
-                    {panelDocumentLabel}
-                  </div>
-                </div>
-
-                <div
-                  style={{
-                    position: "relative",
-                    width: "100%",
-                    height: 220,
-                    borderRadius: 20,
-                    border: "1px dashed rgba(27,39,64,0.12)",
-                    background: "linear-gradient(180deg, rgba(47,99,224,0.015) 0%, rgba(27,39,64,0.02) 100%)",
-                    boxShadow: "none",
-                    overflow: "hidden",
-                  }}
-                >
-                  {!signatureDirty.current ? (
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 0,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        pointerEvents: "none",
-                        color: "#9AA5B5",
-                        fontSize: 13.5,
-                        fontWeight: 400,
-                        zIndex: 1,
-                        fontFamily: UI_FONT,
-                      }}
-                    >
-                      Le signataire signe ici
-                    </div>
-                  ) : null}
-
-                  <canvas
-                    ref={canvasRef}
-                    style={{
-                      width: "100%",
-                      height: "100%",
-                      display: "block",
-                      position: "relative",
-                      zIndex: 2,
-                      touchAction: "none",
-                    }}
+                  <SignatureSessionPanel
+                    task={flatTasksForSession.find((t) => t.id === sessionDraft.signerTaskId) || null}
+                    onClose={closeSessionDraft}
+                    onClear={clearCanvas}
+                    onConfirm={confirmSessionDraftSignature}
+                    canvasRef={canvasRef}
                     onPointerDown={onPointerDown}
                     onPointerMove={onPointerMove}
                     onPointerUp={onPointerUp}
-                    onPointerCancel={onPointerUp}
-                    onPointerLeave={onPointerUp}
+                    isSubmitting={isSubmittingSession}
+                    isSignatureDirty={isSignatureDirty}
                   />
+
+                  {status ? (
+                    <div
+                      style={{
+                        marginTop: 10,
+                        padding: "8px 10px",
+                        borderRadius: 10,
+                        background:
+                          status.includes("✅") || status.toLowerCase().includes("télécharg")
+                            ? "#F3FAF5"
+                            : "#F8FAFC",
+                        color:
+                          status.includes("✅") || status.toLowerCase().includes("télécharg")
+                            ? "#2F6B4F"
+                            : "#475467",
+                        fontSize: 12.5,
+                        fontWeight: 500,
+                        lineHeight: 1.4,
+                        fontFamily: UI_FONT,
+                      }}
+                    >
+                      {status.replace("✅ ", "✓ ")}
+                    </div>
+                  ) : null}
+
+                  {error ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: 12,
+                        borderRadius: 12,
+                        border: "1px solid rgba(239,68,68,0.18)",
+                        background: "rgba(239,68,68,0.06)",
+                        color: "#b42318",
+                        display: "grid",
+                        gap: 4,
+                        fontFamily: UI_FONT,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600, fontSize: 12 }}>Erreur</div>
+                      <div style={{ fontWeight: 500, lineHeight: 1.5 }}>{error}</div>
+                    </div>
+                  ) : null}
+
+                  <HistorySection items={historyItems} />
                 </div>
-
-                <div style={{ height: 12 }} />
-
-                <div style={{ display: "flex", gap: 10, justifyContent: "space-between", flexWrap: "wrap" }}>
-                  <button
-                    onClick={clearCanvas}
-                    style={{
-                      flex: 1,
-                      height: 42,
-                      padding: "0 16px",
-                      borderRadius: 12,
-                      border: "1px solid rgba(27,39,64,0.08)",
-                      background: "#FAFBFC",
-                      fontWeight: 600,
-                      fontSize: 14,
-                      color: "#2D3A52",
-                      boxShadow: "none",
-                      fontFamily: UI_FONT,
-                    }}
-                  >
-                    Effacer
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      if (isSessionDriven) {
-                        await confirmSessionDraftSignature();
-                        return;
-                      }
-
-                      if (role === "LOCATAIRE") await signTenantOnPlace();
-                      else if (role === "BAILLEUR") await signLandlordOnPlace();
-                      else await signGuarantorOnPlace();
-                    }}
-                    disabled={role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId}
-                    style={{
-                      flex: 1,
-                      height: 42,
-                      padding: "0 16px",
-                      borderRadius: 12,
-                      border: "none",
-                      background: "linear-gradient(180deg, #2F63E0 0%, #2A5BD7 100%)",
-                      color: "white",
-                      cursor: "pointer",
-                      fontWeight: 600,
-                      fontSize: 14,
-                      letterSpacing: -0.01,
-                      boxShadow: "0 2px 4px rgba(47,99,224,0.12), inset 0 1px 0 rgba(255,255,255,0.14)",
-                      opacity: role === "GARANT" && !!selectedGuarantor && !selectedGuarantor.documentId ? 0.6 : 1,
-                      fontFamily: UI_FONT,
-                    }}
-                  >
-                    {isSessionDriven ? "Confirmer la signature" : "Signer"}
-                  </button>
-                </div>
-
-                <div
-                  style={{
-                    marginTop: 10,
-                    fontSize: 12.5,
-                    lineHeight: 1.6,
-                    color: "#6B7688",
-                    fontWeight: 400,
-                    fontFamily: UI_FONT,
-                  }}
-                >
-                  La signature sera horodatée et enregistrée dans le dossier locatif.
-                </div>
-
-                {isSessionDriven ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSessionDraft({
-                        open: false,
-                        signerTaskId: null,
-                        signerKind: null,
-                        signerName: "",
-                        roleLabel: "",
-                        documentId: null,
-                        documentLabel: "",
-                        tenantId: undefined,
-                        guaranteeId: undefined,
-                      });
-                      clearCanvas();
-                    }}
-                    style={{
-                      width: "100%",
-                      height: 42,
-                      marginTop: 12,
-                      padding: "0 16px",
-                      borderRadius: 14,
-                      border: `1px solid ${borderSoftStrong}`,
-                      background: "#fff",
-                      color: "#243041",
-                      fontWeight: 600,
-                      cursor: "pointer",
-                      fontFamily: UI_FONT,
-                    }}
-                  >
-                    Terminer cette session
-                  </button>
-                ) : null}
-              </>
-            ) : null}
-
-            {status ? (
-              <div
-                style={{
-                  marginTop: 10,
-                  padding: "8px 10px",
-                  borderRadius: 10,
-                  background:
-                    status.includes("✅") || status.toLowerCase().includes("télécharg")
-                      ? "#F3FAF5"
-                      : "#F8FAFC",
-                  color:
-                    status.includes("✅") || status.toLowerCase().includes("télécharg")
-                      ? "#2F6B4F"
-                      : "#475467",
-                  fontSize: 12.5,
-                  fontWeight: 500,
-                  lineHeight: 1.4,
-                  fontFamily: UI_FONT,
-                }}
-              >
-                {status.replace("✅ ", "✓ ")}
-              </div>
-            ) : null}
-
-            {error ? (
-              <div
-                style={{
-                  marginTop: 12,
-                  padding: 12,
-                  borderRadius: 12,
-                  border: "1px solid rgba(239,68,68,0.18)",
-                  background: "rgba(239,68,68,0.06)",
-                  color: "#b42318",
-                  display: "grid",
-                  gap: 4,
-                  fontFamily: UI_FONT,
-                }}
-              >
-                <div style={{ fontWeight: 600, fontSize: 12 }}>Erreur</div>
-                <div style={{ fontWeight: 500, lineHeight: 1.5 }}>{error}</div>
-              </div>
-            ) : null}
-          </div>
-          <HistorySection items={historyItems} />
-        </div>
       </div>
 
       {pendingModeSwitchTask ? (

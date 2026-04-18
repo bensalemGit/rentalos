@@ -1,6 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Pool } from 'pg';
-import { Inject } from '@nestjs/common';
 import { UpsertLandlordDto } from './landlord.dto';
 
 @Injectable()
@@ -69,7 +68,36 @@ export class LandlordService {
       [projectId, landlordId],
     );
 
-    const loaded = await this.pool.query(`SELECT * FROM project_landlords WHERE id=$1`, [landlordId]);
+        const loaded = await this.pool.query(`SELECT * FROM project_landlords WHERE id=$1`, [landlordId]);
     return loaded.rows[0];
+  }
+
+  async getReadiness(projectId: string) {
+    const landlord = await this.getByProject(projectId);
+
+    const missing: string[] = [];
+
+    const bad = (v: any) => !String(v ?? '').trim();
+
+    if (!landlord) {
+      return {
+        ready: false,
+        projectId,
+        missing: ['name', 'address', 'email', 'phone'],
+        landlord: null,
+      };
+    }
+
+    if (bad(landlord.name)) missing.push('name');
+    if (bad(landlord.address)) missing.push('address');
+    if (bad(landlord.email)) missing.push('email');
+    if (bad(landlord.phone)) missing.push('phone');
+
+    return {
+      ready: missing.length === 0,
+      projectId,
+      missing,
+      landlord,
+    };
   }
 }

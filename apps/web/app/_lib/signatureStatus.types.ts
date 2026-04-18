@@ -2,6 +2,7 @@ export type TenantSigStatus = "NOT_SENT" | "SENT" | "SIGNED";
 export type LandlordSigStatus = "NOT_SENT" | "SENT" | "SIGNED";
 export type DocSigStatus = "NOT_GENERATED" | "DRAFT" | "IN_PROGRESS" | "SIGNED";
 export type GuaranteeSigStatus = "NOT_SENT" | "SENT" | "IN_PROGRESS" | "SIGNED";
+
 export type LinkMeta = {
   createdAt: string;
   expiresAt: string | null;
@@ -35,7 +36,7 @@ export type SignatureStatusPayload = {
     status: DocSigStatus;
     landlord: {
       signatureStatus: LandlordSigStatus;
-      lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
+      lastLink: LinkMeta | null;
     };
     tenants: Array<{
       leaseTenantId: string;
@@ -43,39 +44,50 @@ export type SignatureStatusPayload = {
       role: string;
       fullName: string;
       signatureStatus: TenantSigStatus;
-      lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
+      lastLink: LinkMeta | null;
     }>;
   };
 
-   edl: {
-      entry: SignableDocBlock;
-      exit: SignableDocBlock;
-    };
-    inventory: {
-      entry: SignableDocBlock;
-      exit: SignableDocBlock;
-    };
-    
-    guarantees: Array<{
-      guaranteeId: string;
-      leaseTenantId: string;
-      tenantId: string;
-      tenantFullName: string;
-      guarantorFullName: string;
-      guarantorEmail: string | null;
-      guarantorPhone: string | null;
-      actDocumentId: string | null;
-      signedFinalDocumentId: string | null;
-      signatureStatus: GuaranteeSigStatus;
-      lastLink: { createdAt: string; expiresAt: string | null; consumedAt: string | null } | null;
-      guaranteeStatus: string | null;
-          ack?: {
-        required: boolean;
-        tenants: Array<{
-          tenantId: string;
-          acknowledged: boolean;
-          acknowledgedAt: string | null;
-        }>;
-      };
-    }>;
+  edl: {
+    entry: SignableDocBlock;
+    exit: SignableDocBlock;
   };
+
+  inventory: {
+    entry: SignableDocBlock;
+    exit: SignableDocBlock;
+  };
+
+  guarantees: Array<{
+    guaranteeId: string;
+    leaseTenantId: string;
+    tenantId: string;
+    tenantFullName: string;
+    type?: string | null;
+    guarantorFullName: string;
+    guarantorEmail: string | null;
+    guarantorPhone: string | null;
+    actDocumentId: string | null;
+    signedFinalDocumentId: string | null;
+    signatureStatus: GuaranteeSigStatus;
+    lastLink: LinkMeta | null;
+    guaranteeStatus: string | null;
+    need?: {
+      guarantor: boolean;
+      landlord: boolean;
+    };
+    signatures?: {
+      guarantorSigned: boolean;
+      landlordSigned: boolean;
+      remainingRoles: Array<"GUARANTOR" | "LANDLORD">;
+    };
+    ack?: {
+      required: boolean;
+      tenants: Array<{
+        tenantId: string;
+        acknowledged: boolean;
+        acknowledgedAt: string | null;
+      }>;
+    };
+  }>;
+};

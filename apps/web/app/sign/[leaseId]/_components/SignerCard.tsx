@@ -336,6 +336,21 @@ function getSecondaryAction(
   return null;
 }
 
+function getPriorityTask(task: SignerTask): SignerTask {
+  const subTasks = ((task as any).subTasks || []) as SignerTask[];
+
+  if (!subTasks.length) return task;
+
+  const actionable =
+    subTasks.find((t) => t.status === "READY" && !t.isBlocked) ||
+    subTasks.find((t) => t.status === "IN_PROGRESS" && !t.isBlocked) ||
+    subTasks.find((t) => t.status === "LINK_SENT" && !t.isBlocked) ||
+    subTasks.find((t) => t.requiresPreparation) ||
+    null;
+
+  return actionable || task;
+}
+
 function StatusChip({
   label,
   color,
@@ -514,13 +529,26 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
     },
     ref,
   ) {
-    const roleMeta = getRoleMeta(task);
-    const statusMeta = getStatusMeta(task);
-    const progressItems = buildProgressItems(task);
-    const historyItems = buildHistoryPreview(task);
+    const effectiveTask = getPriorityTask(task);
 
-    const primaryAction = getPrimaryAction(task);
-    const secondaryAction = getSecondaryAction(task, primaryAction?.key ?? null);
+    console.log("[SIGNER CARD EFFECTIVE TASK]", {
+      cardTaskId: task.id,
+      cardTaskLabel: task.documentLabel,
+      effectiveTaskId: effectiveTask.id,
+      effectiveTaskLabel: effectiveTask.documentLabel,
+      effectiveTaskStatus: effectiveTask.status,
+    });
+
+    const roleMeta = getRoleMeta(effectiveTask);
+    const statusMeta = getStatusMeta(effectiveTask);
+    const progressItems = buildProgressItems(effectiveTask);
+    const historyItems = buildHistoryPreview(effectiveTask);
+
+    const primaryAction = getPrimaryAction(effectiveTask);
+    const secondaryAction = getSecondaryAction(
+      effectiveTask,
+      primaryAction?.key ?? null,
+    );
 
     return (
       <article
@@ -576,10 +604,10 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                   wordBreak: "break-word",
                 }}
               >
-                {task.displayName}
+                {effectiveTask.displayName}
               </div>
 
-              {task.tenantLabel ? (
+              {effectiveTask.tenantLabel ? (
                 <div
                   style={{
                     marginTop: 6,
@@ -589,11 +617,11 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                     fontWeight: 700,
                   }}
                 >
-                  {task.tenantLabel}
+                  {effectiveTask.tenantLabel}
                 </div>
               ) : null}
 
-              {task.subtypeLabel ? (
+              {effectiveTask.subtypeLabel ? (
                 <div
                   style={{
                     marginTop: 6,
@@ -602,7 +630,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                     color: "#8A94A8",
                   }}
                 >
-                  {task.subtypeLabel}
+                  {effectiveTask.subtypeLabel}
                 </div>
               ) : null}
             </div>
@@ -634,8 +662,49 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                 marginBottom: 10,
               }}
             >
-              {task.documentLabel}
+              {effectiveTask.documentLabel}
             </div>
+
+            {(task as any).subTasks?.length > 0 && (
+              <div
+                style={{
+                  display: "grid",
+                  gap: 6,
+                  marginTop: 6,
+                  marginBottom: 10,
+                }}
+              >
+                {(task as any).subTasks.map((t: SignerTask) => (
+                  <div
+                    key={t.id}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      fontSize: 12.5,
+                      color: "#7B879C",
+                      paddingLeft: 2,
+                    }}
+                  >
+                    <span>{t.documentLabel}</span>
+
+                    <span
+                      style={{
+                        fontWeight: 600,
+                        color:
+                          t.status === "SIGNED"
+                            ? "#2FA35B"
+                            : t.status === "READY"
+                              ? "#A06A2C"
+                              : "#98A2B3",
+                      }}
+                    >
+                      {t.statusLabel}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ display: "grid", gap: 8 }}>
               {progressItems.map((item) => (
@@ -661,7 +730,9 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
               ))}
             </div>
 
-            {task.helperLabel && !task.requiresPreparation && task.status !== "SIGNED" ? (
+            {effectiveTask.helperLabel &&
+            !effectiveTask.requiresPreparation &&
+            effectiveTask.status !== "SIGNED" ? (
               <div
                 style={{
                   marginTop: 12,
@@ -670,7 +741,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                   color: "#667085",
                 }}
               >
-                {task.helperLabel}
+                {effectiveTask.helperLabel}
               </div>
             ) : null}
 
@@ -688,7 +759,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                     label={primaryAction.label}
                     icon={primaryAction.icon}
                     onClick={() =>
-                      runAction(primaryAction.key, task, {
+                      runAction(primaryAction.key, effectiveTask, {
                         onStartOnSite,
                         onSendEmail,
                         onResendEmail,
@@ -704,7 +775,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                     label={secondaryAction.label}
                     icon={secondaryAction.icon}
                     onClick={() =>
-                      runAction(secondaryAction.key, task, {
+                      runAction(secondaryAction.key, effectiveTask, {
                         onStartOnSite,
                         onSendEmail,
                         onResendEmail,

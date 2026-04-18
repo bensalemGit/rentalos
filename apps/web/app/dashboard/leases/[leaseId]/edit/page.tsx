@@ -153,6 +153,21 @@ export default function LeaseEditPage() {
   async function saveDesignation() {
     if (!token || !lease) return;
 
+    if (irl.enabled && (!irl.quarter.trim() || !irl.value.trim())) {
+      setError("Le trimestre et la valeur IRL sont obligatoires quand l’IRL est activé.");
+      setStatus("");
+      return;
+    }
+
+    if (irl.enabled) {
+      const parsedIrlValue = Number(irl.value);
+      if (!Number.isFinite(parsedIrlValue) || parsedIrlValue <= 0) {
+        setError("La valeur IRL doit être un nombre valide supérieur à 0.");
+        setStatus("");
+        return;
+      }
+    }
+
     try {
       setSavingDesignation(true);
       setError("");
@@ -168,8 +183,8 @@ export default function LeaseEditPage() {
         body: JSON.stringify({
           leaseDesignation: designation,
           keysCount: keysCount === "" ? null : Number(keysCount),
-          irlReferenceQuarter: irl.quarter || null,
-          irlReferenceValue: irl.value ? Number(irl.value) : null,
+          irlReferenceQuarter: irl.quarter.trim() || null,
+          irlReferenceValue: irl.value.trim() ? Number(irl.value) : null,
           irlEnabled: irl.enabled,
         }),
       });

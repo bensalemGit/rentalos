@@ -6,7 +6,7 @@ Objectifs :
 - reprise immédiate (dev/chat)
 - documentation durable (architecture + runbooks)
 - DR/PRA opérationnel
-- flow signature + finalisation + download PDF final **testé Newman**
+- flow signature + finalisation documentaire + downloads publics **testés**
 
 ---
 
@@ -16,6 +16,7 @@ Objectifs :
 - **Signature flow (tech)** : `docs/architecture/SIGNATURE_FLOW.md`
 - **DB finalisation & public links** : `docs/architecture/DATABASE_FINALIZATION.md`
 - **Newman runbook** : `docs/testing/NEWMAN_RUNBOOK.md`
+- **État hybride du système** : `docs/system-state.md`
 
 ---
 
@@ -29,14 +30,24 @@ Objectifs :
 
 ---
 
-## État actuel (février 2026)
+## État actuel (mars 2026)
 
-✅ Signature publique locataire + bailleur (tokens)  
-✅ Finalisation PDF “SIGNED_FINAL” (quand toutes signatures présentes)  
-✅ Champs DB finalisation : `finalized_at`, `signed_final_sha256`  
-✅ Token download PDF final : `FINAL_PDF_DOWNLOAD` **one-time** (2e call => 410 Gone)  
-✅ Enforcements purpose : signature ≠ download  
-✅ Newman : 0 failed sur le flow complet
+✅ Signature documentaire par document avec génération de `SIGNED_FINAL`  
+✅ Contrat, acte de caution, EDL et inventaire supportent la finalisation signée  
+✅ Cockpit admin `/sign/[leaseId]` centré signataires  
+✅ Signature publique par lien pour plusieurs rôles / usages  
+✅ `signed_final_document_id`, `finalized_at`, `signed_final_sha256` présents en base  
+✅ Download public séparé de la signature via `purpose` dédié  
+⚠️ Pack final encore hybride : certains documents peuvent fallback sur le document racine si le `SIGNED_FINAL` n’existe pas
+
+
+## Point d’attention
+
+La documentation décrit désormais le comportement réel du code, y compris les zones hybrides / legacy encore présentes :
+- `lease_tenants` vs `leases.tenant_id`
+- `lease_guarantees` vs champs legacy de bail
+- `SIGNED_FINAL` document par document
+- fallback root encore présent dans certains flux de pack final
 
 ---
 

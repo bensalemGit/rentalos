@@ -1,5 +1,11 @@
 # Database — Finalisation & Public Tokens
 
+## Portée réelle
+
+Cette finalisation ne concerne plus uniquement le contrat.
+
+Le mécanisme de `SIGNED_FINAL` est désormais utilisé de manière plus générale pour les documents signables du système.
+
 ## documents (finalisation)
 
 Le document parent (contrat source) porte l’état final :
@@ -25,7 +31,9 @@ Le document final stocke :
 Purposes :
 - `TENANT_SIGN_CONTRACT`
 - `LANDLORD_SIGN_CONTRACT`
+- `GUARANTOR_SIGN_ACT`
 - `FINAL_PDF_DOWNLOAD`
+- `FINAL_PACK_DOWNLOAD`
 
 ---
 
@@ -53,24 +61,21 @@ FROM documents final
 WHERE parent.signed_final_document_id = final.id
   AND (parent.finalized_at IS NULL OR parent.signed_final_sha256 IS NULL);
 
-## Migration Runner (infra/migrate.ps1)
-
 Le projet utilise un runner PowerShell pour appliquer les migrations SQL versionnées dans `infra/postgres-init/`.
 
-### Commandes
+
 
 - Statut (repo vs DB) :
   ```powershell
   .\infra\migrate.ps1 -Status
 
-Simulation (ne modifie pas la DB) :
+- Simulation (ne modifie pas la DB) :
 .\infra\migrate.ps1 -DryRun
 
-Application :
+- Application :
 .\infra\migrate.ps1 -Apply
 
 
-✅ Bloc 3 — “Reconcile repo vs DB” (à coller aussi dans DATABASE_FINALIZATION.md)
 ## Reconcile repo vs DB (diagnostic)
 
 Permet de vérifier qu'il n'existe aucun écart entre :
@@ -95,3 +100,7 @@ $missingInRepo = $applied | Where-Object { $files -notcontains $_ }
 $missingInDb
 "Missing in repo:"
 $missingInRepo
+
+La présence de `signed_final_document_id` sur un document ne signifie pas encore que tous les assemblages en aval utilisent exclusivement ce `SIGNED_FINAL`.
+
+En particulier, certains flux de pack final peuvent encore fallback sur le document racine.

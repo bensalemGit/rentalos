@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { Pool } from 'pg';
 
 @Injectable()
@@ -15,16 +15,38 @@ export class ProjectsService {
   async createProject(body: any) {
     const name = String(body?.name || '').trim();
     const kind = String(body?.kind || 'indivision').trim();
-    const notes = body?.notes ? String(body.notes) : null;
+    const notesRaw = body?.notes == null ? '' : String(body.notes).trim();
+    const notes = notesRaw || null;
 
-    if (!name) throw new BadRequestException('Project name is required');
+    if (!name) {
+      throw new BadRequestException('Project name is required');
+    }
+
+    const existingQ = await this.pool.query(
+      `
+      SELECT *
+      FROM projects
+      WHERE lower(trim(name)) = lower(trim($1))
+        AND lower(trim(kind)) = lower(trim($2))
+      ORDER BY created_at ASC
+      LIMIT 1
+      `,
+      [name, kind],
+    );
+
+    if (existingQ.rowCount) {
+      throw new ConflictException('Project already exists');
+    }
 
     const r = await this.pool.query(
-      `INSERT INTO projects (name, kind, notes)
-       VALUES ($1,$2,$3)
-       RETURNING *`,
-      [name, kind, notes]
+      `
+      INSERT INTO projects (name, kind, notes)
+      VALUES ($1, $2, $3)
+      RETURNING *
+      `,
+      [name, kind, notes],
     );
+
     return r.rows[0];
   }
 
@@ -39,22 +61,47 @@ export class ProjectsService {
     return r.rows;
   }
 
-  async addMember(projectId: string, body: any) {
-    if (!projectId) throw new BadRequestException('Missing projectId');
+    async addMember(projectId: string, body: any) {
+    if (!projectId) {
+      throw new BadRequestException('Missing projectId');
+    }
+
     const fullName = String(body?.fullName || '').trim();
     const role = String(body?.role || 'indivisaire').trim();
     const sharePct = body?.sharePct ?? null;
     const email = body?.email ? String(body.email).trim() : null;
     const phone = body?.phone ? String(body.phone).trim() : null;
 
-    if (!fullName) throw new BadRequestException('Member fullName is required');
+    if (!fullName) {
+      throw new BadRequestException('Member fullName is required');
+    }
+
+    const existingQ = await this.pool.query(
+      `
+      SELECT *
+      FROM project_members
+      WHERE project_id = $1
+        AND lower(trim(full_name)) = lower(trim($2))
+        AND lower(trim(role)) = lower(trim($3))
+      ORDER BY created_at ASC
+      LIMIT 1
+      `,
+      [projectId, fullName, role],
+    );
+
+    if (existingQ.rowCount) {
+      throw new ConflictException('Project member already exists');
+    }
 
     const r = await this.pool.query(
-      `INSERT INTO project_members (project_id, full_name, role, share_pct, email, phone)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       RETURNING *`,
-      [projectId, fullName, role, sharePct, email, phone]
+      `
+      INSERT INTO project_members (project_id, full_name, role, share_pct, email, phone)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING *
+      `,
+      [projectId, fullName, role, sharePct, email, phone],
     );
+
     return r.rows[0];
   }
 }

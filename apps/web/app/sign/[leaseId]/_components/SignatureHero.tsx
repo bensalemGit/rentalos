@@ -1,8 +1,10 @@
 import React from "react";
-import type { SignatureOverview } from "../_types/signature-center.types";
-import { CheckCircle2, ShieldCheck, Users, Clock3 } from "lucide-react";
+import type {
+  SignatureGlobalStatus,
+  SignatureOverview,
+} from "../_types/signature-center.types";
+import { CheckCircle2, ShieldCheck, Users, Clock3, FolderCheck } from "lucide-react";
 import { HeroChip, PremiumButton, SIGN_UI } from "./signature-ui";
-
 
 type SignatureHeroProps = {
   overview: SignatureOverview;
@@ -12,8 +14,6 @@ type SignatureHeroProps = {
   onSendAllRemainingLinks: () => void;
   onStartNextOnSite: () => void;
 };
-
-
 
 function getProgressTone(progressPercent: number, remainingCount: number) {
   if (remainingCount === 0) {
@@ -36,7 +36,85 @@ function getProgressTone(progressPercent: number, remainingCount: number) {
   };
 }
 
+function getGlobalStatusTone(status?: SignatureGlobalStatus) {
+  switch (status) {
+    case "PREPARATION":
+      return {
+        bg: "#F3F6FA",
+        text: "#66758F",
+        done: false,
+        empty: false,
+      };
+    case "SIGNATURE":
+      return {
+        bg: "#F6F1E8",
+        text: "#A06A2C",
+        done: false,
+        empty: false,
+      };
+    case "SIGNED":
+      return {
+        bg: "#EEF4FF",
+        text: "#4267C8",
+        done: false,
+        empty: false,
+      };
+    case "INCOMPLETE_CLOSURE":
+      return {
+        bg: "#FFF4E8",
+        text: "#B56A1E",
+        done: false,
+        empty: false,
+      };
+    case "CLOSED":
+      return {
+        bg: "#EAF7F1",
+        text: "#147A55",
+        done: true,
+        empty: false,
+      };
+    default:
+      return {
+        bg: "#F3F6FA",
+        text: "#66758F",
+        done: false,
+        empty: false,
+      };
+  }
+}
 
+function getCompletionMessage(overview: SignatureOverview) {
+  if (overview.globalStatus === "CLOSED") {
+    return (
+      overview.globalStatusHelp ||
+      "Le dossier est clos. Tous les documents requis sont signés et le pack final est disponible."
+    );
+  }
+
+  if (overview.globalStatus === "INCOMPLETE_CLOSURE") {
+    return (
+      overview.globalStatusHelp ||
+      "Toutes les signatures principales sont terminées, mais la clôture documentaire n’est pas encore complète."
+    );
+  }
+
+  if (overview.globalStatus === "SIGNED") {
+    return (
+      overview.globalStatusHelp ||
+      "Toutes les signatures requises sur le bail sont terminées."
+    );
+  }
+
+  return recommendedFallbackMessage(overview);
+}
+
+function recommendedFallbackMessage(overview: SignatureOverview) {
+  if (overview.remainingCount === 0) {
+    return "Toutes les signatures requises ont été recueillies. Les documents finaux sont disponibles au téléchargement.";
+  }
+
+  return null;
+}
 
 export function SignatureHero({
   overview,
@@ -50,6 +128,18 @@ export function SignatureHero({
   const progressWidth = `${Math.max(progressPercent, progressPercent > 0 ? 8 : 0)}%`;
   const isCompleted = overview.remainingCount === 0;
   const progressTone = getProgressTone(progressPercent, overview.remainingCount);
+
+  const globalTone = getGlobalStatusTone(overview.globalStatus);
+  const statusLabel = overview.globalStatusLabel || "Statut dossier";
+  const completionMessage = getCompletionMessage(overview);
+
+  const showActions =
+    overview.globalStatus === "PREPARATION" ||
+    overview.globalStatus === "SIGNATURE";
+
+  const isIncompleteClosure = overview.globalStatus === "INCOMPLETE_CLOSURE";
+  const isSigned = overview.globalStatus === "SIGNED";
+  const isClosed = overview.globalStatus === "CLOSED";
 
   return (
     <section
@@ -84,7 +174,6 @@ export function SignatureHero({
           gap: 18,
         }}
       >
-    
         <div
           style={{
             display: "flex",
@@ -96,23 +185,53 @@ export function SignatureHero({
         >
           <div
             style={{
-              fontSize: 12.5,
-              fontWeight: 600,
-              color: "#6E7C93",
-              letterSpacing: "-0.01em",
+              display: "grid",
+              gap: 8,
             }}
           >
-            Progression : {progressPercent}%
+            <div
+              style={{
+                fontSize: 12.5,
+                fontWeight: 600,
+                color: "#6E7C93",
+                letterSpacing: "-0.01em",
+              }}
+            >
+              Progression : {progressPercent}%
+            </div>
+
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                minHeight: 34,
+                padding: "0 14px",
+                borderRadius: 999,
+                background: globalTone.bg,
+                color: globalTone.text,
+                fontWeight: 700,
+                fontSize: 12.5,
+                letterSpacing: "-0.01em",
+                width: "fit-content",
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
+              }}
+            >
+              <FolderCheck size={14} strokeWidth={2.1} />
+              <span>{statusLabel}</span>
+            </div>
           </div>
 
           <HeroChip
             icon={<Clock3 size={14} strokeWidth={2.1} />}
             label={
-              isCompleted
-                ? "Dossier finalisé"
-                : `${overview.remainingCount} signatures restantes`
+              overview.globalStatus === "CLOSED"
+                ? "Dossier clos"
+                : isCompleted
+                  ? "Signatures terminées"
+                  : `${overview.remainingCount} signatures restantes`
             }
-            done={isCompleted}
+            done={overview.globalStatus === "CLOSED"}
             empty={!isCompleted && overview.remainingCount <= 0}
           />
         </div>
@@ -195,7 +314,7 @@ export function SignatureHero({
               color: "#97A3B7",
             }}
           >
-            {isCompleted ? "Résumé dossier" : "Prochaine action"}
+            {showActions ? "Prochaine action" : "Résumé dossier"}
           </div>
 
           <div
@@ -208,12 +327,52 @@ export function SignatureHero({
               letterSpacing: "-0.015em",
             }}
           >
-            {isCompleted
-              ? "Toutes les signatures requises ont été recueillies. Les documents finaux sont disponibles au téléchargement."
-              : recommendedActionLabel}
+            {showActions
+              ? recommendedActionLabel
+              : isIncompleteClosure
+                ? "Toutes les signatures principales sont terminées, mais la clôture documentaire n’est pas encore complète."
+                : isSigned
+                  ? "Le bail est entièrement signé. Les derniers artefacts documentaires doivent encore être consolidés."
+                  : isClosed
+                    ? "Le dossier est clos. Tous les documents requis sont signés et le pack final est disponible."
+                    : completionMessage || recommendedActionLabel}
           </div>
 
-          {!isCompleted ? (
+                    {overview.globalStatusHelp && !showActions ? (
+            <div
+              style={{
+                fontSize: 13.5,
+                lineHeight: 1.6,
+                color: "#6B7688",
+                fontWeight: 500,
+              }}
+            >
+          {overview.globalStatusHelp}
+            </div>
+          ) : null}
+
+          {isIncompleteClosure ? (
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                minHeight: 34,
+                padding: "0 14px",
+                borderRadius: 999,
+                background: "#FFF4E8",
+                color: "#B56A1E",
+                fontWeight: 700,
+                fontSize: 12.5,
+                letterSpacing: "-0.01em",
+                width: "fit-content",
+                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
+              }}
+            >
+              Finaliser les annexes signées et régénérer le pack final
+            </div>
+          ) : null}
+
+          {showActions ? (
             <div
               style={{
                 display: "flex",

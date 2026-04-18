@@ -46,7 +46,7 @@ export class PublicController {
     return this.pub.publicSign(token, body, req);
   }
 
-  // --- Admin: create landlord public sign link (requires auth) ---
+// --- Admin: create landlord public sign link (requires auth) ---
 @Post('public-links/landlord-sign')
 @UseGuards(JwtGuard)
 createLandlordLink(@Body() body: any) {
@@ -60,10 +60,58 @@ createLandlordLink(@Body() body: any) {
 sendLandlordLink(@Body() body: any) {
   const ttlHours = body?.ttlHours ?? 72;
   const emailOverride = body?.emailOverride ?? null;
+  const force = !!body?.force;
+
   return this.pub.createLandlordSignLinkAndEmail(
     body.leaseId,
     ttlHours,
     emailOverride,
+    force,
+  );
+}
+
+@Post('public-links/edl-entry/tenant/send')
+@UseGuards(JwtGuard)
+sendEdlEntryTenantLinks(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  const emailOverride = body?.emailOverride ?? null;
+  const force = !!body?.force;
+
+  return this.pub.sendEdlEntryTenantLinks(
+    body.leaseId,
+    ttlHours,
+    emailOverride,
+    force,
+  );
+}
+
+@Post('public-links/inventory-entry/tenant/send')
+@UseGuards(JwtGuard)
+sendInventoryEntryTenantLinks(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  const emailOverride = body?.emailOverride ?? null;
+  const force = !!body?.force;
+
+  return this.pub.sendInventoryEntryTenantLinks(
+    body.leaseId,
+    ttlHours,
+    emailOverride,
+    force,
+  );
+}
+
+@Post('public-links/edl-entry/landlord/send')
+@UseGuards(JwtGuard)
+sendEdlEntryLandlordLink(@Body() body: any) {
+  const ttlHours = body?.ttlHours ?? 72;
+  const emailOverride = body?.emailOverride ?? null;
+  const force = !!body?.force;
+
+  return this.pub.createEdlEntryLandlordLinkAndEmail(
+    body.leaseId,
+    ttlHours,
+    emailOverride,
+    force,
   );
 }
 

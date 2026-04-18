@@ -33,23 +33,56 @@ export default function LandlordSettingsPage({
   const [data, setData] = useState<Landlord>(empty);
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
 
+  // 🔐 Charger le token UNE FOIS
+  useEffect(() => {
+    const t = localStorage.getItem('token');
+    if (t) setToken(t);
+  }, []);
+
+  // 📥 LOAD
   async function load() {
+    if (!token) return;
+
     setStatus(null);
-    const r = await fetch(`/api/projects/${projectId}/landlord`, { cache: 'no-store' });
+
+    const r = await fetch(`/api/projects/${projectId}/landlord`, {
+      cache: 'no-store',
+      credentials: 'include',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
     if (r.ok) {
       const json = await r.json();
       if (json) setData({ ...empty, ...json });
+      return;
     }
+
+    const payload = await r.json().catch(() => ({}));
+    setStatus(payload?.message || 'Erreur lors du chargement du bailleur');
   }
 
+  // 💾 SAVE
   async function save() {
+    if (!token) {
+      setStatus('Token manquant');
+      return;
+    }
+
     setLoading(true);
     setStatus(null);
+
     try {
       const r = await fetch(`/api/projects/${projectId}/landlord`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json; charset=utf-8' },
+        credentials: 'include',
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify(data),
       });
 
@@ -59,16 +92,18 @@ export default function LandlordSettingsPage({
         setStatus(payload?.message || 'Erreur lors de l’enregistrement');
         return;
       }
+
       setStatus('✅ Bailleur enregistré');
     } finally {
       setLoading(false);
     }
   }
 
+  // 🚀 Charger quand token dispo
   useEffect(() => {
-    load();
+    if (token) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+  }, [projectId, token]);
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: 20 }}>
@@ -89,9 +124,19 @@ export default function LandlordSettingsPage({
             full
           />
 
-          <Field label="Email" value={data.email} onChange={(v) => setData({ ...data, email: v })} full />
+          <Field
+            label="Email"
+            value={data.email}
+            onChange={(v) => setData({ ...data, email: v })}
+            full
+          />
 
-          <Field label="Ville (optionnel)" value={data.city ?? ''} onChange={(v) => setData({ ...data, city: v })} />
+          <Field
+            label="Ville (optionnel)"
+            value={data.city ?? ''}
+            onChange={(v) => setData({ ...data, city: v })}
+          />
+
           <Field
             label="Code postal (optionnel)"
             value={data.postal_code ?? ''}
