@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const API =
   typeof window !== "undefined"
@@ -25,7 +26,17 @@ type Member = {
   created_at: string;
 };
 
+type DuplicateGroup = {
+  key: string;
+  normalizedName: string;
+  normalizedKind: string;
+  normalizedNotes: string;
+  projects: Project[];
+};
+
 export default function ProjectsPage() {
+  const router = useRouter();
+
   const [token, setToken] = useState("");
   const [projects, setProjects] = useState<Project[]>([]);
   const [selected, setSelected] = useState<Project | null>(null);
@@ -109,7 +120,9 @@ export default function ProjectsPage() {
         return;
       }
       setStatus("Projet créé ✅");
-      setName(""); setNotes(""); setKind("indivision");
+      setName("");
+      setNotes("");
+      setKind("indivision");
       setShowCreate(false);
       await loadProjects();
     } catch (e: any) {
@@ -149,30 +162,184 @@ export default function ProjectsPage() {
     }
   }
 
+  function normalize(v: string | null | undefined) {
+    return String(v || "").trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
+  const duplicateGroups = useMemo<DuplicateGroup[]>(() => {
+    const map = new Map<string, Project[]>();
+
+    for (const p of projects) {
+      const normalizedName = normalize(p.name);
+      const normalizedKind = normalize(p.kind);
+      const normalizedNotes = normalize(p.notes);
+
+      const key = `${normalizedName}::${normalizedKind}::${normalizedNotes}`;
+      const arr = map.get(key) || [];
+      arr.push(p);
+      map.set(key, arr);
+    }
+
+    return Array.from(map.entries())
+      .map(([key, grouped]) => {
+        const [normalizedName, normalizedKind, normalizedNotes] = key.split("::");
+        const projectsSorted = [...grouped].sort((a, b) =>
+          String(a.created_at || "").localeCompare(String(b.created_at || ""))
+        );
+
+        return {
+          key,
+          normalizedName,
+          normalizedKind,
+          normalizedNotes,
+          projects: projectsSorted,
+        };
+      })
+      .filter((g) => g.projects.length > 1)
+      .sort((a, b) => b.projects.length - a.projects.length);
+  }, [projects]);
+
   return (
     <main>
-      <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 10,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
         <div>
           <h1 style={{ marginTop: 0, marginBottom: 6 }}>Projets</h1>
-          <div style={{ color: muted }}>Indivision / Couple / Groupe propriétaire. Sert à classer les logements.</div>
+          <div style={{ color: muted }}>
+            Indivision / Couple / Groupe propriétaire. Sert à classer les logements.
+          </div>
         </div>
 
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <button onClick={() => setShowCreate((v) => !v)} style={btnPrimarySmall(blue)}>
             {showCreate ? "Fermer" : "Créer un projet"}
           </button>
-          <button onClick={loadProjects} style={btnSecondary(border)}>Rafraîchir</button>
+          <button onClick={loadProjects} style={btnSecondary(border)}>
+            Rafraîchir
+          </button>
         </div>
       </div>
 
       {status && <p style={{ color: "#0a6" }}>{status}</p>}
       {error && <p style={{ color: "crimson" }}>{error}</p>}
 
+      {duplicateGroups.length > 0 && (
+        <section
+          style={{
+            marginTop: 14,
+            border: "1px solid rgba(239,68,68,0.18)",
+            borderRadius: 16,
+            background: "rgba(239,68,68,0.04)",
+            padding: 14,
+          }}
+        >
+          <div style={{ fontWeight: 900, color: "#991b1b", marginBottom: 6 }}>
+            Doublons détectés dans les projets
+          </div>
+
+          <div style={{ color: "#7f1d1d", fontSize: 13, lineHeight: 1.5, marginBottom: 10 }}>
+            Cette page ne masque plus le problème : elle te signale les groupes potentiellement
+            dupliqués. Pour les supprimer réellement, il faudra brancher un endpoint backend de
+            suppression ou de fusion.
+          </div>
+
+          <div style={{ display: "grid", gap: 10 }}>
+            {duplicateGroups.map((group) => (
+              <div
+                key={group.key}
+                style={{
+                  border: "1px solid rgba(239,68,68,0.14)",
+                  borderRadius: 12,
+                  background: "#fff",
+                  padding: 12,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 4 }}>
+                  {group.projects[0]?.name || "(sans nom)"} — {group.projects.length} occurrences
+                </div>
+                <div style={{ color: muted, fontSize: 12, marginBottom: 8 }}>
+                  {group.projects[0]?.kind || "—"}
+                  {group.projects[0]?.notes ? ` • ${group.projects[0].notes}` : ""}
+                </div>
+
+                <div style={{ display: "grid", gap: 6 }}>
+                  {group.projects.map((p) => (
+                    <div
+                      key={p.id}
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        gap: 10,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                        border: `1px solid ${border}`,
+                        borderRadius: 10,
+                        padding: 10,
+                      }}
+                    >
+                      <div style={{ fontSize: 13 }}>
+                        <div>
+                          <b>ID :</b> {p.id}
+                        </div>
+                        <div style={{ color: muted }}>
+                          créé le {new Date(p.created_at).toLocaleString()}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button
+                          onClick={() =>
+                            router.push(`/dashboard/projects/${p.id}/settings/landlord`)
+                          }
+                          style={btnSecondary(border)}
+                        >
+                          Bailleur
+                        </button>
+                        <button
+                          onClick={() => {
+                            setSelected(p);
+                            loadMembers(p.id);
+                          }}
+                          style={btnSecondary(border)}
+                        >
+                          Membres
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {showCreate && (
-        <section style={{ marginTop: 14, border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
+        <section
+          style={{
+            marginTop: 14,
+            border: `1px solid ${border}`,
+            borderRadius: 16,
+            background: "#fff",
+            padding: 14,
+          }}
+        >
           <h2 style={{ marginTop: 0, fontSize: 16 }}>Nouveau projet</h2>
 
-          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+          <div
+            style={{
+              display: "grid",
+              gap: 10,
+              gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+            }}
+          >
             <label style={labelStyle(muted)}>
               Nom *<br />
               <input value={name} onChange={(e) => setName(e.target.value)} style={inputStyle(border)} />
@@ -192,56 +359,130 @@ export default function ProjectsPage() {
           <div style={{ marginTop: 10 }}>
             <label style={labelStyle(muted)}>
               Notes<br />
-              <textarea value={notes} onChange={(e) => setNotes(e.target.value)} rows={2} style={{ ...inputStyle(border), resize: "vertical" }} />
+              <textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                rows={2}
+                style={{ ...inputStyle(border), resize: "vertical" }}
+              />
             </label>
           </div>
 
           <div style={{ marginTop: 10 }}>
-            <button onClick={createProject} style={btnPrimaryWide(blue)}>Créer</button>
+            <button onClick={createProject} style={btnPrimaryWide(blue)}>
+              Créer
+            </button>
           </div>
         </section>
       )}
 
       <section style={{ marginTop: 14, display: "grid", gap: 10 }}>
         {projects.map((p) => (
-          <div key={p.id} style={{ border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <div
+            key={p.id}
+            style={{
+              border: `1px solid ${border}`,
+              borderRadius: 16,
+              background: "#fff",
+              padding: 14,
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 10,
+                flexWrap: "wrap",
+                alignItems: "center",
+              }}
+            >
               <div>
                 <div style={{ fontWeight: 900, fontSize: 16 }}>{p.name}</div>
-                <div style={{ color: muted, fontSize: 12 }}>{p.kind}{p.notes ? ` • ${p.notes}` : ""}</div>
+                <div style={{ color: muted, fontSize: 12 }}>
+                  {p.kind}
+                  {p.notes ? ` • ${p.notes}` : ""}
+                </div>
               </div>
 
-              <button
-                onClick={() => {
-                  setSelected(p);
-                  loadMembers(p.id);
-                }}
-                style={btnSecondary(border)}
-              >
-                Membres
-              </button>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                <button
+                  onClick={() => router.push(`/dashboard/projects/${p.id}/settings/landlord`)}
+                  style={btnSecondary(border)}
+                >
+                  Bailleur
+                </button>
+
+                <button
+                  onClick={() => {
+                    setSelected(p);
+                    loadMembers(p.id);
+                  }}
+                  style={btnSecondary(border)}
+                >
+                  Membres
+                </button>
+              </div>
             </div>
           </div>
         ))}
 
         {!projects.length && (
-          <div style={{ border: `1px dashed ${border}`, borderRadius: 16, background: "#fff", padding: 14, color: muted }}>
+          <div
+            style={{
+              border: `1px dashed ${border}`,
+              borderRadius: 16,
+              background: "#fff",
+              padding: 14,
+              color: muted,
+            }}
+          >
             Aucun projet. Clique “Créer un projet”.
           </div>
         )}
       </section>
 
       {selected && (
-        <section style={{ marginTop: 14, border: `1px solid ${border}`, borderRadius: 16, background: "#fff", padding: 14 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <section
+          style={{
+            marginTop: 14,
+            border: `1px solid ${border}`,
+            borderRadius: 16,
+            background: "#fff",
+            padding: 14,
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 10,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
             <div>
               <div style={{ fontWeight: 900 }}>Membres — {selected.name}</div>
               <div style={{ color: muted, fontSize: 12 }}>Optionnel (utile pour indivision)</div>
             </div>
-            <button onClick={() => { setSelected(null); setMembers([]); }} style={btnSecondary(border)}>Fermer</button>
+            <button
+              onClick={() => {
+                setSelected(null);
+                setMembers([]);
+              }}
+              style={btnSecondary(border)}
+            >
+              Fermer
+            </button>
           </div>
 
-          <div style={{ marginTop: 10, display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+          <div
+            style={{
+              marginTop: 10,
+              display: "grid",
+              gap: 10,
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
             <label style={labelStyle(muted)}>
               Nom *<br />
               <input value={mName} onChange={(e) => setMName(e.target.value)} style={inputStyle(border)} />
@@ -252,10 +493,17 @@ export default function ProjectsPage() {
             </label>
             <label style={labelStyle(muted)}>
               Quote-part (%)<br />
-              <input type="number" value={mShare} onChange={(e) => setMShare(Number(e.target.value))} style={inputStyle(border)} />
+              <input
+                type="number"
+                value={mShare}
+                onChange={(e) => setMShare(Number(e.target.value))}
+                style={inputStyle(border)}
+              />
             </label>
             <div style={{ display: "flex", alignItems: "end" }}>
-              <button onClick={addMember} style={btnPrimaryWide(blue)}>Ajouter</button>
+              <button onClick={addMember} style={btnPrimaryWide(blue)}>
+                Ajouter
+              </button>
             </div>
           </div>
 
@@ -277,7 +525,14 @@ function labelStyle(muted: string) {
   return { display: "grid", gap: 6, fontSize: 12, color: muted, minWidth: 0 } as const;
 }
 function inputStyle(border: string) {
-  return { padding: "10px 12px", borderRadius: 12, border: `1px solid ${border}`, width: "100%", minWidth: 0, boxSizing: "border-box" } as const;
+  return {
+    padding: "10px 12px",
+    borderRadius: 12,
+    border: `1px solid ${border}`,
+    width: "100%",
+    minWidth: 0,
+    boxSizing: "border-box",
+  } as const;
 }
 function btnPrimarySmall(blue: string) {
   return {

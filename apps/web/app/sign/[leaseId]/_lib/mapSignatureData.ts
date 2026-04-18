@@ -1,5 +1,6 @@
 import type {
   DocumentResource,
+  SignatureGlobalStatus,
   SignatureOverview,
   SignerTask,
   SignerTaskStatus,
@@ -13,6 +14,38 @@ type LeaseTenantLite = {
   role?: string;
 };
 
+type SignableDocNeed = {
+  landlord?: { required: boolean; signed: boolean };
+  tenants?: Array<{
+    tenantId: string;
+    required: boolean;
+    signed: boolean;
+  }>;
+};
+
+type SignableDocBlockLite = {
+  key: string;
+  label: string;
+  documentId: string | null;
+  filename?: string | null;
+  signedFinalDocumentId?: string | null;
+  status?: string | null;
+  need?: SignableDocNeed;
+  landlordLastLink?: {
+    createdAt?: string | null;
+    expiresAt?: string | null;
+    consumedAt?: string | null;
+  } | null;
+  tenantLastLinkByTenantId?: Record<
+    string,
+    {
+      createdAt?: string | null;
+      expiresAt?: string | null;
+      consumedAt?: string | null;
+    } | null
+  >;
+};
+
 type SignatureStatusPayloadLite = {
   contract?: {
     documentId?: string | null;
@@ -21,6 +54,10 @@ type SignatureStatusPayloadLite = {
     signedFinalDocumentId?: string | null;
     landlord?: {
       signatureStatus?: string | null;
+      lastLink?: {
+        createdAt?: string | null;
+        consumedAt?: string | null;
+      } | null;
     };
     tenants?: Array<{
       leaseTenantId: string;
@@ -43,11 +80,28 @@ type SignatureStatusPayloadLite = {
     actDocumentId?: string | null;
     signatureStatus?: string | null;
     signedFinalDocumentId?: string | null;
+    need?: {
+      guarantor: boolean;
+      landlord: boolean;
+    };
+    signatures?: {
+      guarantorSigned: boolean;
+      landlordSigned: boolean;
+      remainingRoles: Array<"GUARANTOR" | "LANDLORD">;
+    };
     lastLink?: {
       createdAt?: string | null;
       consumedAt?: string | null;
     } | null;
   }>;
+  edl?: {
+    entry?: SignableDocBlockLite | null;
+    exit?: SignableDocBlockLite | null;
+  };
+  inventory?: {
+    entry?: SignableDocBlockLite | null;
+    exit?: SignableDocBlockLite | null;
+  };
 };
 
 type DocLite = {
@@ -124,12 +178,18 @@ function mapGuarantorTaskStatus(args: {
 function mapLandlordTaskStatus(args: {
   contractDocumentId?: string | null;
   signatureStatus?: string | null;
+  hasActiveLink: boolean;
 }): SignerTaskStatus {
   const raw = String(args.signatureStatus || "").toUpperCase();
 
   if (!args.contractDocumentId) return "NOT_READY";
   if (raw === "SIGNED") return "SIGNED";
+  if (args.hasActiveLink) return "LINK_SENT";
   return "READY";
+}
+
+function mapSignableDocTaskStatus(signed: boolean): SignerTaskStatus {
+  return signed ? "SIGNED" : "READY";
 }
 
 function mapTenantTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTask[] {
@@ -146,7 +206,7 @@ function mapTenantTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTas
     });
 
     return {
-      id: `tenant:${t.leaseTenantId}`,
+      id: `tenant:contract:${t.leaseTenantId}`,
       kind: "TENANT",
       displayName: String(t.fullName || "").trim() || "Locataire",
       roleLabel: String(t.role || "").toLowerCase() === "principal" ? "Locataire principal" : "Cotitulaire",
@@ -179,8 +239,6 @@ function mapGuarantorTasks(
   guaranteeActOverride: Record<string, string>,
 ): SignerTask[] {
   const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
-  const landlordSigned =
-  String(sigStatus?.contract?.landlord?.signatureStatus || "").toUpperCase() === "SIGNED";
 
   const tenantNameByLeaseTenantId = new Map<string, string>();
 
@@ -206,18 +264,22 @@ function mapGuarantorTasks(
       hasActiveLink,
     });
 
-    const guarantorSigned = String(g.signatureStatus || "").toUpperCase() === "SIGNED";
+    const guarantorSigned =
+      Boolean(g.signatures?.guarantorSigned) ||
+      (String(g.signatureStatus || "").toUpperCase() === "SIGNED" && !isVisale);
+
+    const landlordSigned = Boolean(g.signatures?.landlordSigned);
 
     const progressLabel = isVisale
       ? "Aucune signature garant requise"
-      : guarantorSigned && landlordSigned
+      : String(g.signatureStatus || "").toUpperCase() === "SIGNED"
         ? "Signature finalisée"
-        : guarantorSigned && !landlordSigned
-          ? "Garant signé • Bailleur à signer"
-          : !guarantorSigned && landlordSigned
-            ? "Bailleur signé • Garant à signer"
-            : !effectiveActId
-              ? "Acte de caution à préparer"
+        : !effectiveActId
+          ? "Acte de caution à préparer"
+          : guarantorSigned && !landlordSigned
+            ? "Garant signé • Bailleur à signer"
+            : !guarantorSigned && landlordSigned
+              ? "Bailleur signé • Garant à signer"
               : "Garant et bailleur doivent signer";
 
     return {
@@ -231,7 +293,6 @@ function mapGuarantorTasks(
         ? (() => {
             const tenantNameFromMap = tenantNameByLeaseTenantId.get(String(g.leaseTenantId || "").trim());
             const fallbackTenantName = String(g.tenantFullName || "").trim();
-
             const targetName = tenantNameFromMap || fallbackTenantName;
             return targetName ? `Garant pour ${targetName}` : null;
           })()
@@ -244,6 +305,14 @@ function mapGuarantorTasks(
           : "Signature garant requise",
       progressLabel,
       counterpartySigned: isVisale ? null : landlordSigned,
+      signatureDetails: isVisale
+        ? undefined
+        : {
+            guarantorSigned,
+            landlordSigned,
+            remainingRoles: g.signatures?.remainingRoles || [],
+          },
+      landlordPendingOnDocument: !isVisale && Boolean(effectiveActId) && !landlordSigned,
       documentId: isVisale ? null : effectiveActId,
       documentLabel: isVisale ? "Garantie VISALE" : "Acte de caution",
       documentFilename: null,
@@ -268,11 +337,84 @@ function mapGuarantorTasks(
   });
 }
 
+function buildLandlordGuaranteeSubTasks(
+  sigStatus: SignatureStatusPayloadLite | null,
+  guaranteeActOverride: Record<string, string>,
+): SignerTask[] {
+  const guarantees = Array.isArray(sigStatus?.guarantees) ? sigStatus!.guarantees : [];
+
+  const tenantNameByLeaseTenantId = new Map<string, string>();
+
+  (sigStatus?.contract?.tenants || []).forEach((t) => {
+    const leaseTenantId = String(t.leaseTenantId || "").trim();
+    const fullName = String(t.fullName || "").trim();
+
+    if (leaseTenantId && fullName) {
+      tenantNameByLeaseTenantId.set(leaseTenantId, fullName);
+    }
+  });
+
+  return guarantees
+    .filter((g) => String(g.type || "").toUpperCase() !== "VISALE")
+    .map((g) => {
+      const effectiveActId = guaranteeActOverride[g.guaranteeId] || g.actDocumentId || null;
+      if (!effectiveActId) return null;
+
+      const landlordSigned = Boolean(g.signatures?.landlordSigned);
+      const guarantorSigned =
+        Boolean(g.signatures?.guarantorSigned) ||
+        String(g.signatureStatus || "").toUpperCase() === "SIGNED";
+
+      const tenantName =
+        tenantNameByLeaseTenantId.get(String(g.leaseTenantId || "").trim()) ||
+        String(g.tenantFullName || "").trim();
+
+      const status: SignerTaskStatus = landlordSigned ? "SIGNED" : "READY";
+
+      return {
+        id: `landlord:guarantee:${g.guaranteeId}`,
+        kind: "LANDLORD",
+        displayName: "Bailleur",
+        roleLabel: "Bailleur",
+        tenantLabel: tenantName ? `Acte de caution pour ${tenantName}` : "Acte de caution",
+        helperLabel: guarantorSigned
+          ? "Contresignature bailleur requise"
+          : "En attente de la signature du garant",
+        documentId: effectiveActId,
+        documentLabel: "Acte de caution",
+        documentFilename: null,
+        status,
+        statusLabel: toTaskStatusLabel(status),
+        activeMode: null,
+        canSignOnSite: !landlordSigned && guarantorSigned,
+        canSendEmailLink: !landlordSigned && guarantorSigned,
+        canResendLink: false,
+        canDownloadSigned: Boolean(g.signedFinalDocumentId),
+        signedFinalDocumentId: g.signedFinalDocumentId || null,
+        signedFinalFilename: g.signedFinalDocumentId ? "acte_caution_SIGNE.pdf" : null,
+        guaranteeId: g.guaranteeId,
+        hasActiveLink: false,
+        activeLinkCreatedAt: null,
+        requiresPreparation: false,
+        preparationLabel: null,
+        isOptional: true,
+        isBlocked: !guarantorSigned,
+        blockedReason: !guarantorSigned ? "Le garant doit signer avant le bailleur" : null,
+      } as SignerTask;
+    })
+    .filter(Boolean) as SignerTask[];
+}
+
 function mapLandlordTask(sigStatus: SignatureStatusPayloadLite | null): SignerTask {
   const contract = sigStatus?.contract;
+  const hasActiveLink = Boolean(
+    contract?.landlord?.lastLink && !contract?.landlord?.lastLink?.consumedAt,
+  );
+
   const status = mapLandlordTaskStatus({
     contractDocumentId: contract?.documentId,
     signatureStatus: contract?.landlord?.signatureStatus,
+    hasActiveLink,
   });
 
   return {
@@ -285,16 +427,255 @@ function mapLandlordTask(sigStatus: SignatureStatusPayloadLite | null): SignerTa
     documentFilename: contract?.filename || null,
     status,
     statusLabel: toTaskStatusLabel(status),
-    activeMode: null,
+    activeMode: status === "LINK_SENT" ? "EMAIL" : null,
     canSignOnSite: Boolean(contract?.documentId) && status !== "SIGNED",
     canSendEmailLink: Boolean(contract?.documentId) && status !== "SIGNED",
-    canResendLink: false,
+    canResendLink: status === "LINK_SENT",
     canDownloadSigned: Boolean(contract?.signedFinalDocumentId),
     signedFinalDocumentId: contract?.signedFinalDocumentId || null,
     signedFinalFilename: contract?.signedFinalDocumentId ? "contrat_SIGNE.pdf" : null,
+    hasActiveLink,
+    activeLinkCreatedAt: contract?.landlord?.lastLink?.createdAt || null,
     isOptional: false,
     isBlocked: !contract?.documentId,
     blockedReason: !contract?.documentId ? "Contrat non généré" : null,
+  };
+}
+
+function buildSecondaryTenantTasks(args: {
+  block: SignableDocBlockLite | null | undefined;
+  documentLabel: string;
+  contractTenants: Array<{
+    leaseTenantId: string;
+    tenantId: string;
+    fullName?: string | null;
+    role?: string | null;
+  }>;
+}): SignerTask[] {
+  const { block, documentLabel, contractTenants } = args;
+  if (!block?.documentId) return [];
+
+  const tenantNeedByTenantId = new Map(
+    (block.need?.tenants || []).map((t) => [String(t.tenantId), t]),
+  );
+
+  return contractTenants.map((tenant) => {
+    const need = tenantNeedByTenantId.get(String(tenant.tenantId));
+    const signed = Boolean(need?.signed);
+    const lastLink =
+      block.tenantLastLinkByTenantId?.[String(tenant.tenantId || '')] || null;
+    const hasActiveLink = Boolean(lastLink && !lastLink.consumedAt);
+
+    const status = signed
+      ? "SIGNED"
+      : hasActiveLink
+        ? "LINK_SENT"
+        : "READY";
+
+    return {
+      id: `tenant:${block.key}:${tenant.leaseTenantId}`,
+      kind: "TENANT",
+      displayName: String(tenant.fullName || "").trim() || "Locataire",
+      roleLabel:
+        String(tenant.role || "").toLowerCase() === "principal"
+          ? "Locataire principal"
+          : "Cotitulaire",
+      documentId: block.documentId,
+      documentLabel,
+      documentFilename: block.filename || null,
+      status,
+      statusLabel: toTaskStatusLabel(status),
+      activeMode: hasActiveLink ? "EMAIL" : null,
+      canSignOnSite: status !== "SIGNED",
+      canSendEmailLink: status !== "SIGNED",
+      canResendLink: hasActiveLink,
+      canDownloadSigned: Boolean(block.signedFinalDocumentId),
+      signedFinalDocumentId: block.signedFinalDocumentId || null,
+      signedFinalFilename: block.signedFinalDocumentId ? `${documentLabel}_SIGNE.pdf` : null,
+      tenantId: tenant.tenantId,
+      hasActiveLink,
+      activeLinkCreatedAt: lastLink?.createdAt || null,
+      requiresPreparation: false,
+      preparationLabel: null,
+      helperLabel: hasActiveLink ? "Lien public envoyé" : null,
+      isOptional: false,
+      isBlocked: false,
+      blockedReason: null,
+    };
+  });
+}
+
+function buildSecondaryLandlordTask(args: {
+  block: SignableDocBlockLite | null | undefined;
+  documentLabel: string;
+}): SignerTask[] {
+  const { block, documentLabel } = args;
+  if (!block?.documentId) return [];
+
+  const signed = Boolean(block.need?.landlord?.signed);
+  const lastLink = block.landlordLastLink || null;
+  const hasActiveLink = Boolean(lastLink && !lastLink.consumedAt);
+  const status = signed ? "SIGNED" : hasActiveLink ? "LINK_SENT" : "READY";
+
+  return [
+    {
+      id: `landlord:${block.key}`,
+      kind: "LANDLORD",
+      displayName: "Bailleur",
+      roleLabel: "Bailleur",
+      documentId: block.documentId,
+      documentLabel,
+      documentFilename: block.filename || null,
+      status,
+      statusLabel: toTaskStatusLabel(status),
+      activeMode: hasActiveLink ? "EMAIL" : null,
+      canSignOnSite: status !== "SIGNED",
+      canSendEmailLink: status !== "SIGNED",
+      canResendLink: hasActiveLink,
+      canDownloadSigned: Boolean(block.signedFinalDocumentId),
+      signedFinalDocumentId: block.signedFinalDocumentId || null,
+      signedFinalFilename: block.signedFinalDocumentId ? `${documentLabel}_SIGNE.pdf` : null,
+      hasActiveLink,
+      activeLinkCreatedAt: lastLink?.createdAt || null,
+      requiresPreparation: false,
+      preparationLabel: null,
+      helperLabel: hasActiveLink ? "Lien public envoyé" : null,
+      isOptional: false,
+      isBlocked: false,
+      blockedReason: null,
+    },
+  ];
+}
+
+function mapSecondaryDocTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTask[] {
+  const contractTenants = sigStatus?.contract?.tenants || [];
+
+  const edlEntry = sigStatus?.edl?.entry || null;
+  const edlExit = sigStatus?.edl?.exit || null;
+
+  const inventoryEntry = sigStatus?.inventory?.entry || null;
+  const inventoryExit = sigStatus?.inventory?.exit || null;
+
+  return [
+    ...buildSecondaryTenantTasks({
+      block: edlEntry,
+      documentLabel: "EDL entrée",
+      contractTenants,
+    }),
+    ...buildSecondaryLandlordTask({
+      block: edlEntry,
+      documentLabel: "EDL entrée",
+    }),
+
+    ...buildSecondaryTenantTasks({
+      block: inventoryEntry,
+      documentLabel: "Inventaire entrée",
+      contractTenants,
+    }),
+    ...buildSecondaryLandlordTask({
+      block: inventoryEntry,
+      documentLabel: "Inventaire entrée",
+    }),
+
+    ...buildSecondaryTenantTasks({
+      block: edlExit,
+      documentLabel: "EDL sortie",
+      contractTenants,
+    }),
+    ...buildSecondaryLandlordTask({
+      block: edlExit,
+      documentLabel: "EDL sortie",
+    }),
+
+    ...buildSecondaryTenantTasks({
+      block: inventoryExit,
+      documentLabel: "Inventaire sortie",
+      contractTenants,
+    }),
+    ...buildSecondaryLandlordTask({
+      block: inventoryExit,
+      documentLabel: "Inventaire sortie",
+    }),
+  ];
+}
+
+function computeGlobalStatus(args: {
+  sigStatus: SignatureStatusPayloadLite | null;
+  signerTasks: SignerTask[];
+  docs: DocLite[];
+}): {
+  status: SignatureGlobalStatus;
+  label: string;
+  help: string | null;
+} {
+  const contractSigned = Boolean(args.sigStatus?.contract?.signedFinalDocumentId);
+
+  const guarantees = Array.isArray(args.sigStatus?.guarantees) ? args.sigStatus!.guarantees : [];
+  const requiredGuarantees = guarantees.filter((g) => String(g.type || "").toUpperCase() !== "VISALE");
+
+  const guaranteesPrepared = requiredGuarantees.every(
+    (g) => Boolean(g.actDocumentId),
+  );
+
+  const guaranteesSigned = requiredGuarantees.every(
+    (g) => Boolean(g.signedFinalDocumentId),
+  );
+
+  const hasPreparationBlocker =
+    !args.sigStatus?.contract?.documentId ||
+    !guaranteesPrepared;
+
+  if (hasPreparationBlocker) {
+    return {
+      status: "PREPARATION",
+      label: "À préparer",
+      help: !args.sigStatus?.contract?.documentId
+        ? "Le contrat doit être généré avant de lancer les signatures."
+        : "Un ou plusieurs actes de caution doivent être préparés.",
+    };
+  }
+
+  if (!contractSigned || !guaranteesSigned) {
+    return {
+      status: "SIGNATURE",
+      label: "En signature",
+      help: "Des signatures restent à finaliser sur le contrat ou la caution.",
+    };
+  }
+
+  const edlEntry = args.sigStatus?.edl?.entry || null;
+  const inventoryEntry = args.sigStatus?.inventory?.entry || null;
+
+  const edlRequired = Boolean(edlEntry?.documentId);
+  const inventoryRequired = Boolean(inventoryEntry?.documentId);
+
+  const hasEdlSignedFinal = edlRequired
+    ? Boolean(edlEntry?.signedFinalDocumentId)
+    : true;
+
+  const hasInventorySignedFinal = inventoryRequired
+    ? Boolean(inventoryEntry?.signedFinalDocumentId)
+    : true;
+
+  const packFinalDoc = args.docs.find((d) => d.type === "PACK_FINAL");
+  const hasPackFinal = Boolean(packFinalDoc);
+
+  if (!hasEdlSignedFinal || !hasInventorySignedFinal || !hasPackFinal) {
+    return {
+      status: "INCOMPLETE_CLOSURE",
+      label: "Clôture documentaire incomplète",
+      help: !hasEdlSignedFinal
+        ? "L’EDL d’entrée signé final doit encore être généré."
+        : !hasInventorySignedFinal
+          ? "L’inventaire d’entrée signé final doit encore être généré."
+          : "Le pack final doit encore être généré ou régénéré.",
+    };
+  }
+
+  return {
+    status: "CLOSED",
+    label: "Clos",
+    help: "Tous les documents requis sont signés et le pack final est disponible.",
   };
 }
 
@@ -303,6 +684,7 @@ function mapOverview(args: {
   sigStatus: SignatureStatusPayloadLite | null;
   tenants: LeaseTenantLite[];
   signerTasks: SignerTask[];
+  docs: DocLite[];
 }): SignatureOverview {
   const contractTenants = args.sigStatus?.contract?.tenants || [];
 
@@ -320,7 +702,7 @@ function mapOverview(args: {
   ).length;
 
   const landlordSigned = args.signerTasks.some(
-    (t) => t.kind === "LANDLORD" && t.status === "SIGNED",
+    (t) => t.kind === "LANDLORD" && t.id === "landlord:contract" && t.status === "SIGNED",
   );
 
   const signableTasks = args.signerTasks.filter((t) => t.status !== "NOT_REQUIRED");
@@ -329,12 +711,21 @@ function mapOverview(args: {
   const progressPercent =
     signableTasks.length === 0 ? 0 : Math.round((signedTasks / signableTasks.length) * 100);
 
+  const global = computeGlobalStatus({
+    sigStatus: args.sigStatus,
+    signerTasks: args.signerTasks,
+    docs: args.docs,
+  });
+
   return {
     leaseId: args.leaseId,
     leaseLabel: `Bail #${args.leaseId.slice(0, 8)}…`,
     primaryTenantName: inferPrimaryTenantName(args.sigStatus, args.tenants),
     progressPercent,
     remainingCount,
+    globalStatus: global.status,
+    globalStatusLabel: global.label,
+    globalStatusHelp: global.help,
     tenants: {
       total: tenantTotal,
       signed: tenantSigned,
@@ -394,6 +785,26 @@ function mapDocuments(args: {
       });
     });
 
+  const secondaryBlocks: Array<{ block: SignableDocBlockLite | null | undefined; type: string; label: string }> = [
+    { block: args.sigStatus?.edl?.entry, type: "EDL_ENTRY", label: "EDL entrée" },
+    { block: args.sigStatus?.inventory?.entry, type: "INVENTORY_ENTRY", label: "Inventaire entrée" },
+    { block: args.sigStatus?.edl?.exit, type: "EDL_EXIT", label: "EDL sortie" },
+    { block: args.sigStatus?.inventory?.exit, type: "INVENTORY_EXIT", label: "Inventaire sortie" },
+  ];
+
+  secondaryBlocks.forEach(({ block, type, label }) => {
+    if (!block?.documentId) return;
+    pushDoc({
+      id: block.documentId,
+      label,
+      type,
+      filename: block.filename || null,
+      statusLabel: block.signedFinalDocumentId ? "Signé" : "Généré",
+      downloadable: true,
+      signedFinalDocumentId: block.signedFinalDocumentId || null,
+    });
+  });
+
   const noticeDoc = args.docs.find((d) => d.type === "NOTICE");
   if (noticeDoc) {
     pushDoc({
@@ -401,6 +812,21 @@ function mapDocuments(args: {
       label: "Notice",
       type: "NOTICE",
       filename: noticeDoc.filename || null,
+      statusLabel: "Généré",
+      downloadable: true,
+    });
+  }
+
+
+  const exitCertificateDoc = args.docs.find(
+    (d) => d.type === "ATTESTATION_SORTIE",
+  );
+  if (exitCertificateDoc) {
+    pushDoc({
+      id: exitCertificateDoc.id,
+      label: "Attestation de sortie",
+      type: "ATTESTATION_SORTIE",
+      filename: exitCertificateDoc.filename || null,
       statusLabel: "Généré",
       downloadable: true,
     });
@@ -418,6 +844,20 @@ function mapDocuments(args: {
     });
   }
 
+  const exitPackDoc = args.docs.find(
+    (d) => d.type === "PACK_EDL_INV_SORTIE",
+  );
+  if (exitPackDoc) {
+    pushDoc({
+      id: exitPackDoc.id,
+      label: "Pack sortie",
+      type: "PACK_EDL_INV_SORTIE",
+      filename: exitPackDoc.filename || null,
+      statusLabel: "Généré",
+      downloadable: true,
+    });
+  }
+
   const packFinalDoc = args.docs.find((d) => d.type === "PACK_FINAL");
   if (packFinalDoc) {
     pushDoc({
@@ -430,35 +870,21 @@ function mapDocuments(args: {
     });
   }
 
-  const edlDocs = args.docs.filter((d) => d.type === "EDL");
-  edlDocs.forEach((doc, index) => {
-    pushDoc({
-      id: doc.id,
-      label: `EDL ${index + 1}`,
-      type: "EDL",
-      filename: doc.filename || null,
-      statusLabel: "Généré",
-      downloadable: true,
-    });
-  });
-
-  const inventoryDocs = args.docs.filter((d) => d.type === "INVENTORY");
-  inventoryDocs.forEach((doc, index) => {
-    pushDoc({
-      id: doc.id,
-      label: `Inventaire ${index + 1}`,
-      type: "INVENTORY",
-      filename: doc.filename || null,
-      statusLabel: "Généré",
-      downloadable: true,
-    });
-  });
-
   return items;
 }
 
 function sortSignerTasks(tasks: SignerTask[]): SignerTask[] {
-  function rankTask(task: SignerTask): number {
+  function docRank(task: SignerTask): number {
+    if (task.documentLabel === "Contrat de location") return 1;
+    if (task.documentLabel === "Acte de caution") return 2;
+    if (task.documentLabel === "EDL entrée") return 3;
+    if (task.documentLabel === "Inventaire entrée") return 4;
+    if (task.documentLabel === "EDL sortie") return 5;
+    if (task.documentLabel === "Inventaire sortie") return 6;
+    return 99;
+  }
+
+  function personRank(task: SignerTask): number {
     if (task.kind === "TENANT" && task.roleLabel === "Locataire principal") return 1;
     if (task.kind === "TENANT") return 2;
     if (task.kind === "GUARANTOR") return 3;
@@ -467,8 +893,11 @@ function sortSignerTasks(tasks: SignerTask[]): SignerTask[] {
   }
 
   return [...tasks].sort((a, b) => {
-    const rankDiff = rankTask(a) - rankTask(b);
-    if (rankDiff !== 0) return rankDiff;
+    const docDiff = docRank(a) - docRank(b);
+    if (docDiff !== 0) return docDiff;
+
+    const personDiff = personRank(a) - personRank(b);
+    if (personDiff !== 0) return personDiff;
 
     return String(a.displayName || "").localeCompare(String(b.displayName || ""), "fr", {
       sensitivity: "base",
@@ -480,14 +909,52 @@ export function mapSignatureData(args: MapSignatureDataArgs): MapSignatureDataRe
   const tenantTasks = mapTenantTasks(args.sigStatus);
   const guarantorTasks = mapGuarantorTasks(args.sigStatus, args.guaranteeActOverride);
   const landlordTask = mapLandlordTask(args.sigStatus);
+  const secondaryDocTasks = mapSecondaryDocTasks(args.sigStatus);
+  const landlordGuaranteeSubTasks = buildLandlordGuaranteeSubTasks(
+    args.sigStatus,
+    args.guaranteeActOverride,
+  );
 
-  const signerTasks = sortSignerTasks([...tenantTasks, ...guarantorTasks, landlordTask]);
+  const primaryTasks = [
+    ...tenantTasks,
+    ...guarantorTasks,
+    landlordTask,
+  ];
+
+  const signerTasks = sortSignerTasks(
+    primaryTasks.map((task) => {
+      const subTasks = [
+        ...secondaryDocTasks.filter((subTask) => {
+          if (task.kind === "TENANT" && subTask.kind === "TENANT") {
+            return task.tenantId && subTask.tenantId === task.tenantId;
+          }
+
+          if (task.kind === "LANDLORD" && subTask.kind === "LANDLORD") {
+            return true;
+          }
+
+          return false;
+        }),
+        ...(task.kind === "LANDLORD" ? landlordGuaranteeSubTasks : []),
+      ];
+
+      if (subTasks.length === 0) {
+        return task;
+      }
+
+      return {
+        ...task,
+        subTasks,
+      } as SignerTask;
+    }),
+  );
 
   const overview = mapOverview({
     leaseId: args.leaseId,
     sigStatus: args.sigStatus,
     tenants: args.tenants,
     signerTasks,
+    docs: args.docs,
   });
 
   const documents = mapDocuments({

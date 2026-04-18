@@ -77,6 +77,8 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
   const [savingId, setSavingId] = useState<string | null>(null);
   const [creatingSession, setCreatingSession] = useState(false);
   const [copying, setCopying] = useState(false);
+
+  const [generatingExitDoc, setGeneratingExitDoc] = useState(false);
   
   const [savingReference, setSavingReference] = useState(false);
   const [applyingReference, setApplyingReference] = useState(false);
@@ -681,6 +683,56 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     }
   }
 
+  async function generateExitInventoryDocument(force = true) {
+    try {
+      if (!token) throw new Error("Non connecté (token manquant).");
+
+      const currentSession = sessions.find((s) => s.id === (sessionIdRef.current || sessionId));
+      const currentStatus = String(currentSession?.status || "").toLowerCase();
+
+      if (currentStatus !== "exit") {
+        throw new Error("La génération du document de sortie n'est possible que sur une session sortie.");
+      }
+
+      setGeneratingExitDoc(true);
+      setStatus("Génération du document inventaire de sortie…");
+
+      const r = await fetch(`${API}/documents/inventory`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          leaseId,
+          phase: "exit",
+          force,
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        throw new Error(
+          j?.message || JSON.stringify(j) || "Génération du document inventaire sortie impossible."
+        );
+      }
+
+      setStatus("Document inventaire de sortie généré ✅");
+      pushToast({ kind: "ok", message: "Document inventaire de sortie généré ✅" });
+      return j;
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      setError(msg);
+      setStatus("");
+      pushToast({ kind: "err", message: msg || "Erreur génération document inventaire sortie" });
+      throw e;
+    } finally {
+      setGeneratingExitDoc(false);
+    }
+  }
+
   async function saveAsUnitReferenceInventory() {
     if (!token) return;
 
@@ -898,12 +950,15 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filtered]);
 
+  const currentSession = sessions.find((s) => s.id === sessionId);
+  const isExitSession = String(currentSession?.status || "").toLowerCase() === "exit";
+
   const gridTemplate =
     "minmax(240px, 1.2fr) " +
     (showEntry ? "minmax(260px, 1fr) " : "") +
     (showExit ? "minmax(260px, 1fr) " : "") +
     "260px";
-
+  
 
   function syncViewModeWithSession(nextSessionId: string, list: InvSession[] = sessions) {
     const s = list.find((x) => x.id === nextSessionId);
@@ -1175,11 +1230,42 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                   <button onClick={() => setCreateStatus("entry")} style={chip(border, createStatus === "entry")}>Entrée</button>
                   <button onClick={() => setCreateStatus("exit")} style={chip(border, createStatus === "exit")}>Sortie</button>
-                  <button onClick={createEmptySession} disabled={creatingSession} style={{ ...btnPrimary(blue), opacity: creatingSession ? 0.6 : 1 }}>{creatingSession ? "Création…" : "Nouvelle session"}</button>
-                  {viewMode !== "EXIT" && <button onClick={copyEntryToExit} disabled={!sessionId || copying} style={{ ...btnSecondary(border), opacity: !sessionId || copying ? 0.5 : 1 }}>{copying ? "Copie…" : "Copier entrée → sortie"}</button>}
+                  <button onClick={createEmptySession} disabled={creatingSession} style={{ ...btnPrimary(blue), opacity: creatingSession ? 0.6 : 1 }}>
+                    {creatingSession ? "Création…" : "Nouvelle session"}
+                  </button>
+
+                  {!isExitSession && (
+                    <button
+                      onClick={copyEntryToExit}
+                      disabled={!sessionId || copying}
+                      style={{ ...btnSecondary(border), opacity: !sessionId || copying ? 0.5 : 1 }}
+                    >
+                      {copying ? "Copie…" : "Copier entrée → sortie"}
+                    </button>
+                  )}
+
+                  {isExitSession && (
+                    <button
+                      onClick={() => generateExitInventoryDocument(true)}
+                      disabled={!sessionId || generatingExitDoc}
+                      style={{
+                        ...btnPrimary(blue),
+                        opacity: !sessionId || generatingExitDoc ? 0.5 : 1,
+                      }}
+                      title="Génère ou régénère le document PDF de sortie à partir de l'état courant de la session sortie"
+                    >
+                      {generatingExitDoc ? "Génération…" : "Générer document sortie"}
+                    </button>
+                  )}
+
                   <button onClick={() => loadSessions()} style={btnSecondary(border)}>Rafraîchir</button>
                   <button onClick={toggleFullscreen} style={btnSecondary(border)}>{isFullscreen ? "Quitter plein écran" : "Plein écran"}</button>
                 </div>
+                {isExitSession && (
+                  <div style={{ marginTop: 10, color: muted, fontSize: 12.5, lineHeight: 1.5 }}>
+                    La copie entrée → sortie sert à préremplir la sortie. Ajuste d’abord les quantités et états sur place, puis génère le document de sortie quand la session est prête.
+                  </div>
+                )}
               </div>
             </div>
 

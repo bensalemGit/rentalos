@@ -85,13 +85,19 @@ export class DocumentsController {
     return this.replyCreated(res, result);
   }
 
+  @Get('pack-final/readiness')
+  async getPackFinalReadiness(@Query('leaseId') leaseId: string) {
+    return this.docs.getPackFinalReadiness(String(leaseId || '').trim());
+  }
+
   // ✅ Pack final V2 (contrat signé final + annexes + audit)
   @Post('pack-final')
   async generatePackFinal(
     @Body() body: any,
-    @Query('force', new DefaultValuePipe(false), ParseBoolPipe) force: boolean,
+    @Query('force', new DefaultValuePipe(false), ParseBoolPipe) forceQuery: boolean,
     @Res({ passthrough: true }) res: Response,
   ) {
+    const force = forceQuery || body?.force === true;
     const result = await this.docs.generatePackFinalV2(body.leaseId, { force });
     return this.replyCreated(res, result);
   }
@@ -161,4 +167,32 @@ async acknowledge(
     userAgent: String(req.headers['user-agent'] || '').trim() || null,
   });
 }
+
+  @Post('exit-certificate')
+  async generateExitCertificate(
+    @Body() body: { leaseId: string; force?: boolean },
+  ) {
+    return this.docs.generateExitCertificatePdf(String(body?.leaseId || '').trim(), {
+      force: !!body?.force,
+    });
+  }
+
+  @Post('exit-pack')
+  async generateExitPack(
+    @Body() body: { leaseId: string; force?: boolean },
+  ) {
+    return this.docs.generateExitPackPdf(String(body?.leaseId || '').trim(), {
+      force: !!body?.force,
+    });
+  }
+
+  @Post('exit-docs')
+  async generateExitDocs(
+    @Body() body: { leaseId: string; force?: boolean },
+  ) {
+    return this.docs.generateExitDocsBundle(String(body?.leaseId || '').trim(), {
+      force: !!body?.force,
+    });
+  }
+
 }

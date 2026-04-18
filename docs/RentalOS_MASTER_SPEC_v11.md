@@ -118,6 +118,15 @@ Toutes APPLIED.
 * documents
 * document_templates
 
+### Documents de sortie
+
+- ATTESTATION_SORTIE
+- PACK_EDL_INV_SORTIE
+
+Contraintes :
+- dépendance aux signed_final
+- génération manuelle uniquement
+
 ### Sécurité
 
 * public_links
@@ -134,17 +143,30 @@ Toutes APPLIED.
 
 ### doc_type
 
+Types observés / structurants dans le système :
+
 * CONTRAT
 * NOTICE
-* EDL
-* INVENTAIRE
+* GUARANTOR_ACT
+* EDL_ENTREE
+* EDL_SORTIE
+* INVENTAIRE_ENTREE
+* INVENTAIRE_SORTIE
 * ANNEXE
 * PHOTO
 * PACK
+* PACK_FINAL
+
+Remarque :
+la documentation historique simplifiait parfois `EDL` / `INVENTAIRE`, mais le code actuel distingue entrée / sortie.
 
 ### public_link_purpose
 
+Purposes historiques et actuels observés :
+
 * TENANT_SIGN_CONTRACT
+* LANDLORD_SIGN_CONTRACT
+* GUARANTOR_SIGN_ACT
 * FINAL_PDF_DOWNLOAD
 * FINAL_PACK_DOWNLOAD
 
@@ -352,13 +374,13 @@ Aucun accès direct à j.lease désormais.
 
 ## 6.1 Flux complet
 
-1. Génération contrat
-2. Lien public locataire
-3. Signature canvas
-4. Lien public bailleur
-5. Finalisation
-6. Génération PACK_FINAL
-7. One-shot download
+1. Génération d’un document racine
+2. Création éventuelle de liens publics selon le rôle / le document
+3. Signature(s) par rôle
+4. Vérification des signatures requises
+5. Génération du `SIGNED_FINAL`
+6. Assemblage documentaire éventuel (pack final)
+7. Download public ou admin selon le flux
 
 ---
 
@@ -370,6 +392,12 @@ Colonnes ajoutées :
 * signed_final_document_id
 * finalized_at
 * signed_final_sha256
+
+La finalisation s’applique désormais à plusieurs types documentaires :
+- contrat
+- acte de caution
+- EDL entrée / sortie
+- inventaire entrée / sortie
 
 ---
 
@@ -498,11 +526,20 @@ Moteur bail juridiquement irréprochable.
 UI création : chargesMode envoyé au POST /leases
 UI modale édition : affichage du charges_mode courant
 
-## Garanties – exclusivité Visale vs Caution
+## Garanties – état réel
 
-PATCH /leases/:id/visale : si enabled=true ⇒ purge caution (garant)
-PATCH /leases/:id/guarantor : si Visale activée ⇒ 400
-Contrat : section “Garanties” rendue via {{guarantor_block}}{{visale_block}}
+Le système supporte :
+- aucune garantie
+- VISALE
+- caution
+
+Le modèle principal est `lease_guarantees`.
+
+Règles métier :
+- VISALE : pas de signature garant
+- caution : acte indépendant à signer par GARANT + BAILLEUR
+
+Des champs / flux legacy peuvent encore coexister côté bail, mais ne constituent plus la cible principale.
 
 ## Visale
 Source de vérité : lease_terms.visale = { enabled, visaNumber, ...optionnel }

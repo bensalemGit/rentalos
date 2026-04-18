@@ -80,6 +80,8 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   const [creatingSession, setCreatingSession] = useState(false);
   const [copying, setCopying] = useState(false);
 
+  const [generatingExitDoc, setGeneratingExitDoc] = useState(false);
+
   const [photosByItem, setPhotosByItem] = useState<Record<string, Photo[]>>({});
   const [photosOpen, setPhotosOpen] = useState<Record<string, boolean>>({});
 
@@ -696,6 +698,54 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
   }
 }
 
+  async function generateExitEdlDocument(force = true) {
+    try {
+      if (!token) throw new Error("Non connecté (token manquant).");
+
+      const currentSession = sessions.find((s) => s.id === (sessionIdRef.current || sessionId));
+      const currentStatus = String(currentSession?.status || "").toLowerCase();
+
+      if (currentStatus !== "exit") {
+        throw new Error("La génération du document de sortie n'est possible que sur une session sortie.");
+      }
+
+      setGeneratingExitDoc(true);
+      setStatus("Génération du document EDL de sortie…");
+
+      const r = await fetch(`${API}/documents/edl`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          leaseId,
+          phase: "exit",
+          force,
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        throw new Error(j?.message || JSON.stringify(j) || "Génération du document EDL sortie impossible.");
+      }
+
+      setStatus("Document EDL de sortie généré ✅");
+      pushToast({ kind: "ok", message: "Document EDL de sortie généré ✅" });
+      return j;
+    } catch (e: any) {
+      const msg = String(e?.message || e);
+      setError(msg);
+      setStatus("");
+      pushToast({ kind: "err", message: msg || "Erreur génération document EDL sortie" });
+      throw e;
+    } finally {
+      setGeneratingExitDoc(false);
+    }
+  }
+
   async function saveAsUnitReferenceEdl() {
     if (!token) return;
 
@@ -963,6 +1013,9 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
     setTimeout(() => addLabelRef.current?.focus(), 50);
   }
 
+  const currentSession = sessions.find((s) => s.id === sessionId);
+  const isExitSession = String(currentSession?.status || "").toLowerCase() === "exit";
+
   const gridTemplate =
     "minmax(240px, 1.2fr) " +
     (showEntry ? "minmax(260px, 1fr) " : "") +
@@ -1218,10 +1271,38 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
                   <button onClick={() => setCreateStatus("entry")} style={chip(border, createStatus === "entry")}>Entrée</button>
                   <button onClick={() => setCreateStatus("exit")} style={chip(border, createStatus === "exit")}>Sortie</button>
                   <button onClick={createEmptySession} disabled={creatingSession} style={{ ...btnPrimary(blue), opacity: creatingSession ? 0.6 : 1 }}>{creatingSession ? "Création…" : "Nouvelle session"}</button>
-                  {viewMode !== "EXIT" && <button onClick={copyEntryToExit} disabled={!sessionId || copying} style={{ ...btnSecondary(border), opacity: !sessionId || copying ? 0.5 : 1 }}>{copying ? "Copie…" : "Copier entrée → sortie"}</button>}
+                  {!isExitSession && (
+                    <button
+                      onClick={copyEntryToExit}
+                      disabled={!sessionId || copying}
+                      style={{ ...btnSecondary(border), opacity: !sessionId || copying ? 0.5 : 1 }}
+                    >
+                      {copying ? "Copie…" : "Copier entrée → sortie"}
+                    </button>
+                  )}
+
+                  {isExitSession && (
+                    <button
+                      onClick={() => generateExitEdlDocument(true)}
+                      disabled={!sessionId || generatingExitDoc}
+                      style={{
+                        ...btnPrimary(blue),
+                        opacity: !sessionId || generatingExitDoc ? 0.5 : 1,
+                      }}
+                      title="Génère ou régénère le document PDF de sortie à partir de l'état courant de la session sortie"
+                    >
+                      {generatingExitDoc ? "Génération…" : "Générer document sortie"}
+                    </button>
+                  )}
+
                   <button onClick={() => loadSessions()} style={btnSecondary(border)}>Rafraîchir</button>
                   <button onClick={toggleFullscreen} style={btnSecondary(border)}>{isFullscreen ? "Quitter plein écran" : "Plein écran"}</button>
                 </div>
+                {isExitSession && (
+                  <div style={{ marginTop: 10, color: muted, fontSize: 12.5, lineHeight: 1.5 }}>
+                    La copie entrée → sortie sert à préremplir la sortie. Ajuste d’abord les constats sur place, puis génère le document de sortie quand la session est prête.
+                  </div>
+                )}
               </div>
             </div>
 
@@ -1269,6 +1350,7 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
       <div style={{ marginTop: 12, display: "grid", gap: 12 }}>
         {grouped.map(([section, arr]) => {
           const isCol = collapsed[section] ?? false;
+
 
           return (
             <section key={section} style={card(border, "#fff")}>

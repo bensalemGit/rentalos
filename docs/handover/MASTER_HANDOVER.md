@@ -18,8 +18,9 @@ RentalOS est un SaaS self-hosted de gestion locative :
 - gestion baux (meublé RP / nu RP / saisonnier)
 - locataires multiples (colocation)
 - génération documents PDF (contrat, notice, EDL, inventaire)
-- signature électronique (locataires + bailleur)
-- génération du **pack final signé**
+- signature électronique multi-rôles (locataires, bailleur, garant selon document)
+- génération de documents `SIGNED_FINAL`
+- génération du pack final documentaire
 - audit trail + robustesse infra (backup/restore)
 
 ---
@@ -68,25 +69,39 @@ Doc : `docs/architecture/CLOUDFLARE_ACCESS.md`
 ## 5) Flow signature — état VALIDÉ
 
 ### A) Tokens publics (table `public_links`)
+
 - token stocké en **SHA256** (jamais le token en clair)
-- `purpose` obligatoire :
-  - `TENANT_SIGN_CONTRACT`
-  - `LANDLORD_SIGN_CONTRACT`
-  - `FINAL_PDF_DOWNLOAD`
+- `purpose` obligatoire
+- séparation stricte entre :
+  - signature
+  - download document
+  - download pack
 
-Enforcement :
-- `/api/public/sign` accepte uniquement TENANT/LANDLORD
-- `/api/public/download-final` accepte uniquement FINAL_PDF_DOWNLOAD
+Le système contient plusieurs générations de flux publics :
+- historiques (contrat locataire / bailleur)
+- plus récents (garanties, téléchargements complémentaires)
 
-### B) Signature locataire / bailleur
-- Locataire : token public + signature (DataURL)
-- Bailleur : token public + `role=landlord`
+### B) Signature documentaire
+
+La signature n’est pas globale au bail.
+
+Chaque document porte ses propres signatures selon son type :
+- contrat
+- acte de caution
+- EDL
+- inventaire
+
+Rôles selon le document :
+- locataire
+- bailleur
+- garant
 
 ### C) Finalisation
-Quand tous les locataires requis + bailleur ont signé :
+
+Quand toutes les signatures requises d’un document sont présentes :
 - génération du PDF final : `*_SIGNED_FINAL.pdf`
-- création d’un document final
-- mise à jour du **document parent** :
+- création d’un document final enfant
+- mise à jour du document parent :
   - `signed_final_document_id`
   - `finalized_at`
   - `signed_final_sha256`
@@ -97,6 +112,19 @@ Quand tous les locataires requis + bailleur ont signé :
 - token **one-time** :
   - 1er download => 200 PDF
   - 2e download => 410 Gone (“Token already used”)
+
+### E) Pack final
+
+Le pack final assemble plusieurs documents du bail :
+- contrat signé final
+- actes de caution signés finals
+- notice
+- EDL
+- inventaire
+- audit
+
+⚠️ État actuel du code :
+le pack peut encore inclure certains documents via fallback root si leur `SIGNED_FINAL` n’existe pas.
 
 ---
 
@@ -124,10 +152,6 @@ Commande :
 ```powershell
 cd C:\rentalos\tests\postman
 newman run .\rentalos_signature_flow_autofresh_v8.postman_collection.json -e .\rentalos_env_autofresh_v8.postman_environment.json
-
-### ✅ Bloc 4 — à ajouter dans `docs/handover/MASTER_HANDOVER.md`
-```md
-## Git workflow (règles)
 
 - `main` = branche de production (source de vérité)
 - Chaque changement passe par une branche courte + PR :
