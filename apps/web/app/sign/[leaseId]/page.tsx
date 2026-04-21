@@ -816,48 +816,181 @@ async function generateExitPack() {
   }
 
 
-  function findCanonicalTaskForLegacyTask(task: SignerTask): CanonicalSignatureTask | null {
-    const tasks = canonicalWorkflow?.tasks ?? [];
+function findCanonicalTaskForLegacyTask(task: SignerTask): CanonicalSignatureTask | null {
+  const tasks = canonicalWorkflow?.tasks ?? [];
 
-    // CONTRAT / BAILLEUR
-    if (task.kind === "LANDLORD" && task.documentLabel === "Contrat de location") {
-      return (
-        tasks.find(
-          (t) =>
-            t.documentType === "LEASE_CONTRACT" &&
-            t.signerRole === "LANDLORD" &&
-            t.phase === "ENTRY",
-        ) || null
-      );
-    }
-
-    // ACTE DE CAUTION / GARANT
-    if (task.kind === "GUARANTOR" && task.guaranteeId) {
-      return (
-        tasks.find(
-          (t) =>
-            t.documentType === "GUARANTEE_ACT" &&
-            t.signerRole === "GUARANTOR" &&
-            t.signerRef.kind === "GUARANTOR" &&
-            t.signerRef.guaranteeId === task.guaranteeId,
-        ) || null
-      );
-    }
-
-    // EDL ENTREE / BAILLEUR
-    if (task.kind === "LANDLORD" && task.documentLabel === "EDL entrée") {
-      return (
-        tasks.find(
-          (t) =>
-            t.documentType === "EDL_ENTRY" &&
-            t.signerRole === "LANDLORD" &&
-            t.phase === "ENTRY",
-        ) || null
-      );
-    }
-
-    return null;
+  // CONTRAT / LOCATAIRE
+  if (task.kind === "TENANT" && task.documentLabel === "Contrat de location" && task.tenantId) {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "LEASE_CONTRACT" &&
+          t.signerRole === "TENANT" &&
+          t.phase === "ENTRY" &&
+          t.signerRef.kind === "TENANT" &&
+          t.signerRef.tenantId === task.tenantId,
+      ) || null
+    );
   }
+
+  // CONTRAT / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "Contrat de location") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "LEASE_CONTRACT" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "ENTRY",
+      ) || null
+    );
+  }
+
+  // ACTE DE CAUTION / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "Acte de caution") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "GUARANTEE_ACT" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "ENTRY" &&
+          t.signerRef.kind === "LANDLORD" &&
+          t.signerRef.guaranteeId === task.guaranteeId,
+      ) || null
+    );
+  }
+
+  // EDL ENTREE / LOCATAIRE
+  if (task.kind === "TENANT" && task.documentLabel === "EDL entrée" && task.tenantId) {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "EDL_ENTRY" &&
+          t.signerRole === "TENANT" &&
+          t.phase === "ENTRY" &&
+          t.signerRef.kind === "TENANT" &&
+          t.signerRef.tenantId === task.tenantId,
+      ) || null
+    );
+  }
+
+  // INVENTAIRE ENTREE / LOCATAIRE
+  if (task.kind === "TENANT" && task.documentLabel === "Inventaire entrée" && task.tenantId) {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "INVENTORY_ENTRY" &&
+          t.signerRole === "TENANT" &&
+          t.phase === "ENTRY" &&
+          t.signerRef.kind === "TENANT" &&
+          t.signerRef.tenantId === task.tenantId,
+      ) || null
+    );
+  }
+
+  // INVENTAIRE ENTREE / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "Inventaire entrée") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "INVENTORY_ENTRY" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "ENTRY",
+      ) || null
+    );
+  }
+
+  // ACTE DE CAUTION / GARANT
+  if (task.kind === "GUARANTOR" && task.guaranteeId) {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "GUARANTEE_ACT" &&
+          t.signerRole === "GUARANTOR" &&
+          t.signerRef.kind === "GUARANTOR" &&
+          t.signerRef.guaranteeId === task.guaranteeId,
+      ) || null
+    );
+  }
+
+  // EDL ENTREE / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "EDL entrée") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "EDL_ENTRY" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "ENTRY",
+      ) || null
+    );
+  }
+
+  // INVENTAIRE ENTREE / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "Inventaire entrée") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "INVENTORY_ENTRY" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "ENTRY",
+      ) || null
+    );
+  }
+
+  // EDL SORTIE / LOCATAIRE
+  if (task.kind === "TENANT" && task.documentLabel === "EDL sortie" && task.tenantId) {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "EDL_EXIT" &&
+          t.signerRole === "TENANT" &&
+          t.phase === "EXIT" &&
+          t.signerRef.kind === "TENANT" &&
+          t.signerRef.tenantId === task.tenantId,
+      ) || null
+    );
+  }
+
+  // EDL SORTIE / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "EDL sortie") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "EDL_EXIT" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "EXIT",
+      ) || null
+    );
+  }
+
+  // INVENTAIRE SORTIE / LOCATAIRE
+  if (task.kind === "TENANT" && task.documentLabel === "Inventaire sortie" && task.tenantId) {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "INVENTORY_EXIT" &&
+          t.signerRole === "TENANT" &&
+          t.phase === "EXIT" &&
+          t.signerRef.kind === "TENANT" &&
+          t.signerRef.tenantId === task.tenantId,
+      ) || null
+    );
+  }
+
+  // INVENTAIRE SORTIE / BAILLEUR
+  if (task.kind === "LANDLORD" && task.documentLabel === "Inventaire sortie") {
+    return (
+      tasks.find(
+        (t) =>
+          t.documentType === "INVENTORY_EXIT" &&
+          t.signerRole === "LANDLORD" &&
+          t.phase === "EXIT",
+      ) || null
+    );
+  }
+
+  return null;
+}
+
 async function trySendCanonicalLink(task: SignerTask, force = false): Promise<boolean> {
   const canonicalTask = findCanonicalTaskForLegacyTask(task);
   if (!canonicalTask) return false;

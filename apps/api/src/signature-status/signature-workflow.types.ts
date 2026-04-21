@@ -35,7 +35,7 @@ export type CanonicalLinkStatus =
 
 export type CanonicalSignerRef =
   | { kind: 'TENANT'; tenantId: string }
-  | { kind: 'LANDLORD' }
+  | { kind: 'LANDLORD'; guaranteeId?: string }
   | { kind: 'GUARANTOR'; guaranteeId: string };
 
 export type CanonicalSignatureTask = {

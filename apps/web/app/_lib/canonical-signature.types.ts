@@ -47,7 +47,7 @@ export type CanonicalSignatureTask = {
   signerRole: CanonicalSignerRole;
   signerRef:
     | { kind: 'TENANT'; tenantId: string }
-    | { kind: 'LANDLORD' }
+    | { kind: 'LANDLORD'; guaranteeId?: string }
     | { kind: 'GUARANTOR'; guaranteeId: string };
 
   signerName: string;

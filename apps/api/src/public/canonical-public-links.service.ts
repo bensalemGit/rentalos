@@ -19,14 +19,16 @@ export class CanonicalPublicLinksService {
         throw new BadRequestException('leaseId requis');
       }
 
-      // NOTE
-      // createTenantSignLink ne permet pas de cibler un tenant précis.
-      // À ce stade, on retourne juste un lien de signature contrat "tenant".
-      // L’unification fine multi-locataires viendra à l’étape suivante.
-      return this.publicService.createTenantSignLink(
+      if (!input.tenantId) {
+        throw new BadRequestException('tenantId requis pour LEASE_CONTRACT / TENANT');
+      }
+
+      return this.publicService.createTenantContractLinkAndEmail(
         input.leaseId,
+        input.tenantId,
         ttlHours,
-        'TENANT_SIGN_CONTRACT',
+        null,
+        force,
       );
     }
 
@@ -66,6 +68,23 @@ export class CanonicalPublicLinksService {
       );
     }
 
+    // GUARANTEE / LANDLORD
+    if (
+      input.documentType === 'GUARANTEE_ACT' &&
+      input.signerRole === 'LANDLORD'
+    ) {
+      if (!input.guaranteeId) {
+        throw new BadRequestException('guaranteeId requis pour GUARANTEE_ACT / LANDLORD');
+      }
+
+      return this.publicService.createGuaranteeLandlordSignLinkAndEmail(
+        input.guaranteeId,
+        ttlHours,
+        null,
+        force,
+      );
+    }
+
     // EDL ENTRY / TENANT
     if (
       input.documentType === 'EDL_ENTRY' &&
@@ -76,10 +95,53 @@ export class CanonicalPublicLinksService {
         throw new BadRequestException('leaseId requis');
       }
 
-      // NOTE
-      // sendEdlEntryTenantLinks envoie/crée pour tous les locataires.
-      // Pas encore ciblé tenant par tenant dans PublicService.
-      return this.publicService.sendEdlEntryTenantLinks(
+      if (!input.tenantId) {
+        throw new BadRequestException('tenantId requis pour EDL_ENTRY / TENANT');
+      }
+
+      return this.publicService.createEdlEntryTenantLinkAndEmail(
+        input.leaseId,
+        input.tenantId,
+        ttlHours,
+        null,
+        force,
+      );
+    }
+
+    // EDL EXIT / TENANT
+    if (
+      input.documentType === 'EDL_EXIT' &&
+      input.phase === 'EXIT' &&
+      input.signerRole === 'TENANT'
+    ) {
+      if (!input.leaseId) {
+        throw new BadRequestException('leaseId requis');
+      }
+
+      if (!input.tenantId) {
+        throw new BadRequestException('tenantId requis pour EDL_EXIT / TENANT');
+      }
+
+      return this.publicService.createEdlExitTenantLinkAndEmail(
+        input.leaseId,
+        input.tenantId,
+        ttlHours,
+        null,
+        force,
+      );
+    }
+
+    // EDL EXIT / LANDLORD
+    if (
+      input.documentType === 'EDL_EXIT' &&
+      input.phase === 'EXIT' &&
+      input.signerRole === 'LANDLORD'
+    ) {
+      if (!input.leaseId) {
+        throw new BadRequestException('leaseId requis');
+      }
+
+      return this.publicService.createEdlExitLandlordLinkAndEmail(
         input.leaseId,
         ttlHours,
         null,
@@ -93,9 +155,10 @@ export class CanonicalPublicLinksService {
       input.phase === 'ENTRY' &&
       input.signerRole === 'LANDLORD'
     ) {
-      return this.publicService.createEdlEntryLandlordLink(
+      return this.publicService.createEdlEntryLandlordLinkAndEmail(
         input.leaseId,
         ttlHours,
+        null,
         force,
       );
     }
@@ -110,15 +173,78 @@ export class CanonicalPublicLinksService {
         throw new BadRequestException('leaseId requis');
       }
 
-      // NOTE
-      // sendInventoryEntryTenantLinks envoie/crée pour tous les locataires.
-      return this.publicService.sendInventoryEntryTenantLinks(
+      if (!input.tenantId) {
+        throw new BadRequestException('tenantId requis pour INVENTORY_ENTRY / TENANT');
+      }
+
+      return this.publicService.createInventoryEntryTenantLinkAndEmail(
+        input.leaseId,
+        input.tenantId,
+        ttlHours,
+        null,
+        force,
+      );
+    }
+
+    // INVENTORY ENTRY / LANDLORD
+    if (
+      input.documentType === 'INVENTORY_ENTRY' &&
+      input.phase === 'ENTRY' &&
+      input.signerRole === 'LANDLORD'
+    ) {
+      if (!input.leaseId) {
+        throw new BadRequestException('leaseId requis');
+      }
+
+      return this.publicService.createInventoryEntryLandlordLinkAndEmail(
         input.leaseId,
         ttlHours,
         null,
         force,
       );
     }
+
+        // INVENTORY EXIT / TENANT
+    if (
+      input.documentType === 'INVENTORY_EXIT' &&
+      input.phase === 'EXIT' &&
+      input.signerRole === 'TENANT'
+    ) {
+      if (!input.leaseId) {
+        throw new BadRequestException('leaseId requis');
+      }
+
+      if (!input.tenantId) {
+        throw new BadRequestException('tenantId requis pour INVENTORY_EXIT / TENANT');
+      }
+
+      return this.publicService.createInventoryExitTenantLinkAndEmail(
+        input.leaseId,
+        input.tenantId,
+        ttlHours,
+        null,
+        force,
+      );
+    }
+
+    // INVENTORY EXIT / LANDLORD
+    if (
+      input.documentType === 'INVENTORY_EXIT' &&
+      input.phase === 'EXIT' &&
+      input.signerRole === 'LANDLORD'
+    ) {
+      if (!input.leaseId) {
+        throw new BadRequestException('leaseId requis');
+      }
+
+      return this.publicService.createInventoryExitLandlordLinkAndEmail(
+        input.leaseId,
+        ttlHours,
+        null,
+        force,
+      );
+    }
+
 
     throw new BadRequestException(
       `Combinaison non supportée pour le moment: ${input.documentType} / ${input.phase} / ${input.signerRole}`,

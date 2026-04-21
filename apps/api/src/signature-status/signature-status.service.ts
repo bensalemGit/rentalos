@@ -246,6 +246,33 @@ export class SignatureStatusService {
       }
     }
 
+    const latestEdlExitTenantLinkByTenantId = new Map<string, PublicLinkRow>();
+    const latestInventoryExitTenantLinkByTenantId = new Map<string, PublicLinkRow>();
+
+    const latestEdlExitLandlordLink =
+      links.find((l: PublicLinkRow) => l.purpose === 'LANDLORD_SIGN_EDL_EXIT') || null;
+
+    const latestInventoryExitLandlordLink =
+      links.find((l: PublicLinkRow) => l.purpose === 'LANDLORD_SIGN_INVENTORY_EXIT') || null;
+
+    for (const l of links) {
+      if (l.purpose === 'TENANT_SIGN_EDL_EXIT' && l.signer_tenant_id) {
+        const tid = String(l.signer_tenant_id);
+        if (!latestEdlExitTenantLinkByTenantId.has(tid)) {
+          latestEdlExitTenantLinkByTenantId.set(tid, l);
+        }
+      }
+    }
+
+    for (const l of links) {
+      if (l.purpose === 'TENANT_SIGN_INVENTORY_EXIT' && l.signer_tenant_id) {
+        const tid = String(l.signer_tenant_id);
+        if (!latestInventoryExitTenantLinkByTenantId.has(tid)) {
+          latestInventoryExitTenantLinkByTenantId.set(tid, l);
+        }
+      }
+    }
+
     // 5) Guarantees (selected cautions only)
     const guaranteesQ = await this.pool.query(
       `
@@ -554,13 +581,44 @@ export class SignatureStatusService {
             ),
           };
         })(),
-        exit: this.buildDocBlock({
-          key: 'edl:exit',
-          label: 'EDL sortie',
-          doc: edlExit,
-          leaseTenants,
-          signedByDoc,
-        }),
+        exit: (() => {
+          const block = this.buildDocBlock({
+            key: 'edl:exit',
+            label: 'EDL sortie',
+            doc: edlExit,
+            leaseTenants,
+            signedByDoc,
+          });
+
+          if (!block) return null;
+
+          return {
+            ...block,
+            landlordLastLink: latestEdlExitLandlordLink
+              ? {
+                  createdAt: latestEdlExitLandlordLink.created_at,
+                  expiresAt: latestEdlExitLandlordLink.expires_at,
+                  consumedAt: latestEdlExitLandlordLink.consumed_at,
+                }
+              : null,
+            tenantLastLinkByTenantId: Object.fromEntries(
+              leaseTenants.map((t) => {
+                const tid = String(t.tenant_id || '');
+                const row = latestEdlExitTenantLinkByTenantId.get(tid) || null;
+                return [
+                  tid,
+                  row
+                    ? {
+                        createdAt: row.created_at,
+                        expiresAt: row.expires_at,
+                        consumedAt: row.consumed_at,
+                      }
+                    : null,
+                ];
+              }),
+            ),
+          };
+        })(),
       },
       inventory: {
         entry: (() => {
@@ -594,13 +652,44 @@ export class SignatureStatusService {
             ),
           };
         })(),
-        exit: this.buildDocBlock({
-          key: 'inv:exit',
-          label: 'Inventaire sortie',
-          doc: invExit,
-          leaseTenants,
-          signedByDoc,
-        }),
+        exit: (() => {
+          const block = this.buildDocBlock({
+            key: 'inv:exit',
+            label: 'Inventaire sortie',
+            doc: invExit,
+            leaseTenants,
+            signedByDoc,
+          });
+
+          if (!block) return null;
+
+          return {
+            ...block,
+            landlordLastLink: latestInventoryExitLandlordLink
+              ? {
+                  createdAt: latestInventoryExitLandlordLink.created_at,
+                  expiresAt: latestInventoryExitLandlordLink.expires_at,
+                  consumedAt: latestInventoryExitLandlordLink.consumed_at,
+                }
+              : null,
+            tenantLastLinkByTenantId: Object.fromEntries(
+              leaseTenants.map((t) => {
+                const tid = String(t.tenant_id || '');
+                const row = latestInventoryExitTenantLinkByTenantId.get(tid) || null;
+                return [
+                  tid,
+                  row
+                    ? {
+                        createdAt: row.created_at,
+                        expiresAt: row.expires_at,
+                        consumedAt: row.consumed_at,
+                      }
+                    : null,
+                ];
+              }),
+            ),
+          };
+        })(),
       },
       packEdlInv: {
         entry: this.buildDocBlock({

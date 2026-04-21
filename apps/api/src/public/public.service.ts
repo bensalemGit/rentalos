@@ -233,7 +233,7 @@ export class PublicService {
     );
   }
 
-    private async findActiveEdlEntryTenantLink(leaseId: string, tenantId: string) {
+  private async findActiveEdlEntryTenantLink(leaseId: string, tenantId: string) {
     const q = await this.pool.query(
       `
       SELECT id, expires_at, created_at
@@ -264,6 +264,138 @@ export class PublicService {
         AND expires_at > NOW()
       `,
       [leaseId, tenantId],
+    );
+  }
+
+  private async findActiveEdlExitTenantLink(leaseId: string, tenantId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT id, expires_at, created_at
+      FROM public_links
+      WHERE lease_id=$1
+        AND purpose='TENANT_SIGN_EDL_EXIT'
+        AND signer_role='LOCATAIRE'
+        AND signer_tenant_id=$2
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+  private async deleteActiveEdlExitTenantLinks(leaseId: string, tenantId: string) {
+    await this.pool.query(
+      `
+      DELETE FROM public_links
+      WHERE lease_id=$1
+        AND purpose='TENANT_SIGN_EDL_EXIT'
+        AND signer_role='LOCATAIRE'
+        AND signer_tenant_id=$2
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      `,
+      [leaseId, tenantId],
+    );
+  }
+
+  private async findActiveInventoryExitTenantLink(leaseId: string, tenantId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT id, expires_at, created_at
+      FROM public_links
+      WHERE lease_id=$1
+        AND purpose='TENANT_SIGN_INVENTORY_EXIT'
+        AND signer_role='LOCATAIRE'
+        AND signer_tenant_id=$2
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+  private async deleteActiveInventoryExitTenantLinks(leaseId: string, tenantId: string) {
+    await this.pool.query(
+      `
+      DELETE FROM public_links
+      WHERE lease_id=$1
+        AND purpose='TENANT_SIGN_INVENTORY_EXIT'
+        AND signer_role='LOCATAIRE'
+        AND signer_tenant_id=$2
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      `,
+      [leaseId, tenantId],
+    );
+  }
+
+  private async findActiveEdlExitLandlordLink(leaseId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT id, expires_at, created_at
+      FROM public_links
+      WHERE lease_id=$1
+        AND purpose='LANDLORD_SIGN_EDL_EXIT'
+        AND signer_role='BAILLEUR'
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+  private async deleteActiveEdlExitLandlordLinks(leaseId: string) {
+    await this.pool.query(
+      `
+      DELETE FROM public_links
+      WHERE lease_id=$1
+        AND purpose='LANDLORD_SIGN_EDL_EXIT'
+        AND signer_role='BAILLEUR'
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      `,
+      [leaseId],
+    );
+  }
+
+  private async findActiveInventoryExitLandlordLink(leaseId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT id, expires_at, created_at
+      FROM public_links
+      WHERE lease_id=$1
+        AND purpose='LANDLORD_SIGN_INVENTORY_EXIT'
+        AND signer_role='BAILLEUR'
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+  private async deleteActiveInventoryExitLandlordLinks(leaseId: string) {
+    await this.pool.query(
+      `
+      DELETE FROM public_links
+      WHERE lease_id=$1
+        AND purpose='LANDLORD_SIGN_INVENTORY_EXIT'
+        AND signer_role='BAILLEUR'
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      `,
+      [leaseId],
     );
   }
 
@@ -325,6 +457,38 @@ export class PublicService {
       DELETE FROM public_links
       WHERE lease_id=$1
         AND purpose='LANDLORD_SIGN_EDL_ENTRY'
+        AND signer_role='BAILLEUR'
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      `,
+      [leaseId],
+    );
+  }
+
+  private async findActiveInventoryEntryLandlordLink(leaseId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT id, expires_at, created_at
+      FROM public_links
+      WHERE lease_id=$1
+        AND purpose='LANDLORD_SIGN_INVENTORY_ENTRY'
+        AND signer_role='BAILLEUR'
+        AND consumed_at IS NULL
+        AND expires_at > NOW()
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+    return q.rowCount ? q.rows[0] : null;
+  }
+
+  private async deleteActiveInventoryEntryLandlordLinks(leaseId: string) {
+    await this.pool.query(
+      `
+      DELETE FROM public_links
+      WHERE lease_id=$1
+        AND purpose='LANDLORD_SIGN_INVENTORY_ENTRY'
         AND signer_role='BAILLEUR'
         AND consumed_at IS NULL
         AND expires_at > NOW()
@@ -872,6 +1036,324 @@ export class PublicService {
     };
   }
 
+  async createEdlExitLandlordLink(
+    leaseId: string,
+    ttlHours = 72,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='EDL_SORTIE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('EDL sortie non généré');
+    }
+
+    const edlDoc = docQ.rows[0];
+
+    if (edlDoc.signed_final_document_id) {
+      throw new ConflictException('EDL sortie already finalized');
+    }
+
+    const alreadySigned = await this.hasRoleAlreadySigned(edlDoc.id, 'BAILLEUR');
+    if (alreadySigned && !force) {
+      throw new ConflictException('Landlord already signed EDL exit');
+    }
+
+    const active = await this.findActiveEdlExitLandlordLink(leaseId);
+    if (active && !force) {
+      throw new ConflictException('Active landlord EDL exit sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveEdlExitLandlordLinks(leaseId);
+    }
+
+    const { landlordName } = await this.resolveLandlordContactByLease(leaseId);
+    const signerName = landlordName || 'Bailleur';
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: edlDoc.id,
+      purpose: 'LANDLORD_SIGN_EDL_EXIT',
+      expiresInHours: ttlHours,
+      signerRole: 'BAILLEUR',
+      signerTenantId: null,
+      signerName,
+    });
+
+    return {
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: edlDoc.id,
+      publicUrl: `https://app.rentalos.fr/public/sign/${token}`,
+    };
+  }
+
+  async createEdlExitLandlordLinkAndEmail(
+    leaseId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    const link = await this.createEdlExitLandlordLink(leaseId, ttlHours, force);
+
+    const { landlordEmail } = await this.resolveLandlordContactByLease(leaseId);
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+    const toEmail = override || landlordEmail;
+
+    if (!toEmail) {
+      throw new BadRequestException('Missing landlord email on project (or use emailOverride)');
+    }
+
+    await this.mailer.sendMail(
+      toEmail,
+      'Signature bailleur — EDL sortie',
+      `
+        <p>Bonjour,</p>
+        <p>Merci de signer l'état des lieux de sortie.</p>
+        <p><a href="${link.publicUrl}">${link.publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(link.expiresAt).slice(0, 19)}</b></p>
+      `,
+    );
+
+    return {
+      ok: true,
+      ...link,
+      sentTo: toEmail,
+      overrideUsed: !!override,
+      forceUsed: !!force,
+    };
+  }
+
+  async createInventoryEntryLandlordLink(
+    leaseId: string,
+    ttlHours = 72,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='INVENTAIRE_ENTREE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('Inventaire entrée non généré');
+    }
+
+    const inventoryDoc = docQ.rows[0];
+
+    if (inventoryDoc.signed_final_document_id) {
+      throw new ConflictException('Inventaire entrée already finalized');
+    }
+
+    const alreadySigned = await this.hasRoleAlreadySigned(inventoryDoc.id, 'BAILLEUR');
+    if (alreadySigned && !force) {
+      throw new ConflictException('Landlord already signed inventory entry');
+    }
+
+    const active = await this.findActiveInventoryEntryLandlordLink(leaseId);
+    if (active && !force) {
+      throw new ConflictException('Active landlord inventory entry sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveInventoryEntryLandlordLinks(leaseId);
+    }
+
+    const { landlordName } = await this.resolveLandlordContactByLease(leaseId);
+    const signerName = landlordName || 'Bailleur';
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: inventoryDoc.id,
+      purpose: 'LANDLORD_SIGN_INVENTORY_ENTRY',
+      expiresInHours: ttlHours,
+      signerRole: 'BAILLEUR',
+      signerTenantId: null,
+      signerName,
+    });
+
+    return {
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: inventoryDoc.id,
+      publicUrl: `https://app.rentalos.fr/public/sign/${token}`,
+    };
+  }
+
+  async createInventoryEntryLandlordLinkAndEmail(
+    leaseId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    const link = await this.createInventoryEntryLandlordLink(leaseId, ttlHours, force);
+
+    const { landlordEmail } = await this.resolveLandlordContactByLease(leaseId);
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+    const toEmail = override || landlordEmail;
+
+    if (!toEmail) {
+      throw new BadRequestException('Missing landlord email on project (or use emailOverride)');
+    }
+
+    await this.mailer.sendMail(
+      toEmail,
+      'Signature bailleur — Inventaire entrée',
+      `
+        <p>Bonjour,</p>
+        <p>Merci de signer l'inventaire d'entrée.</p>
+        <p><a href="${link.publicUrl}">${link.publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(link.expiresAt).slice(0, 19)}</b></p>
+      `,
+    );
+
+    return {
+      ok: true,
+      ...link,
+      sentTo: toEmail,
+      overrideUsed: !!override,
+      forceUsed: !!force,
+    };
+  }
+
+  async createInventoryExitLandlordLink(
+    leaseId: string,
+    ttlHours = 72,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='INVENTAIRE_SORTIE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('Inventaire sortie non généré');
+    }
+
+    const inventoryDoc = docQ.rows[0];
+
+    if (inventoryDoc.signed_final_document_id) {
+      throw new ConflictException('Inventaire sortie already finalized');
+    }
+
+    const alreadySigned = await this.hasRoleAlreadySigned(inventoryDoc.id, 'BAILLEUR');
+    if (alreadySigned && !force) {
+      throw new ConflictException('Landlord already signed inventory exit');
+    }
+
+    const active = await this.findActiveInventoryExitLandlordLink(leaseId);
+    if (active && !force) {
+      throw new ConflictException('Active landlord inventory exit sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveInventoryExitLandlordLinks(leaseId);
+    }
+
+    const { landlordName } = await this.resolveLandlordContactByLease(leaseId);
+    const signerName = landlordName || 'Bailleur';
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: inventoryDoc.id,
+      purpose: 'LANDLORD_SIGN_INVENTORY_EXIT',
+      expiresInHours: ttlHours,
+      signerRole: 'BAILLEUR',
+      signerTenantId: null,
+      signerName,
+    });
+
+    return {
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: inventoryDoc.id,
+      publicUrl: `https://app.rentalos.fr/public/sign/${token}`,
+    };
+  }
+
+  async createInventoryExitLandlordLinkAndEmail(
+    leaseId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    const link = await this.createInventoryExitLandlordLink(leaseId, ttlHours, force);
+
+    const { landlordEmail } = await this.resolveLandlordContactByLease(leaseId);
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+    const toEmail = override || landlordEmail;
+
+    if (!toEmail) {
+      throw new BadRequestException('Missing landlord email on project (or use emailOverride)');
+    }
+
+    await this.mailer.sendMail(
+      toEmail,
+      'Signature bailleur — Inventaire sortie',
+      `
+        <p>Bonjour,</p>
+        <p>Merci de signer l'inventaire de sortie.</p>
+        <p><a href="${link.publicUrl}">${link.publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(link.expiresAt).slice(0, 19)}</b></p>
+      `,
+    );
+
+    return {
+      ok: true,
+      ...link,
+      sentTo: toEmail,
+      overrideUsed: !!override,
+      forceUsed: !!force,
+    };
+  }
+
   // ✅ Create + send email to tenant
   // Supports emailOverride (for testing / manual send)
   async createTenantSignLinkAndEmail(
@@ -920,6 +1402,620 @@ export class PublicService {
     return { ok: true, ...link, sentTo: toEmail, overrideUsed: !!override };
   }
 
+  async createTenantContractLinkAndEmail(
+    leaseId: string,
+    tenantId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    if (!tenantId) throw new BadRequestException('Missing tenantId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='CONTRAT'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    let contractDoc = docQ.rowCount ? docQ.rows[0] : null;
+
+    if (!contractDoc) {
+      const generated = await this.docs.generateContractPdf(leaseId);
+      contractDoc = generated?.document ?? generated;
+    }
+
+    if (!contractDoc?.id) {
+      throw new BadRequestException('Failed to create/find contract document');
+    }
+
+    if (contractDoc.signed_final_document_id) {
+      throw new ConflictException('Contract already finalized');
+    }
+
+    const tenantQ = await this.pool.query(
+      `
+      SELECT
+        tt.id,
+        tt.full_name,
+        tt.email,
+        lt.role
+      FROM lease_tenants lt
+      JOIN tenants tt ON tt.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND lt.tenant_id = $2
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+
+    if (!tenantQ.rowCount) {
+      throw new BadRequestException('Tenant not found on lease');
+    }
+
+    const tenant = tenantQ.rows[0];
+
+    const alreadySigned = await this.hasTenantAlreadySigned(contractDoc.id, tenantId);
+    if (alreadySigned && !force) {
+      throw new ConflictException('Tenant already signed');
+    }
+
+    const active = await this.findActiveTenantSignLink(leaseId, tenantId);
+    if (active && !force) {
+      throw new ConflictException('Active tenant sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveTenantSignLinks(leaseId, tenantId);
+    }
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+
+    const toEmail = override || String(tenant.email || '').trim();
+
+    if (!toEmail) {
+      throw new BadRequestException(
+        'Tenant has no email. Please set tenant email first (or use emailOverride).',
+      );
+    }
+
+    const signerName = String(tenant.full_name || 'Locataire').trim();
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: contractDoc.id,
+      purpose: 'TENANT_SIGN_CONTRACT',
+      expiresInHours: ttlHours,
+      signerRole: 'LOCATAIRE',
+      signerTenantId: tenantId,
+      signerName,
+    });
+
+    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+    await this.mailer.sendMail(
+      toEmail,
+      `Signature du contrat de location — ${contractDoc.filename || ''}`,
+      `
+        <p>Bonjour ${signerName},</p>
+        <p>Merci de signer le contrat de location.</p>
+        <p><a href="${publicUrl}">${publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(row.expires_at).slice(0, 19)}</b></p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `,
+    );
+
+    return {
+      ok: true,
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: contractDoc.id,
+      publicUrl,
+      sentTo: toEmail,
+      tenantId,
+      role: tenant.role ?? null,
+      forceUsed: !!force,
+      overrideUsed: !!override,
+    };
+  }
+
+  async createEdlEntryTenantLinkAndEmail(
+    leaseId: string,
+    tenantId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    if (!tenantId) throw new BadRequestException('Missing tenantId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='EDL_ENTREE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('EDL entrée non généré');
+    }
+
+    const edlDoc = docQ.rows[0];
+
+    if (edlDoc.signed_final_document_id) {
+      throw new ConflictException('EDL entrée already finalized');
+    }
+
+    const tenantQ = await this.pool.query(
+      `
+      SELECT
+        tt.id,
+        tt.full_name,
+        tt.email,
+        lt.role
+      FROM lease_tenants lt
+      JOIN tenants tt ON tt.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND lt.tenant_id = $2
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+
+    if (!tenantQ.rowCount) {
+      throw new BadRequestException('Tenant not found on lease');
+    }
+
+    const tenant = tenantQ.rows[0];
+
+    const alreadySigned = await this.hasTenantAlreadySigned(edlDoc.id, tenantId);
+    if (alreadySigned && !force) {
+      throw new ConflictException('Tenant already signed EDL entry');
+    }
+
+    const active = await this.findActiveEdlEntryTenantLink(leaseId, tenantId);
+    if (active && !force) {
+      throw new ConflictException('Active tenant EDL entry sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveEdlEntryTenantLinks(leaseId, tenantId);
+    }
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+
+    const toEmail = override || String(tenant.email || '').trim();
+
+    if (!toEmail) {
+      throw new BadRequestException(
+        'Tenant has no email. Please set tenant email first (or use emailOverride).',
+      );
+    }
+
+    const signerName = String(tenant.full_name || 'Locataire').trim();
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: edlDoc.id,
+      purpose: 'TENANT_SIGN_EDL_ENTRY',
+      expiresInHours: ttlHours,
+      signerRole: 'LOCATAIRE',
+      signerTenantId: tenantId,
+      signerName,
+    });
+
+    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+    await this.mailer.sendMail(
+      toEmail,
+      `Signature locataire — EDL entrée`,
+      `
+        <p>Bonjour ${signerName},</p>
+        <p>Merci de signer l'état des lieux d'entrée.</p>
+        <p><a href="${publicUrl}">${publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(row.expires_at).slice(0, 19)}</b></p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `,
+    );
+
+    return {
+      ok: true,
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: edlDoc.id,
+      publicUrl,
+      sentTo: toEmail,
+      tenantId,
+      role: tenant.role ?? null,
+      forceUsed: !!force,
+      overrideUsed: !!override,
+    };
+  }
+
+  async createInventoryEntryTenantLinkAndEmail(
+    leaseId: string,
+    tenantId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    if (!tenantId) throw new BadRequestException('Missing tenantId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='INVENTAIRE_ENTREE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('Inventaire entrée non généré');
+    }
+
+    const inventoryDoc = docQ.rows[0];
+
+    if (inventoryDoc.signed_final_document_id) {
+      throw new ConflictException('Inventaire entrée already finalized');
+    }
+
+    const tenantQ = await this.pool.query(
+      `
+      SELECT
+        tt.id,
+        tt.full_name,
+        tt.email,
+        lt.role
+      FROM lease_tenants lt
+      JOIN tenants tt ON tt.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND lt.tenant_id = $2
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+
+    if (!tenantQ.rowCount) {
+      throw new BadRequestException('Tenant not found on lease');
+    }
+
+    const tenant = tenantQ.rows[0];
+
+    const alreadySigned = await this.hasTenantAlreadySigned(inventoryDoc.id, tenantId);
+    if (alreadySigned && !force) {
+      throw new ConflictException('Tenant already signed inventory entry');
+    }
+
+    const active = await this.findActiveInventoryEntryTenantLink(leaseId, tenantId);
+    if (active && !force) {
+      throw new ConflictException('Active tenant inventory entry sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveInventoryEntryTenantLinks(leaseId, tenantId);
+    }
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+
+    const toEmail = override || String(tenant.email || '').trim();
+
+    if (!toEmail) {
+      throw new BadRequestException(
+        'Tenant has no email. Please set tenant email first (or use emailOverride).',
+      );
+    }
+
+    const signerName = String(tenant.full_name || 'Locataire').trim();
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: inventoryDoc.id,
+      purpose: 'TENANT_SIGN_INVENTORY_ENTRY',
+      expiresInHours: ttlHours,
+      signerRole: 'LOCATAIRE',
+      signerTenantId: tenantId,
+      signerName,
+    });
+
+    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+    await this.mailer.sendMail(
+      toEmail,
+      `Signature locataire — Inventaire entrée`,
+      `
+        <p>Bonjour ${signerName},</p>
+        <p>Merci de signer l'inventaire d'entrée.</p>
+        <p><a href="${publicUrl}">${publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(row.expires_at).slice(0, 19)}</b></p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `,
+    );
+
+    return {
+      ok: true,
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: inventoryDoc.id,
+      publicUrl,
+      sentTo: toEmail,
+      tenantId,
+      role: tenant.role ?? null,
+      forceUsed: !!force,
+      overrideUsed: !!override,
+    };
+  }
+
+  async createInventoryExitTenantLinkAndEmail(
+    leaseId: string,
+    tenantId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    if (!tenantId) throw new BadRequestException('Missing tenantId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='INVENTAIRE_SORTIE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('Inventaire sortie non généré');
+    }
+
+    const inventoryDoc = docQ.rows[0];
+
+    if (inventoryDoc.signed_final_document_id) {
+      throw new ConflictException('Inventaire sortie already finalized');
+    }
+
+    const tenantQ = await this.pool.query(
+      `
+      SELECT
+        tt.id,
+        tt.full_name,
+        tt.email,
+        lt.role
+      FROM lease_tenants lt
+      JOIN tenants tt ON tt.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND lt.tenant_id = $2
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+
+    if (!tenantQ.rowCount) {
+      throw new BadRequestException('Tenant not found on lease');
+    }
+
+    const tenant = tenantQ.rows[0];
+
+    const alreadySigned = await this.hasTenantAlreadySigned(inventoryDoc.id, tenantId);
+    if (alreadySigned && !force) {
+      throw new ConflictException('Tenant already signed inventory exit');
+    }
+
+    const active = await this.findActiveInventoryExitTenantLink(leaseId, tenantId);
+    if (active && !force) {
+      throw new ConflictException('Active tenant inventory exit sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveInventoryExitTenantLinks(leaseId, tenantId);
+    }
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+
+    const toEmail = override || String(tenant.email || '').trim();
+
+    if (!toEmail) {
+      throw new BadRequestException(
+        'Tenant has no email. Please set tenant email first (or use emailOverride).',
+      );
+    }
+
+    const signerName = String(tenant.full_name || 'Locataire').trim();
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: inventoryDoc.id,
+      purpose: 'TENANT_SIGN_INVENTORY_EXIT',
+      expiresInHours: ttlHours,
+      signerRole: 'LOCATAIRE',
+      signerTenantId: tenantId,
+      signerName,
+    });
+
+    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+    await this.mailer.sendMail(
+      toEmail,
+      `Signature locataire — Inventaire sortie`,
+      `
+        <p>Bonjour ${signerName},</p>
+        <p>Merci de signer l'inventaire de sortie.</p>
+        <p><a href="${publicUrl}">${publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(row.expires_at).slice(0, 19)}</b></p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `,
+    );
+
+    return {
+      ok: true,
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: inventoryDoc.id,
+      publicUrl,
+      sentTo: toEmail,
+      tenantId,
+      role: tenant.role ?? null,
+      forceUsed: !!force,
+      overrideUsed: !!override,
+    };
+  }
+
+  async createEdlExitTenantLinkAndEmail(
+    leaseId: string,
+    tenantId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    if (!tenantId) throw new BadRequestException('Missing tenantId');
+
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='EDL_SORTIE'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('EDL sortie non généré');
+    }
+
+    const edlDoc = docQ.rows[0];
+
+    if (edlDoc.signed_final_document_id) {
+      throw new ConflictException('EDL sortie already finalized');
+    }
+
+    const tenantQ = await this.pool.query(
+      `
+      SELECT
+        tt.id AS tenant_id,
+        tt.full_name,
+        tt.email,
+        lt.role
+      FROM lease_tenants lt
+      JOIN tenants tt ON tt.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND tt.id = $2
+      LIMIT 1
+      `,
+      [leaseId, tenantId],
+    );
+
+    if (!tenantQ.rowCount) {
+      throw new BadRequestException('Tenant not found for lease');
+    }
+
+    const tenant = tenantQ.rows[0];
+
+    const alreadySigned = await this.hasTenantAlreadySigned(edlDoc.id, tenantId);
+    if (alreadySigned && !force) {
+      throw new ConflictException('Tenant already signed EDL exit');
+    }
+
+    const active = await this.findActiveEdlExitTenantLink(leaseId, tenantId);
+    if (active && !force) {
+      throw new ConflictException('Active tenant EDL exit sign link already exists');
+    }
+
+    if (force) {
+      await this.deleteActiveEdlExitTenantLinks(leaseId, tenantId);
+    }
+
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
+
+    const toEmail = override || String(tenant.email || '').trim();
+
+    if (!toEmail) {
+      throw new BadRequestException('Tenant email missing (or use emailOverride)');
+    }
+
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: edlDoc.id,
+      purpose: 'TENANT_SIGN_EDL_EXIT',
+      expiresInHours: ttlHours,
+      signerRole: 'LOCATAIRE',
+      signerTenantId: tenantId,
+      signerName: String(tenant.full_name || 'Locataire').trim(),
+    });
+
+    const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+    await this.mailer.sendMail(
+      toEmail,
+      'Signature locataire — EDL sortie',
+      `
+        <p>Bonjour,</p>
+        <p>Merci de signer l'état des lieux de sortie.</p>
+        <p><a href="${publicUrl}">${publicUrl}</a></p>
+        <p>Ce lien expire le : <b>${String(row.expires_at).slice(0, 19)}</b></p>
+      `,
+    );
+
+    return {
+      ok: true,
+      token,
+      expiresAt: row.expires_at,
+      leaseId,
+      documentId: edlDoc.id,
+      publicUrl,
+      sentTo: toEmail,
+      tenantId,
+      role: tenant.role || null,
+      forceUsed: !!force,
+      overrideUsed: !!override,
+    };
+  }
 
   async sendTenantSignLinks(
     leaseId: string,
@@ -1092,125 +2188,125 @@ export class PublicService {
     };
   }
 
-async sendGuarantorSignLink(
-  leaseId: string,
-  ttlHours = 72,
-  emailOverride?: string | null,
-  force = false,
-) {
-  if (!leaseId) throw new BadRequestException('Missing leaseId');
+  async sendGuarantorSignLink(
+    leaseId: string,
+    ttlHours = 72,
+    emailOverride?: string | null,
+    force = false,
+  ) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-  // 1) Find guarantor act root doc (generate? -> je garde ton comportement: error si absent)
-  const docQ = await this.pool.query(
-    `
-    SELECT *
-    FROM documents
-    WHERE lease_id=$1
-      AND type='GUARANTOR_ACT'
-      AND parent_document_id IS NULL
-    ORDER BY created_at DESC
-    LIMIT 1
-    `,
-    [leaseId],
-  );
-  if (!docQ.rowCount) throw new BadRequestException('No guarantor act document found');
+    // 1) Find guarantor act root doc (generate? -> je garde ton comportement: error si absent)
+    const docQ = await this.pool.query(
+      `
+      SELECT *
+      FROM documents
+      WHERE lease_id=$1
+        AND type='GUARANTOR_ACT'
+        AND parent_document_id IS NULL
+      ORDER BY created_at DESC
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+    if (!docQ.rowCount) throw new BadRequestException('No guarantor act document found');
 
-  const actDoc = docQ.rows[0];
+    const actDoc = docQ.rows[0];
 
-  // 2) Get guarantor infos from lease
-  const leaseQ = await this.pool.query(
-    `SELECT guarantor_full_name, guarantor_email FROM leases WHERE id=$1 LIMIT 1`,
-    [leaseId],
-  );
-  if (!leaseQ.rowCount) throw new BadRequestException('Unknown lease');
+    // 2) Get guarantor infos from lease
+    const leaseQ = await this.pool.query(
+      `SELECT guarantor_full_name, guarantor_email FROM leases WHERE id=$1 LIMIT 1`,
+      [leaseId],
+    );
+    if (!leaseQ.rowCount) throw new BadRequestException('Unknown lease');
 
-  const gName = String(leaseQ.rows[0]?.guarantor_full_name || '').trim();
-  const gEmailRaw = String(leaseQ.rows[0]?.guarantor_email || '').trim();
+    const gName = String(leaseQ.rows[0]?.guarantor_full_name || '').trim();
+    const gEmailRaw = String(leaseQ.rows[0]?.guarantor_email || '').trim();
 
-  const override =
-    emailOverride && String(emailOverride).includes('@')
-      ? String(emailOverride).trim()
-      : '';
+    const override =
+      emailOverride && String(emailOverride).includes('@')
+        ? String(emailOverride).trim()
+        : '';
 
-  const gEmail = override || gEmailRaw;
+    const gEmail = override || gEmailRaw;
 
-  if (!gEmail) throw new BadRequestException('Guarantor email missing');
-  if (!gName) throw new BadRequestException('Guarantor name missing');
+    if (!gEmail) throw new BadRequestException('Guarantor email missing');
+    if (!gName) throw new BadRequestException('Guarantor name missing');
 
-  // 3) ✅ GUARD: si déjà signé => on n'envoie pas
-  const alreadySigned = await this.hasGuarantorAlreadySigned(actDoc.id);
-  if (alreadySigned) {
+    // 3) ✅ GUARD: si déjà signé => on n'envoie pas
+    const alreadySigned = await this.hasGuarantorAlreadySigned(actDoc.id);
+    if (alreadySigned) {
+      return {
+        ok: true,
+        forceUsed: !!force,
+        sent: false,
+        reason: 'already_signed',
+        email: gEmail,
+      };
+    }
+
+    // 4) ✅ GUARD: si lien actif existe et force=false => skip
+    const active = await this.findActiveGuarantorSignLink(leaseId);
+    if (active && !force) {
+      return {
+        ok: true,
+        forceUsed: !!force,
+        sent: false,
+        reason: 'active_link_exists',
+        email: gEmail,
+        activeExpiresAt: active.expires_at,
+      };
+    }
+
+    // 5) ✅ FORCE => on purge les liens actifs puis on recrée
+    if (force) {
+      await this.deleteActiveGuarantorSignLinks(leaseId);
+    }
+
+    // 6) Create token
+    const { token, row } = await this.createPublicLink({
+      leaseId,
+      documentId: actDoc.id,
+      purpose: 'GUARANT_SIGN_ACT',
+      expiresInHours: ttlHours,
+      signerRole: 'GARANT',
+      signerTenantId: null,
+      signerName: gName,
+    });
+
+    const url = `https://app.rentalos.fr/public/sign/${token}`;
+    const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
+
+    // 7) Send email (HTML)
+    const subject = `Signature de l'acte de caution — ${actDoc.filename || ''}`;
+    const html = `
+      <p>Bonjour ${gName},</p>
+
+      <p>Merci de signer l’acte de caution.</p>
+
+      <p>
+        Lien de signature :<br/>
+        <a href="${url}">${url}</a>
+      </p>
+
+      <p>Ce lien expire le : <b>${expiresPretty}</b></p>
+
+      <p>Bien cordialement,<br/>RentalOS</p>
+    `;
+
+    await this.mailer.sendMail(gEmail, subject, html);
+
     return {
       ok: true,
       forceUsed: !!force,
-      sent: false,
-      reason: 'already_signed',
+      sent: true,
       email: gEmail,
+      expiresAt: row.expires_at,
+      overrideUsed: !!override,
     };
   }
 
-  // 4) ✅ GUARD: si lien actif existe et force=false => skip
-  const active = await this.findActiveGuarantorSignLink(leaseId);
-  if (active && !force) {
-    return {
-      ok: true,
-      forceUsed: !!force,
-      sent: false,
-      reason: 'active_link_exists',
-      email: gEmail,
-      activeExpiresAt: active.expires_at,
-    };
-  }
-
-  // 5) ✅ FORCE => on purge les liens actifs puis on recrée
-  if (force) {
-    await this.deleteActiveGuarantorSignLinks(leaseId);
-  }
-
-  // 6) Create token
-  const { token, row } = await this.createPublicLink({
-    leaseId,
-    documentId: actDoc.id,
-    purpose: 'GUARANT_SIGN_ACT',
-    expiresInHours: ttlHours,
-    signerRole: 'GARANT',
-    signerTenantId: null,
-    signerName: gName,
-  });
-
-  const url = `https://app.rentalos.fr/public/sign/${token}`;
-  const expiresPretty = new Date(row.expires_at).toLocaleString('fr-FR');
-
-  // 7) Send email (HTML)
-  const subject = `Signature de l'acte de caution — ${actDoc.filename || ''}`;
-  const html = `
-    <p>Bonjour ${gName},</p>
-
-    <p>Merci de signer l’acte de caution.</p>
-
-    <p>
-      Lien de signature :<br/>
-      <a href="${url}">${url}</a>
-    </p>
-
-    <p>Ce lien expire le : <b>${expiresPretty}</b></p>
-
-    <p>Bien cordialement,<br/>RentalOS</p>
-  `;
-
-  await this.mailer.sendMail(gEmail, subject, html);
-
-  return {
-    ok: true,
-    forceUsed: !!force,
-    sent: true,
-    email: gEmail,
-    expiresAt: row.expires_at,
-    overrideUsed: !!override,
-  };
-}
-
-  // ✅ Helper: vérifier si le garant a déjà signé ce document
+// ✅ Helper: vérifier si le garant a déjà signé ce document
 private async hasGuarantorAlreadySigned(documentId: string) {
   const q = await this.pool.query(
     `
@@ -1287,6 +2383,38 @@ private async deleteActiveGuarantorSignLinksByGuarantee(guaranteeId: string) {
     WHERE guarantee_id = $1
       AND purpose = 'GUARANT_SIGN_ACT'
       AND signer_role = 'GARANT'
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    `,
+    [guaranteeId],
+  );
+}
+
+private async findActiveGuaranteeLandlordSignLinkByGuarantee(guaranteeId: string) {
+  const q = await this.pool.query(
+    `
+    SELECT id, expires_at, created_at
+    FROM public_links
+    WHERE guarantee_id = $1
+      AND purpose = 'LANDLORD_SIGN_GUARANTEE_ACT'
+      AND signer_role = 'BAILLEUR'
+      AND consumed_at IS NULL
+      AND expires_at > NOW()
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [guaranteeId],
+  );
+  return q.rowCount ? q.rows[0] : null;
+}
+
+private async deleteActiveGuaranteeLandlordSignLinksByGuarantee(guaranteeId: string) {
+  await this.pool.query(
+    `
+    DELETE FROM public_links
+    WHERE guarantee_id = $1
+      AND purpose = 'LANDLORD_SIGN_GUARANTEE_ACT'
+      AND signer_role = 'BAILLEUR'
       AND consumed_at IS NULL
       AND expires_at > NOW()
     `,
@@ -1494,6 +2622,149 @@ async sendGuarantorSignLinkByGuarantee(
   };
 }
 
+async createGuaranteeLandlordSignLinkAndEmail(
+  guaranteeId: string,
+  ttlHours = 72,
+  emailOverride?: string | null,
+  force = false,
+) {
+  const gid = String(guaranteeId || '').trim();
+  if (!gid) throw new BadRequestException('Missing guaranteeId');
+  if (!this.isUuid(gid)) throw new BadRequestException('Invalid guaranteeId (uuid expected)');
+
+  const gQ = await this.pool.query(
+    `
+    SELECT *
+    FROM lease_guarantees
+    WHERE id = $1
+    LIMIT 1
+    `,
+    [gid],
+  );
+  if (!gQ.rowCount) throw new BadRequestException('Unknown guaranteeId');
+
+  const g = gQ.rows[0];
+
+  if (String(g.type || '').toUpperCase() !== 'CAUTION') {
+    throw new BadRequestException('Guarantee must be type CAUTION');
+  }
+
+  const leaseId = String(g.lease_id || '').trim();
+  if (!leaseId) throw new BadRequestException('Guarantee has no lease_id');
+
+  let actDoc: any = null;
+  const actDocId = String(g.guarantor_act_document_id || '').trim();
+
+  if (actDocId) {
+    const dQ = await this.pool.query(`SELECT * FROM documents WHERE id=$1 LIMIT 1`, [actDocId]);
+    if (dQ.rowCount) actDoc = dQ.rows[0];
+  }
+
+  if (!actDoc) {
+    const gen = await this.docs.generateGuarantorActPdf(leaseId, { guaranteeId: gid });
+    actDoc = gen?.document;
+    if (!actDoc?.id) {
+      throw new BadRequestException('Failed to generate guarantor act document');
+    }
+
+    await this.pool.query(
+      `UPDATE lease_guarantees SET guarantor_act_document_id=$2 WHERE id=$1`,
+      [gid, actDoc.id],
+    );
+  }
+
+  if (g.signed_final_document_id) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'already_signed',
+      guaranteeId: gid,
+      documentId: actDoc.id,
+    };
+  }
+
+  const alreadySigned = await this.hasRoleAlreadySigned(actDoc.id, 'BAILLEUR');
+  if (alreadySigned && !force) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'already_signed',
+      guaranteeId: gid,
+      documentId: actDoc.id,
+    };
+  }
+
+  const active = await this.findActiveGuaranteeLandlordSignLinkByGuarantee(gid);
+  if (active && !force) {
+    return {
+      ok: true,
+      forceUsed: !!force,
+      sent: false,
+      reason: 'active_link_exists',
+      guaranteeId: gid,
+      documentId: actDoc.id,
+      activeExpiresAt: active.expires_at,
+    };
+  }
+
+  if (force) {
+    await this.deleteActiveGuaranteeLandlordSignLinksByGuarantee(gid);
+  }
+
+  const { landlordName, landlordEmail } = await this.resolveLandlordContactByLease(leaseId);
+
+  const override =
+    emailOverride && String(emailOverride).includes('@')
+      ? String(emailOverride).trim()
+      : '';
+
+  const toEmail = override || landlordEmail;
+  if (!toEmail) {
+    throw new BadRequestException('Missing landlord email on project (or use emailOverride)');
+  }
+
+  const signerName = landlordName || 'Bailleur';
+
+  const { token, row } = await this.createPublicLink({
+    leaseId,
+    documentId: actDoc.id,
+    purpose: 'LANDLORD_SIGN_GUARANTEE_ACT',
+    expiresInHours: ttlHours,
+    signerRole: 'BAILLEUR',
+    signerTenantId: null,
+    signerName,
+    guaranteeId: gid,
+  });
+
+  const publicUrl = `https://app.rentalos.fr/public/sign/${token}`;
+
+  await this.mailer.sendMail(
+    toEmail,
+    `Signature bailleur — Acte de caution`,
+    `
+      <p>Bonjour,</p>
+      <p>Merci de signer l'acte de caution.</p>
+      <p><a href="${publicUrl}">${publicUrl}</a></p>
+      <p>Ce lien expire le : <b>${String(row.expires_at).slice(0, 19)}</b></p>
+    `,
+  );
+
+  return {
+    ok: true,
+    token,
+    expiresAt: row.expires_at,
+    leaseId,
+    guaranteeId: gid,
+    documentId: actDoc.id,
+    publicUrl,
+    sentTo: toEmail,
+    overrideUsed: !!override,
+    forceUsed: !!force,
+  };
+}
+
     async resolveToken(
       token: string,
       opts?: { consume?: boolean; allowConsumedWithinGrace?: boolean },
@@ -1606,10 +2877,15 @@ async sendGuarantorSignLinkByGuarantee(
       'TENANT_SIGN_CONTRACT',
       'LANDLORD_SIGN_CONTRACT',
       'GUARANT_SIGN_ACT',
+      'LANDLORD_SIGN_GUARANTEE_ACT',
       'TENANT_SIGN_EDL_ENTRY',
       'LANDLORD_SIGN_EDL_ENTRY',
       'TENANT_SIGN_INVENTORY_ENTRY',
       'LANDLORD_SIGN_INVENTORY_ENTRY',
+      'TENANT_SIGN_EDL_EXIT',
+      'LANDLORD_SIGN_EDL_EXIT',
+      'TENANT_SIGN_INVENTORY_EXIT',
+      'LANDLORD_SIGN_INVENTORY_EXIT',
     ]);
     if (!allowed.has(String(row.purpose || ''))) {
       throw new UnauthorizedException('Invalid token purpose');
@@ -1626,10 +2902,15 @@ async sendGuarantorSignLinkByGuarantee(
       'TENANT_SIGN_CONTRACT',
       'LANDLORD_SIGN_CONTRACT',
       'GUARANT_SIGN_ACT',
+      'LANDLORD_SIGN_GUARANTEE_ACT',
       'TENANT_SIGN_EDL_ENTRY',
       'LANDLORD_SIGN_EDL_ENTRY',
       'TENANT_SIGN_INVENTORY_ENTRY',
       'LANDLORD_SIGN_INVENTORY_ENTRY',
+      'TENANT_SIGN_EDL_EXIT',
+      'LANDLORD_SIGN_EDL_EXIT',
+      'TENANT_SIGN_INVENTORY_EXIT',
+      'LANDLORD_SIGN_INVENTORY_EXIT',
     ]);
     if (!allowed.has(String(row.purpose || ''))) {
       throw new UnauthorizedException('Invalid token purpose');
@@ -1647,11 +2928,14 @@ async sendGuarantorSignLinkByGuarantee(
 
     const signerTenantId = row.signer_tenant_id ?? null;
 
-    const signerName =
+    let signerName =
       String(row.signer_name || '').trim() ||
-      (signerRole === 'BAILLEUR'
-        ? process.env.LANDLORD_NAME || 'Bailleur'
-        : row.tenant_name || 'Signataire');
+      (signerRole === 'LOCATAIRE' ? row.tenant_name || 'Signataire' : 'Signataire');
+
+    if (signerRole === 'BAILLEUR' && !String(row.signer_name || '').trim()) {
+      const landlord = await this.resolveLandlordContactByLease(String(row.lease_id || '').trim());
+      signerName = landlord.landlordName || 'Bailleur';
+    }
 
     const result = await this.docs.signDocumentMulti(
       row.document_id,
