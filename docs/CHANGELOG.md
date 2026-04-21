@@ -17,3 +17,22 @@
 ```
 
 ---
+
+## [Unreleased]
+
+### 2026-04-21
+
+### Added
+- Canonical public links endpoint (/api/canonical-public-links)
+- Support signature flows for:
+  - EDL exit
+  - Inventory exit
+  - Landlord guarantee signing
+
+### Changed
+- Unified signature flow across all document types
+- Deprecated legacy public-links endpoints
+
+### Fixed
+- Invalid token purpose for EXIT flows
+- Missing enum LANDLORD_SIGN_GUARANTEE_ACT

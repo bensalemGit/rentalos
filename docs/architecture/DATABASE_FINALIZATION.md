@@ -31,7 +31,16 @@ Le document final stocke :
 Purposes :
 - `TENANT_SIGN_CONTRACT`
 - `LANDLORD_SIGN_CONTRACT`
-- `GUARANTOR_SIGN_ACT`
+- `GUARANT_SIGN_ACT`
+- `LANDLORD_SIGN_GUARANTEE_ACT`
+- `TENANT_SIGN_EDL_ENTRY`
+- `LANDLORD_SIGN_EDL_ENTRY`
+- `TENANT_SIGN_INVENTORY_ENTRY`
+- `LANDLORD_SIGN_INVENTORY_ENTRY`
+- `TENANT_SIGN_EDL_EXIT`
+- `LANDLORD_SIGN_EDL_EXIT`
+- `TENANT_SIGN_INVENTORY_EXIT`
+- `LANDLORD_SIGN_INVENTORY_EXIT`
 - `FINAL_PDF_DOWNLOAD`
 - `FINAL_PACK_DOWNLOAD`
 
@@ -47,6 +56,9 @@ Purposes :
 
 - `077_public_links_consumed_at.sql`
   - ajoute `consumed_at`
+
+- `103_public_links_purpose_landlord_sign_guarantee_act.sql`
+  - ajoute la valeur enum `LANDLORD_SIGN_GUARANTEE_ACT`
 
 ---
 

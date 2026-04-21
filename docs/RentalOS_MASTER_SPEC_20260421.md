@@ -2,11 +2,11 @@
 
 # RentalOS — Audit & Spécification Détaillée
 
-## MASTER v11 — Source of Truth Unique
+## MASTER v12 — Source of Truth Unique
 
-Date : 2026-02-23
+Date : 2026-04-21
 Repo : [https://github.com/bensalemGit/rentalos](https://github.com/bensalemGit/rentalos)
-Branche : chore/audit-docs
+Branche : feat/public-sign
 Statut : Infra PROD READY — Moteur Bail MEUBLÉ RP stabilisé — Freeze Template sécurisé
 
 ---
@@ -86,7 +86,7 @@ Dossier :
 infra/postgres-init/
 ```
 
-Migrations incrémentales 001 → 088.
+Migrations incrémentales 001 → 103.
 
 ### Migrations récentes majeures
 
@@ -94,6 +94,19 @@ Migrations incrémentales 001 → 088.
 087_contract_meuble_rp_template_2026-04_freeze_fix.sql
 087_contract_meuble_rp_template_2026-04_freeze_from_repo.sql
 088_sanitize_document_templates_contract_meuble_rp_2026-04.sql
+089_sign_role_add_garant.sql
+090_doc_type_guarantor_act.sql
+091_guarantor_act_template_2026-04.sql
+094_public_links_signer_fields.sql
+095_public_links_purpose_guarant_sign_act.sql
+096_signatures_add_signer_tenant_id.sql
+097_lease_guarantees_v1.sql
+098_public_links_guarantee_id.sql
+099_document_acknowledgements.sql
+100_doc_type_edl_inventory_phases.sql
+101_doc_type_pack_edl_inv.sql
+102_ref_key_edl_inventory.sql
+103_public_links_purpose_landlord_sign_guarantee_act.sql
 
 Toutes APPLIED.
 
@@ -166,7 +179,16 @@ Purposes historiques et actuels observés :
 
 * TENANT_SIGN_CONTRACT
 * LANDLORD_SIGN_CONTRACT
-* GUARANTOR_SIGN_ACT
+* GUARANT_SIGN_ACT
+* LANDLORD_SIGN_GUARANTEE_ACT
+* TENANT_SIGN_EDL_ENTRY
+* LANDLORD_SIGN_EDL_ENTRY
+* TENANT_SIGN_INVENTORY_ENTRY
+* LANDLORD_SIGN_INVENTORY_ENTRY
+* TENANT_SIGN_EDL_EXIT
+* LANDLORD_SIGN_EDL_EXIT
+* TENANT_SIGN_INVENTORY_EXIT
+* LANDLORD_SIGN_INVENTORY_EXIT
 * FINAL_PDF_DOWNLOAD
 * FINAL_PACK_DOWNLOAD
 
@@ -419,6 +441,26 @@ One-shot enforced.
 
 410 Gone après usage.
 
+Le système a été unifié autour d’un endpoint canonique :
+
+* `POST /api/canonical-public-links`
+
+Ce routeur couvre :
+- contrat
+- acte de caution
+- EDL entrée / sortie
+- inventaire entrée / sortie
+
+Le renvoi d’un lien actif repose sur :
+- `force=false` → refus si lien actif
+- `force=true` → invalidation / recréation logique du lien
+
+La signature publique passe par :
+
+* `POST /api/public/sign`
+
+Le backend valide strictement le `purpose` autorisé avant signature.
+
 Testé via Postman (32 assertions OK).
 
 ---
@@ -463,8 +505,9 @@ Statut : PROD READY.
 ✔ Sanitization CRLF
 ✔ Mojibake contrôlé
 ✔ UI A1 stabilisée
-✔ Signature flow complet
-✔ Public links one-shot
+✔ Signature flow canonical unifié (contrat, garanties, EDL / inventaire entrée & sortie)
+✔ Public links sécurisés par purpose
+✔ Renvoi de liens canonique avec `force`
 ✔ Backup validé
 
 ---
