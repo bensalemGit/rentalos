@@ -260,7 +260,7 @@ export class SignatureWorkflowService {
             signedFinalDocumentId: guarantee.signedFinalDocumentId ?? null,
 
             signerRole: 'LANDLORD',
-            signerRef: { kind: 'LANDLORD' },
+            signerRef: { kind: 'LANDLORD', guaranteeId: guarantee.guaranteeId },
             signerName: 'Bailleur',
             signerEmail: null,
 
@@ -530,7 +530,7 @@ export class SignatureWorkflowService {
           const tenantNeed = edlExit.need?.tenants?.find(
             (t: { tenantId: string; signed: boolean }) => t.tenantId === tenantId,
           );
-          const lastLink = null;
+          const lastLink = edlExit.tenantLastLinkByTenantId?.[tenantId] ?? null;
           const tenantSigned = !!tenantNeed?.signed;
           const landlordSigned = !!edlExit.need?.landlord?.signed;
 
@@ -582,7 +582,7 @@ export class SignatureWorkflowService {
         }
       }
 
-      const landlordLastLink = null;
+      const landlordLastLink = edlExit.landlordLastLink ?? null;
       const landlordSigned = !!edlExit.need?.landlord?.signed;
       const anyTenantSigned = Array.isArray(edlExit.need?.tenants)
         ? edlExit.need.tenants.some((t: { signed: boolean }) => t.signed)
@@ -645,7 +645,7 @@ export class SignatureWorkflowService {
           const tenantNeed = inventoryExit.need?.tenants?.find(
             (t: { tenantId: string; signed: boolean }) => t.tenantId === tenantId,
           );
-          const lastLink = null;
+          const lastLink = inventoryExit.tenantLastLinkByTenantId?.[tenantId] ?? null;
           const tenantSigned = !!tenantNeed?.signed;
           const landlordSigned = !!inventoryExit.need?.landlord?.signed;
 
@@ -697,7 +697,7 @@ export class SignatureWorkflowService {
         }
       }
 
-      const landlordLastLink = null;
+      const landlordLastLink = inventoryExit.landlordLastLink ?? null;
       const landlordSigned = !!inventoryExit.need?.landlord?.signed;
       const anyTenantSigned = Array.isArray(inventoryExit.need?.tenants)
         ? inventoryExit.need.tenants.some((t: { signed: boolean }) => t.signed)

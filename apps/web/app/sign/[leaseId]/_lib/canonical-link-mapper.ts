@@ -14,6 +14,10 @@ export function canCreateCanonicalLink(task: CanonicalSignatureTask): boolean {
     return true;
   }
 
+  if (task.documentType === "GUARANTEE_ACT" && task.signerRole === "LANDLORD") {
+    return true;
+  }
+
   if (task.documentType === "EDL_ENTRY" && task.signerRole === "TENANT") {
     return true;
   }
@@ -23,6 +27,26 @@ export function canCreateCanonicalLink(task: CanonicalSignatureTask): boolean {
   }
 
   if (task.documentType === "INVENTORY_ENTRY" && task.signerRole === "TENANT") {
+    return true;
+  }
+
+  if (task.documentType === "INVENTORY_ENTRY" && task.signerRole === "LANDLORD") {
+    return true;
+  }
+
+  if (task.documentType === "EDL_EXIT" && task.signerRole === "TENANT") {
+    return true;
+  }
+
+  if (task.documentType === "EDL_EXIT" && task.signerRole === "LANDLORD") {
+    return true;
+  }
+
+  if (task.documentType === "INVENTORY_EXIT" && task.signerRole === "TENANT") {
+    return true;
+  }
+
+  if (task.documentType === "INVENTORY_EXIT" && task.signerRole === "LANDLORD") {
     return true;
   }
 
@@ -46,6 +70,10 @@ export function toCanonicalPublicLinkInput(
     tenantId:
       task.signerRef.kind === "TENANT" ? task.signerRef.tenantId : undefined,
     guaranteeId:
-      task.signerRef.kind === "GUARANTOR" ? task.signerRef.guaranteeId : undefined,
+      task.signerRef.kind === "GUARANTOR"
+        ? task.signerRef.guaranteeId
+        : task.signerRef.kind === "LANDLORD"
+          ? task.signerRef.guaranteeId
+          : undefined,
   };
 }
