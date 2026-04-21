@@ -18,7 +18,16 @@ Le flow supporte :
 Purposes principaux observés dans le système :
 - `TENANT_SIGN_CONTRACT`
 - `LANDLORD_SIGN_CONTRACT`
-- `GUARANTOR_SIGN_ACT`
+- `GUARANT_SIGN_ACT`
+- `LANDLORD_SIGN_GUARANTEE_ACT`
+- `TENANT_SIGN_EDL_ENTRY`
+- `LANDLORD_SIGN_EDL_ENTRY`
+- `TENANT_SIGN_INVENTORY_ENTRY`
+- `LANDLORD_SIGN_INVENTORY_ENTRY`
+- `TENANT_SIGN_EDL_EXIT`
+- `LANDLORD_SIGN_EDL_EXIT`
+- `TENANT_SIGN_INVENTORY_EXIT`
+- `LANDLORD_SIGN_INVENTORY_EXIT`
 - `FINAL_PDF_DOWNLOAD`
 - `FINAL_PACK_DOWNLOAD`
 
@@ -50,6 +59,72 @@ Important :
 les flux publics coexistent en plusieurs générations :
 - flux historiques centrés contrat
 - flux plus récents couvrant aussi garanties et téléchargements pack
+- nouveau flux canonical unifié (`/api/canonical-public-links`)
+---
+
+## 3bis) Canonical Public Links (v2)
+
+Un endpoint unique permet désormais de gérer tous les flux de signature :
+
+POST `/api/canonical-public-links`
+
+---
+
+### 🎯 Objectif
+
+Remplacer les endpoints legacy spécifiques par un routeur unique basé sur :
+
+- documentType
+- phase
+- signerRole
+
+---
+
+### 📥 Payload
+
+```json
+{
+  "leaseId": "uuid",
+  "documentType": "EDL_EXIT",
+  "phase": "EXIT",
+  "signerRole": "TENANT",
+  "tenantId": "uuid",
+  "guaranteeId": null,
+  "ttlHours": 72,
+  "force": false
+}
+
+### Routing interne
+
+Le backend route automatiquement vers le service métier approprié selon :
+
+- `documentType`
+- `phase`
+- `signerRole`
+
+Cas couverts :
+- contrat
+- acte de caution
+- EDL entrée / sortie
+- inventaire entrée / sortie
+
+### Signature publique
+
+La signature publique est ensuite exécutée via :
+
+- `POST /api/public/sign`
+
+### Renvoyer un lien
+
+Le flag `force` permet :
+
+- `force=false` → refus si un lien actif existe déjà
+- `force=true` → renvoi / recréation du lien
+
+### Cible
+
+Le flux canonique est la cible de référence pour le cockpit admin.  
+Les endpoints legacy spécialisés doivent être considérés comme transitoires.
 
 ---
 
@@ -108,3 +183,4 @@ Pour certains documents secondaires (notamment EDL / inventaire), le système pe
 - sinon le document racine
 
 Ce comportement est legacy / transitoire.
+Nouveaux purposes introduits pour EDL / inventaire entrée & sortie et signature bailleur des garanties.

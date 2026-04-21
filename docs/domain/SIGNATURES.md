@@ -19,9 +19,11 @@ Un document signé produit son propre PDF `SIGNED_FINAL`.
 ---
 
 ## Public signature (UI)
-Pages :
-- `/public/sign/[token]` (locataire/bailleur)
-- bailleur : `?role=landlord`
+
+Page principale :
+- `/public/sign/[token]`
+
+Le rôle signataire n’est pas piloté par un paramètre de page, mais par le token public et les métadonnées de `public_links`.
 
 Règles UX :
 - si colocation : afficher la liste des locataires et forcer la sélection
@@ -33,7 +35,7 @@ le moteur de signature couvre également les actes de caution et d’autres docu
 ---
 
 ## Payload signature (public)
-`POST /api/public/sign?token=...`
+`POST /api/public/sign`
 
 ```json
 {
@@ -42,6 +44,16 @@ le moteur de signature couvre également les actes de caution et d’autres docu
   "signatureDataUrl": "data:image/png;base64,...",
   "signerTenantId": "uuid-du-locataire"
 }
+
+Dans le flux public moderne, le front envoie principalement :
+
+```json
+{
+  "token": "...",
+  "signatureDataUrl": "data:image/png;base64,..."
+}
+
+Le backend résout ensuite le rôle, le document et l’identité signataire à partir du token.
 
 Rôles observés :
 - `LOCATAIRE`
@@ -82,3 +94,44 @@ Après signature :
 → possibilité de générer :
    - attestation sortie
    - pack sortie
+
+
+---
+
+## Canonical public links
+
+La création des liens de signature est désormais unifiée via :
+
+`POST /api/canonical-public-links`
+
+Chaque demande est décrite par :
+
+- `leaseId`
+- `documentType`
+- `phase`
+- `signerRole`
+- `tenantId` si signataire locataire
+- `guaranteeId` si document de garantie
+- `force` pour renvoi
+
+Cas couverts :
+- contrat
+- acte de caution
+- EDL entrée / sortie
+- inventaire entrée / sortie
+
+
+## Purposes publics observés
+
+- `TENANT_SIGN_CONTRACT`
+- `LANDLORD_SIGN_CONTRACT`
+- `GUARANT_SIGN_ACT`
+- `LANDLORD_SIGN_GUARANTEE_ACT`
+- `TENANT_SIGN_EDL_ENTRY`
+- `LANDLORD_SIGN_EDL_ENTRY`
+- `TENANT_SIGN_INVENTORY_ENTRY`
+- `LANDLORD_SIGN_INVENTORY_ENTRY`
+- `TENANT_SIGN_EDL_EXIT`
+- `LANDLORD_SIGN_EDL_EXIT`
+- `TENANT_SIGN_INVENTORY_EXIT`
+- `LANDLORD_SIGN_INVENTORY_EXIT`

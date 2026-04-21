@@ -10,10 +10,13 @@ Auth: **JWT required**.
 Exposer une vue unifiée de l’avancement documentaire et des signatures pour un bail.
 
 Le `signature-status` sert de vue métier agrégée pour le cockpit admin.
+Le cockpit moderne consomme également `GET /api/signature-workflow?leaseId=...`, qui projette cette vue agrégée en tâches canoniques orientées UI.
 
 Il couvre notamment :
 - contrat
 - garanties de type caution
+- EDL entrée / sortie
+- inventaire entrée / sortie
 - états documentaires
 - signatures individuelles
 - liens publics utiles au cockpit
@@ -22,6 +25,12 @@ Il couvre notamment :
 
 ### Contrat (document)
 - `NOT_GENERATED` : aucun document contrat racine trouvé
+- `DRAFT` : document présent, aucune signature
+- `IN_PROGRESS` : au moins une signature posée, document non finalisé
+- `SIGNED` : document finalisé (`signed_final_document_id` présent)
+
+### EDL / Inventaire (document)
+- `NOT_GENERATED` : aucun document racine trouvé pour ce type
 - `DRAFT` : document présent, aucune signature
 - `IN_PROGRESS` : au moins une signature posée, document non finalisé
 - `SIGNED` : document finalisé (`signed_final_document_id` présent)
@@ -43,6 +52,7 @@ Exemples :
 - bailleur signé / garant en attente
 
 ## Shape de réponse (high level)
+
 ```json
 {
   "leaseId": "...",
@@ -52,9 +62,17 @@ Exemples :
     "filename": "...",
     "signedFinalDocumentId": "...",
     "status": "DRAFT|IN_PROGRESS|SIGNED|NOT_GENERATED",
-    "landlord": { "signatureStatus": "NOT_SENT|SENT|SIGNED", "lastLink": null },
+    "landlord": {
+      "signatureStatus": "NOT_SENT|SENT|SIGNED",
+      "lastLink": null
+    },
     "tenants": [
-      { "tenantId": "...", "fullName": "...", "signatureStatus": "NOT_SENT|SENT|SIGNED", "lastLink": null }
+      {
+        "tenantId": "...",
+        "fullName": "...",
+        "signatureStatus": "NOT_SENT|SENT|SIGNED",
+        "lastLink": null
+      }
     ]
   },
   "guarantees": [
@@ -67,12 +85,58 @@ Exemples :
       "signatureStatus": "NOT_SENT|SENT|IN_PROGRESS|SIGNED",
       "lastLink": null
     }
-  ]
+  ],
+  "edl": {
+    "entry": {
+      "documentId": "...",
+      "signedFinalDocumentId": "...",
+      "status": "NOT_GENERATED|DRAFT|IN_PROGRESS|SIGNED",
+      "landlordLastLink": null,
+      "tenantLastLinkByTenantId": {}
+    },
+    "exit": {
+      "documentId": "...",
+      "signedFinalDocumentId": "...",
+      "status": "NOT_GENERATED|DRAFT|IN_PROGRESS|SIGNED",
+      "landlordLastLink": null,
+      "tenantLastLinkByTenantId": {}
+    }
+  },
+  "inventory": {
+    "entry": {
+      "documentId": "...",
+      "signedFinalDocumentId": "...",
+      "status": "NOT_GENERATED|DRAFT|IN_PROGRESS|SIGNED",
+      "landlordLastLink": null,
+      "tenantLastLinkByTenantId": {}
+    },
+    "exit": {
+      "documentId": "...",
+      "signedFinalDocumentId": "...",
+      "status": "NOT_GENERATED|DRAFT|IN_PROGRESS|SIGNED",
+      "landlordLastLink": null,
+      "tenantLastLinkByTenantId": {}
+    }
+  }
 }
 
-- Cette API fournit une vue agrégée orientée cockpit, pas un miroir brut des tables.
-- Elle cohabite avec un système encore hybride :
-  - multi-locataires via `lease_tenants`
-  - garanties via `lease_guarantees`
-  - certains flux publics encore legacy
-- Le contrat et les actes de caution sont les éléments les plus complètement exposés aujourd’hui dans cette vue.
+Le cockpit admin ne pilote plus directement les familles d’endpoints legacy.
+
+Il consomme :
+
+- `GET /api/signature-status?leaseId=...`
+- `GET /api/signature-workflow?leaseId=...`
+
+Le `signature-workflow` projette les données en tâches canoniques portant notamment :
+
+- `documentType`
+- `phase`
+- `signerRole`
+- `signerRef`
+- `signatureStatus`
+- `publicLinkStatus`
+
+Règle UI :
+- `NEVER_SENT` → afficher **Envoyer un lien**
+- `ACTIVE` / `EXPIRED` → afficher **Renvoyer le lien**
+- `SIGNED` → action désactivée
