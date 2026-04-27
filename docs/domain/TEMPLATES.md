@@ -109,3 +109,18 @@ WHERE kind='CONTRACT'
 
 Template contrat MEUBLE_RP contient {{guarantor_block}} et {{visale_block}}
 Rendu construit côté documents.service.ts via buildGuarantorBlock() / buildVisaleBlock()
+
+## Acte de caution (2026-04)
+
+Chaque acte de caution doit inclure :
+
+- nom du locataire garanti
+- montant plafond
+- durée d'engagement
+
+La mention manuscrite doit être :
+- individualisée par garant
+- liée au locataire ciblé
+
+⚠️ Interdit :
+Un garant couvrant plusieurs locataires sans distinction.

@@ -135,3 +135,32 @@ Cas couverts :
 - `LANDLORD_SIGN_EDL_EXIT`
 - `TENANT_SIGN_INVENTORY_EXIT`
 - `LANDLORD_SIGN_INVENTORY_EXIT`
+
+## Multi-garant (2026-04)
+
+Un bail peut contenir plusieurs garanties.
+
+Chaque garantie est liée à :
+- un garant
+- un locataire ciblé
+
+Relation :
+lease_guarantees
+  → guarantor_id
+  → tenant_id (IMPORTANT)
+
+Un garant ne couvre JAMAIS implicitement tous les locataires.
+
+## Ordre de signature réel
+
+Ordre logique :
+
+1. Locataires
+2. Garants (chacun pour son locataire)
+3. Bailleur
+
+Le système autorise :
+- cockpit (ordre libre)
+- public (ordre contrôlé par token)
+
+Le statut final est calculé côté backend.

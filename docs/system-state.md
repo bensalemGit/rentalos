@@ -45,3 +45,13 @@ Les flux publics ont évolué par couches :
 - flux plus récents couvrant d’autres usages
 
 La documentation doit toujours privilégier le comportement réellement observé dans le code.
+
+## États des documents
+
+DRAFT → PARTIAL → SIGNED_FINAL
+
+Transitions :
+- signature partielle → PARTIAL
+- toutes signatures → SIGNED_FINAL
+
+SIGNED_FINAL est IMMUTABLE.

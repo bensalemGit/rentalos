@@ -140,3 +140,25 @@ Règle UI :
 - `NEVER_SENT` → afficher **Envoyer un lien**
 - `ACTIVE` / `EXPIRED` → afficher **Renvoyer le lien**
 - `SIGNED` → action désactivée
+
+## SIGNED_FINAL
+
+Un document est considéré SIGNED_FINAL uniquement si :
+- tous les signataires requis ont signé
+
+Cas multi-garant :
+- chaque garant doit signer
+- chaque locataire doit signer
+- le bailleur doit signer
+
+Sinon :
+→ statut PARTIAL
+
+## Impact sur le pack
+
+Le pack final ne doit contenir QUE :
+- des documents SIGNED_FINAL
+
+Exclure :
+- PARTIAL
+- DRAFT

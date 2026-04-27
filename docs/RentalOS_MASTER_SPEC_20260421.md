@@ -4,7 +4,7 @@
 
 ## MASTER v12 — Source of Truth Unique
 
-Date : 2026-04-21
+Date : 2026-04-27
 Repo : [https://github.com/bensalemGit/rentalos](https://github.com/bensalemGit/rentalos)
 Branche : feat/public-sign
 Statut : Infra PROD READY — Moteur Bail MEUBLÉ RP stabilisé — Freeze Template sécurisé
@@ -586,3 +586,11 @@ Des champs / flux legacy peuvent encore coexister côté bail, mais ne constitue
 
 ## Visale
 Source de vérité : lease_terms.visale = { enabled, visaNumber, ...optionnel }
+
+## Évolution 2026-04 — Garanties & signature
+
+- Support multi-garant par bail
+- Garant lié à un locataire spécifique
+- Introduction du flow public (/public/sign)
+- Renforcement légal des actes de caution
+- Pack final basé uniquement sur SIGNED_FINAL
