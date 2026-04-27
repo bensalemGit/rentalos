@@ -115,3 +115,26 @@ Les signatures EDL sortie / inventaire sortie sont pilotées par le même cockpi
 - envoi de lien via `/api/canonical-public-links`
 - renvoi via `force=true`
 - signature publique via `/api/public/sign`
+
+## Mode public (/public/sign)
+
+Un utilisateur externe signe via un token unique.
+
+Caractéristiques :
+- pas authentifié
+- accès restreint à un document
+- signature immédiate
+
+Utilisé pour :
+- garants
+- locataires hors cockpit
+
+## Multi-signatures
+
+Une session peut contenir :
+- plusieurs locataires
+- plusieurs garants
+
+Le frontend doit :
+- afficher chaque signataire distinctement
+- ne jamais fusionner les rôles
