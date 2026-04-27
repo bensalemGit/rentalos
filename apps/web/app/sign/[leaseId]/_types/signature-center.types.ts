@@ -21,6 +21,7 @@ export type SignatureGlobalStatus =
 export type SignerTask = {
   id: string;
   kind: SignerKind;
+  subTasks?: SignerTask[];
 
   displayName: string;
   roleLabel: string;

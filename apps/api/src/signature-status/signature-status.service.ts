@@ -237,6 +237,9 @@ export class SignatureStatusService {
     const latestEdlEntryLandlordLink =
       links.find((l: PublicLinkRow) => l.purpose === 'LANDLORD_SIGN_EDL_ENTRY') || null;
 
+    const latestInventoryEntryLandlordLink =
+      links.find((l: PublicLinkRow) => l.purpose === 'LANDLORD_SIGN_INVENTORY_ENTRY') || null;
+
     for (const l of links) {
       if (l.purpose === 'TENANT_SIGN_EDL_ENTRY' && l.signer_tenant_id) {
         const tid = String(l.signer_tenant_id);
@@ -634,6 +637,13 @@ export class SignatureStatusService {
 
           return {
             ...block,
+            landlordLastLink: latestInventoryEntryLandlordLink
+              ? {
+                  createdAt: latestInventoryEntryLandlordLink.created_at,
+                  expiresAt: latestInventoryEntryLandlordLink.expires_at,
+                  consumedAt: latestInventoryEntryLandlordLink.consumed_at,
+                }
+              : null,
             tenantLastLinkByTenantId: Object.fromEntries(
               leaseTenants.map((t) => {
                 const tid = String(t.tenant_id || '');

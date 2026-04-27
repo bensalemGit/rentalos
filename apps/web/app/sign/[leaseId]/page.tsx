@@ -68,6 +68,53 @@ type HistoryDocument = {
   signedFinalDocumentId?: string | null;
 };
 
+function normalizeMention(s: string) {
+  return String(s || "")
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[’‘`´]/g, "'")
+    .replace(/[€.,;:()]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMentionValid(input: string, expected: string) {
+  const a = normalizeMention(input);
+  const e = normalizeMention(expected);
+
+  if (!a || !e) return false;
+
+  const requiredFragments = [
+    "en me portant caution solidaire",
+    "dans la limite de la somme",
+    "couvrant le paiement du principal",
+    "penalites ou interets de retard",
+    "je m'engage a rembourser au bailleur",
+    "sur mes revenus et mes biens",
+    "je reconnais avoir parfaitement connaissance",
+    "nature et de l'etendue de mon engagement",
+  ];
+
+  const hasRequiredFragments = requiredFragments.every((fragment) =>
+    a.includes(normalizeMention(fragment))
+  );
+
+  const expectedAmountMatch = e.match(/somme de ([0-9 ]+)/);
+  const expectedAmount = expectedAmountMatch?.[1]?.replace(/\s+/g, "");
+
+  const actualHasAmount = expectedAmount
+    ? a.replace(/\s+/g, "").includes(expectedAmount)
+    : true;
+
+  return hasRequiredFragments && actualHasAmount;
+}
+
+function formatEurosFromCents(cents: number) {
+  return `${(Number(cents || 0) / 100).toFixed(2)} €`;
+}
+
+
 
 function compactHistoryName(name: string) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
@@ -195,6 +242,12 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [tenantName, setTenantName] = useState("Locataire");
   const [landlordName, setLandlordName] = useState("Bailleur");
 
+  const [leaseFinancials, setLeaseFinancials] = useState({
+    rentCents: 0,
+    chargesCents: 0,
+    durationMonths: 12,
+  });
+
   const [sigStatus, setSigStatus] = useState<SignatureStatusPayload | null>(null);
   const [canonicalWorkflow, setCanonicalWorkflow] =
     useState<CanonicalSignatureWorkflow | null>(null);
@@ -206,8 +259,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [sigStatusError, setSigStatusError] = useState<string | null>(null);
 
   const [pendingModeSwitchTask, setPendingModeSwitchTask] = useState<SignerTask | null>(null);
-
   const [isSubmittingSession, setIsSubmittingSession] = useState(false);
+  const [onsiteGuarantorMention, setOnsiteGuarantorMention] = useState("");
  
   const [sessionDraft, setSessionDraft] = useState({
     open: false,
@@ -320,6 +373,27 @@ useEffect(() => {
       if (!r.ok) return;
 
       const { lease, tenants } = extractLeaseBundle(j);
+      const leaseTerms = (lease as any)?.lease_terms || {};
+      const durationMonths = Number(leaseTerms?.durationMonths || 12);
+      const rentCents = Number((lease as any)?.rent_cents || 0);
+      const chargesCents = Number((lease as any)?.charges_cents || 0);
+
+      setLeaseFinancials({
+        rentCents,
+        chargesCents,
+        durationMonths,
+      });
+      const resolvedLandlordName = String(
+        (lease as any)?.landlord_name ||
+          (lease as any)?.landlordName ||
+          (lease as any)?.landlord?.name ||
+          (lease as any)?.project_landlord_name ||
+          ""
+      ).trim();
+
+      if (resolvedLandlordName) {
+        setLandlordName(resolvedLandlordName);
+      }
       
       // ✅ NEW: guarantor name (optional)
       const gName =
@@ -1115,36 +1189,55 @@ function setUiError(message: string) {
 
 
 async function sendAllRemainingLinks() {
-  setUiInfo("Envoi des liens restants…");
-  const remainingTasks = signerTasks.filter(
-    (task) =>
-      task.status !== "SIGNED" &&
-      task.status !== "NOT_REQUIRED" &&
-      !task.requiresPreparation
-  );
+  try {
+    setUiInfo("Envoi des liens restants…");
 
-  const hasTenantTasks = remainingTasks.some((task) => task.kind === "TENANT");
-  const guarantorTasks = remainingTasks.filter(
-    (task) => task.kind === "GUARANTOR" && task.guaranteeId
-  );
-  const hasLandlordTask = remainingTasks.some((task) => task.kind === "LANDLORD");
+    const canonicalTasks = canonicalWorkflow?.tasks ?? [];
 
-  if (hasTenantTasks) {
-    await sendPublicLink(false);
-  }
+    const tasksToSend = canonicalTasks.filter((task) => {
+      if (!task.documentId) return false;
+      if (task.signatureStatus === "SIGNED") return false;
+      if (task.signatureStatus === "BLOCKED") return false;
+      if (!task.canSendLink && !task.canResendLink) return false;
 
-  for (const task of guarantorTasks) {
-    if (task.guaranteeId) {
-      await sendGuarantorLinkByGuarantee(task.guaranteeId, false, "SIGN");
+      return true;
+    });
+
+    let sentCount = 0;
+    let skippedCount = 0;
+
+    for (const task of tasksToSend) {
+      const force =
+        task.publicLinkStatus === "ACTIVE" ||
+        task.publicLinkStatus === "EXPIRED";
+
+      const input = toCanonicalPublicLinkInput(task, force);
+
+      if (!input || !canCreateCanonicalLink(task)) {
+        skippedCount += 1;
+        continue;
+      }
+
+      try {
+        await createCanonicalPublicLink(input);
+        sentCount += 1;
+      } catch (e) {
+        console.warn("[sendAllRemainingLinks] skipped", task.id, e);
+        skippedCount += 1;
+      }
     }
-  }
 
-  if (hasLandlordTask) {
-    await sendLandlordLink(false);
-  }
+    await refreshAll();
 
-  setUiInfo("Liens envoyés ✅");
-  await refreshAll();
+    setUiInfo(`Liens envoyés ✅ (${sentCount} envoyé(s), ${skippedCount} ignoré(s))`);
+
+    alert(
+      `✅ ${sentCount} lien(s) envoyé(s)\n` +
+      `⏭️ ${skippedCount} ignoré(s)`
+    );
+  } catch (e: any) {
+    setUiError(String(e?.message || e));
+  }
 }
 
 function startNextOnSite() {
@@ -1202,9 +1295,20 @@ async function downloadSignedDocumentResource(doc: {
   await downloadDoc(doc.signedFinalDocumentId, `${doc.label}_SIGNE.pdf`);
 }
 
+
 async function confirmSessionDraftSignature() {
   if (!sessionDraft.open || !sessionDraft.documentId || !sessionDraft.signerKind) {
     return;
+  }
+
+  if (activeSessionIsGuarantor) {
+    const expected = activeSessionRequiredGuarantorMention.trim();
+    const actual = onsiteGuarantorMention.trim();
+
+    if (!isMentionValid(actual, expected)) {
+      setError("La mention de caution est incomplète ou incorrecte.");
+      return;
+    }
   }
 
   const signerRole =
@@ -1224,6 +1328,8 @@ async function confirmSessionDraftSignature() {
       signerTenantId: sessionDraft.tenantId,
       optimisticGuaranteeId: sessionDraft.guaranteeId,
     });
+
+    setOnsiteGuarantorMention("");
 
     closeSessionDraft();
   } finally {
@@ -1462,8 +1568,9 @@ function onPointerUp(e: any) {
       tenants,
       docs,
       guaranteeActOverride,
+      landlordName,
     });
-  }, [leaseId, sigStatus, tenants, docs, guaranteeActOverride]);
+  }, [leaseId, sigStatus, tenants, docs, guaranteeActOverride, landlordName]);
 
   const { overview, signerTasks, documents } = signatureCenter;
 
@@ -1609,6 +1716,23 @@ async function signDocOnPlace(args: {
 
   try {
     const payload: any = { signerName, signerRole, signatureDataUrl };
+
+    if (signerRole === "GARANT") {
+      if (!isMentionValid(onsiteGuarantorMention, activeSessionRequiredGuarantorMention)) {
+        setStatus("");
+        setError("La mention de caution est incomplète ou incorrecte.");
+        return;
+      }
+    }
+
+    if (signerRole === "GARANT") {
+      payload.guarantorMention = onsiteGuarantorMention.trim();
+      payload.guarantorMentionRequired = activeSessionRequiredGuarantorMention.trim();
+      payload.guarantorMentionMatched = isMentionValid(
+        onsiteGuarantorMention,
+        activeSessionRequiredGuarantorMention
+      );
+    }
     if (signerTenantId) payload.signerTenantId = signerTenantId;
 
     const r = await fetch(`${API}/documents/${documentId}/sign`, {
@@ -1880,6 +2004,33 @@ const flatTasksForSession = signerTasks.flatMap((task) => [
   ...(((task as any).subTasks || []) as SignerTask[]),
 ]);
 
+const activeSessionTask =
+  flatTasksForSession.find((t) => t.id === sessionDraft.signerTaskId) || null;
+
+const activeSessionIsGuarantor =
+  String(activeSessionTask?.kind || "").toUpperCase() === "GUARANTOR";
+
+const activeSessionGuaranteedTenantName = String(
+  activeSessionTask?.tenantLabel || "le locataire"
+)
+  .replace(/^Garant pour\s+/i, "")
+  .trim();
+
+const activeSessionGuaranteeCapCents =
+  leaseFinancials.durationMonths * (leaseFinancials.rentCents + leaseFinancials.chargesCents);
+
+const activeSessionGuaranteeCapText = formatEurosFromCents(activeSessionGuaranteeCapCents);
+
+const activeSessionRequiredGuarantorMention = activeSessionTask
+  ? `En me portant caution solidaire de ${activeSessionGuaranteedTenantName || "le locataire"}, dans la limite de la somme de ${activeSessionGuaranteeCapText} couvrant le paiement du principal, des intérêts et, le cas échéant, des pénalités ou intérêts de retard, et pour la durée définie au présent acte, je m'engage à rembourser au bailleur les sommes dues sur mes revenus et mes biens si ${activeSessionGuaranteedTenantName || "le locataire"} n'y satisfait pas lui-même.
+
+Je reconnais avoir parfaitement connaissance de la nature et de l'étendue de mon engagement.`
+  : "";
+
+const activeSessionGuarantorMentionValid =
+  !activeSessionIsGuarantor ||
+  isMentionValid(onsiteGuarantorMention, activeSessionRequiredGuarantorMention);
+
 console.log("[PACK FINAL READINESS PAGE]", {
   packFinalReadiness,
   loadingPackFinalReadiness,
@@ -2074,7 +2225,7 @@ console.log("[PACK FINAL READINESS PAGE]", {
                   }}
                 >
                   <SignatureSessionPanel
-                    task={flatTasksForSession.find((t) => t.id === sessionDraft.signerTaskId) || null}
+                    task={activeSessionTask}
                     onClose={closeSessionDraft}
                     onClear={clearCanvas}
                     onConfirm={confirmSessionDraftSignature}
@@ -2084,6 +2235,10 @@ console.log("[PACK FINAL READINESS PAGE]", {
                     onPointerUp={onPointerUp}
                     isSubmitting={isSubmittingSession}
                     isSignatureDirty={isSignatureDirty}
+                    guarantorMention={onsiteGuarantorMention}
+                    onGuarantorMentionChange={setOnsiteGuarantorMention}
+                    requiredGuarantorMention={activeSessionRequiredGuarantorMention}
+                    guarantorMentionValid={activeSessionGuarantorMentionValid}
                   />
 
                   {status ? (

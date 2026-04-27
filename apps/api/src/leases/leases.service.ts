@@ -741,11 +741,18 @@ export class LeasesService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const leaseR = await this.pool.query(
-      `SELECT l.*, u.code as unit_code, t.full_name as tenant_name
-       FROM leases l
-       JOIN units u ON u.id = l.unit_id
-       JOIN tenants t ON t.id = l.tenant_id
-       WHERE l.id=$1`,
+      `SELECT
+        l.*,
+        u.code as unit_code,
+        t.full_name as tenant_name,
+        pl.name as landlord_name,
+        pl.email as landlord_email
+      FROM leases l
+      JOIN units u ON u.id = l.unit_id
+      JOIN tenants t ON t.id = l.tenant_id
+      LEFT JOIN projects p ON p.id = u.project_id
+      LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
+      WHERE l.id=$1`,
       [leaseId],
     );
     if (!leaseR.rowCount) throw new BadRequestException('Unknown leaseId');
