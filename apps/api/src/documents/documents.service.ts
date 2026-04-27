@@ -731,7 +731,24 @@ private async getLatestSessionByPhase(args: {
   // Blocks
   // -------------------------------------
 
-  /**
+  private buildTenantsPlainLabel(row: AnyRow): string {
+    const arr = this.parseJsonSafe(row?.tenants_json);
+    const tenants: any[] = Array.isArray(arr) && arr.length ? arr : [];
+
+    if (tenants.length) {
+      return tenants
+        .map((t: any) => {
+          const name = this.normalizeText(t?.full_name || t?.name);
+          const role = this.normalizeText(t?.role);
+          return role ? `${name} (${role})` : name;
+        })
+        .filter(Boolean)
+        .join(', ');
+    }
+
+    return this.normalizeText(row?.tenant_name) || '—';
+  } 
+   /**
    * - today: lease has 1 tenant (row.tenant_*)
    * - now: supports multi tenants through row.tenants_json (json array)
    */
@@ -932,6 +949,109 @@ private async getLatestSessionByPhase(args: {
       <div style="margin-top:8px">${items}</div>
       <div style="margin-top:10px; border-top:1px solid #e5e7eb"></div>
     `;
+  }
+
+  private async buildLeaseGuaranteesBlock(leaseId: string, row: AnyRow): Promise<string> {
+    const leaseIdTrim = String(leaseId || '').trim();
+
+    if (leaseIdTrim) {
+      const q = await this.pool.query(
+        `
+        SELECT
+          lg.id AS guarantee_id,
+          lg.type,
+          lg.selected,
+          lg.guarantor_full_name,
+          lg.guarantor_email,
+          lg.guarantor_phone,
+          lt.role,
+          t.full_name AS tenant_full_name
+        FROM lease_guarantees lg
+        JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+        JOIN tenants t ON t.id = lt.tenant_id
+        WHERE lg.lease_id = $1
+          AND lg.selected = true
+        ORDER BY
+          CASE WHEN lt.role = 'principal' THEN 0 ELSE 1 END,
+          t.full_name ASC,
+          lg.created_at ASC
+        `,
+        [leaseIdTrim],
+      );
+
+      const guarantees = q.rows || [];
+      const cautions = guarantees.filter((g: any) => String(g.type || '').toUpperCase() === 'CAUTION');
+      const visales = guarantees.filter((g: any) => String(g.type || '').toUpperCase() === 'VISALE');
+
+      if (cautions.length || visales.length) {
+        const cautionItems = cautions
+          .map((g: any, idx: number) => {
+            const guarantorName = this.normalizeText(g.guarantor_full_name)
+              ? this.escapeHtml(g.guarantor_full_name)
+              : this.escapeHtml(`Caution #${idx + 1}`);
+
+            const tenantName = this.normalizeText(g.tenant_full_name)
+              ? this.escapeHtml(g.tenant_full_name)
+              : 'Locataire concerné non renseigné';
+
+            const email = this.normalizeText(g.guarantor_email)
+              ? this.escapeHtml(g.guarantor_email)
+              : '—';
+
+            const phone = this.normalizeText(g.guarantor_phone)
+              ? this.escapeHtml(g.guarantor_phone)
+              : '—';
+
+            return `
+              <div style="margin:6px 0 10px 0">
+                <div><b>${guarantorName}</b></div>
+                <div class="small">Locataire garanti : ${tenantName}</div>
+                <div class="small">${email} — ${phone}</div>
+                <div class="small">Acte de cautionnement solidaire annexé au bail.</div>
+              </div>
+            `;
+          })
+          .join('');
+
+        const visaleItems = visales
+          .map((g: any) => {
+            const tenantName = this.normalizeText(g.tenant_full_name)
+              ? this.escapeHtml(g.tenant_full_name)
+              : 'Locataire concerné non renseigné';
+
+            return `
+              <div style="margin:6px 0 10px 0">
+                <div><b>Garantie VISALE</b></div>
+                <div class="small">Locataire couvert : ${tenantName}</div>
+              </div>
+            `;
+          })
+          .join('');
+
+        return `
+          <div style="margin-top:6px" class="small">
+            <b>Garanties :</b> oui.<br/>
+            ${
+              cautions.length
+                ? `Le bail est assorti de ${cautions.length} acte(s) de cautionnement solidaire annexé(s), chacun rattaché à un locataire garanti expressément identifié.`
+                : ''
+            }
+            ${
+              visales.length
+                ? `<br/>Le bail comporte également ${visales.length} garantie(s) VISALE.`
+                : ''
+            }
+          </div>
+          <div style="margin-top:8px">
+            ${cautionItems}
+            ${visaleItems}
+          </div>
+          <div style="margin-top:10px; border-top:1px solid #e5e7eb"></div>
+        `;
+      }
+    }
+
+    return this.buildGuarantorBlock(row);
   }
 
   /**
@@ -1602,7 +1722,7 @@ async listByLease(leaseId: string) {
       })(),
 
       colocation_clause: this.buildColocationClause(row),
-      guarantor_block: this.buildGuarantorBlock(row),
+      guarantor_block: await this.buildLeaseGuaranteesBlock(leaseId, row),
       visale_block: this.buildVisaleBlock(row),
 
       rent_eur: this.toEuros(row.rent_cents),
@@ -2059,11 +2179,21 @@ async generateGuarantorActPdf(
     g?.guarantor_address ?? lease?.guarantor_address ?? legacyOne?.address ?? ''
   ).trim();
 
-  
-
   if (!guarantorFullName) {
     throw new BadRequestException('No guarantor configured on this lease');
   }
+
+  const rentCents = Number(lease?.rent_cents ?? 0);
+  const chargesCents = Number(lease?.charges_cents ?? 0);
+
+  const leaseTerms =
+    typeof lease?.lease_terms === 'string'
+      ? this.parseJsonSafe(lease.lease_terms)
+      : lease?.lease_terms || {};
+
+  const guaranteeDurationMonths = Number(leaseTerms?.durationMonths || 12);
+  const guaranteeCapCents = (rentCents + chargesCents) * guaranteeDurationMonths;
+  const guaranteeCapEur = this.toEuros(guaranteeCapCents);
 
   const row = await this.fetchLeaseBundle(leaseId);
   const landlord = await this.getLandlordForLease(leaseId);
@@ -2140,6 +2270,13 @@ const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.s
       ? tenantsList.map((t) => String(t?.full_name || '').trim()).filter(Boolean).join(', ')
       : String(row.tenant_name || '').trim();
 
+  const guaranteedTenantFullName = String(
+    g?.tenant_full_name ??
+    tenantsList.find((t) => String(t?.tenant_id || t?.id || '').trim() === String(g?.tenant_id || '').trim())?.full_name ??
+    row.tenant_name ??
+    ''
+  ).trim();
+
   const landlordIdentifiersPlain = [
     String(landlord.name || '').trim(),
     String(landlord.address || '').trim(),
@@ -2170,6 +2307,7 @@ const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.s
     landlord_phone: this.escapeHtml(landlord.phone),
     designation_summary: this.escapeHtml(designationSummary || '—'),
     tenants_names_plain: this.escapeHtml(tenantsNamesPlain || '—'),
+        guaranteed_tenant_full_name: this.escapeHtml(guaranteedTenantFullName || tenantsNamesPlain || '—'),
     landlord_identifiers_plain: this.escapeHtml(landlordIdentifiersPlain || '—'),
     start_date: this.formatDateFr(row.start_date),
 
@@ -2180,7 +2318,10 @@ const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.s
     guarantor_full_name: this.escapeHtml(guarantorName || '—'),
     guarantor_email: this.escapeHtml(guarantorEmail || '—'),
     guarantor_phone: this.escapeHtml(guarantorPhone || '—'),
-    guarantor_address: this.escapeHtml(guarantorAddress || '—'),
+    guarantor_address: this.escapeHtml(guarantorAddress || 'Adresse non renseignée'),
+    guarantee_cap_eur: this.escapeHtml(guaranteeCapEur),
+    guarantee_duration_months: this.escapeHtml(String(guaranteeDurationMonths)),
+    guarantee_duration_label: this.escapeHtml(`${guaranteeDurationMonths} mois`),
 
     signature_city: this.escapeHtml(
         process.env.SIGNATURE_CITY ||
@@ -2301,7 +2442,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
 <b>Bail :</b> ${this.escapeHtml(leaseId)}<br/>
 <b>Logement :</b> ${this.escapeHtml(row.unit_code)} — ${this.escapeHtml(row.unit_label)}<br/>
 <b>Adresse :</b> ${this.escapeHtml(row.unit_address_line1)}, ${this.escapeHtml(row.unit_postal_code)} ${this.escapeHtml(row.unit_city)}<br/>
-<b>Locataire :</b> ${this.escapeHtml(row.tenant_name)}<br/>
+<b>Locataire(s) :</b> ${this.escapeHtml(this.buildTenantsPlainLabel(row))}<br/>
 <b>Période :</b> ${this.formatDateFr(row.start_date)} → ${this.formatDateFr(row.end_date_theoretical)}
 </div>
 
@@ -2459,6 +2600,8 @@ h1{font-size:16pt;margin:0 0 10px 0}
       }
     }
 
+    const leaseFullRow = await this.fetchLeaseBundle(leaseId);
+    const tenantsPlainLabel = this.buildTenantsPlainLabel(leaseFullRow);
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"/>
 <style>
@@ -2489,7 +2632,7 @@ th{background:#f5f5f5}
 <div class="box">
 <b>Logement :</b> ${this.escapeHtml(lease.unit_label)} (${this.escapeHtml(lease.unit_code)})<br/>
 ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} ${this.escapeHtml(lease.city)}<br/>
-<b>Locataire :</b> ${this.escapeHtml(lease.tenant_name)}<br/>
+<b>Locataire(s) :</b> ${this.escapeHtml(tenantsPlainLabel)}<br/>
 <b>Période :</b> ${this.formatDateFr(lease.start_date)} → ${this.formatDateFr(lease.end_date_theoretical)}
 </div>
 
@@ -2655,6 +2798,8 @@ ${annexHtml}
       })
       .join('\n');
 
+    const leaseFullRow = await this.fetchLeaseBundle(leaseId);
+    const tenantsPlainLabel = this.buildTenantsPlainLabel(leaseFullRow);  
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"/>
 <style>
@@ -2678,7 +2823,7 @@ th{background:#f5f5f5}
 <div class="box">
 <b>Logement :</b> ${this.escapeHtml(lease.unit_label)} (${this.escapeHtml(lease.unit_code)})<br/>
 ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} ${this.escapeHtml(lease.city)}<br/>
-<b>Locataire :</b> ${this.escapeHtml(lease.tenant_name)}<br/>
+<b>Locataire(s) :</b> ${this.escapeHtml(tenantsPlainLabel)}<br/>
 <b>Période :</b> ${this.formatDateFr(lease.start_date)} → ${this.formatDateFr(lease.end_date_theoretical)}
 </div>
 
@@ -3944,7 +4089,7 @@ code{word-break:break-all}
 <div class="box">
 <b>Bail :</b> ${leaseId}<br/>
 <b>Logement :</b> ${unitCode}<br/>
-<b>Signataire :</b> ${signerName} (${signerRole})<br/>
+<b>Signataire :</b> ${this.escapeHtml(signerName)} (${this.escapeHtml(signerRole)})<br/>
 <b>Date :</b> ${signedAtIso}<br/>
 </div>
 
@@ -3952,6 +4097,13 @@ code{word-break:break-all}
 <b>Signature (image)</b><br/>
 <img src="${signatureDataUrl}" alt="signature"/>
 </div>
+
+${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
+  ? `<div class="box">
+<b>Mention obligatoire recopiée par la caution :</b><br/>
+<div>${this.escapeHtml(String(auditJson.guarantorMention))}</div>
+</div>`
+  : ''}
 
 <div class="box small">
 <b>Empreinte (SHA-256) du PDF original :</b><br/>
@@ -4051,18 +4203,91 @@ code{word-break:break-all}
 }
 
   async signDocumentMulti(documentId: string, body: any, req: any) {
-    const { signerName, signerRole, signatureDataUrl, signerTenantId } = body || {};
+    const {
+      signerName,
+      signerRole,
+      signatureDataUrl,
+      signerTenantId,
+      guarantorMention,
+      guarantorMentionRequired,
+    } = body || {};
     if (!signerName || !signerRole || !signatureDataUrl) {
       throw new BadRequestException('Missing signerName/signerRole/signatureDataUrl');
     }
+
     const allowedRoles = new Set(['BAILLEUR', 'LOCATAIRE', 'GARANT']);
     if (!allowedRoles.has(String(signerRole))) {
       throw new BadRequestException('signerRole must be BAILLEUR, LOCATAIRE or GARANT');
     }
 
+    const normalizeGuarantorMention = (v: any) =>
+  String(v || '')
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[’‘`´]/g, "'")
+    .replace(/[€.,;:()]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+    const isGuarantorMentionValid = (input: any, expected: any) => {
+      const a = normalizeGuarantorMention(input);
+      const e = normalizeGuarantorMention(expected);
+
+      if (!a || !e) return false;
+
+      const requiredFragments = [
+        'en me portant caution solidaire',
+        'dans la limite de la somme',
+        'couvrant le paiement du principal',
+        'penalites ou interets de retard',
+        "je m'engage a rembourser au bailleur",
+        'sur mes revenus et mes biens',
+        'je reconnais avoir parfaitement connaissance',
+        "nature et de l'etendue de mon engagement",
+      ];
+
+      const hasRequiredFragments = requiredFragments.every((fragment) =>
+        a.includes(normalizeGuarantorMention(fragment)),
+      );
+
+      const expectedAmountMatch = e.match(/somme de ([0-9 ]+)/);
+      const expectedAmount = expectedAmountMatch?.[1]?.replace(/\s+/g, '');
+
+      const actualHasAmount = expectedAmount
+        ? a.replace(/\s+/g, '').includes(expectedAmount)
+        : true;
+
+      return hasRequiredFragments && actualHasAmount;
+    };
+
+    const normalizedGuarantorMention = String(guarantorMention || '').trim();
+    const normalizedGuarantorMentionRequired = String(guarantorMentionRequired || '').trim();
+
+    if (String(signerRole).toUpperCase() === 'GARANT') {
+      if (!normalizedGuarantorMention || !normalizedGuarantorMentionRequired) {
+        throw new BadRequestException('Missing guarantor mention');
+      }
+
+      if (!isGuarantorMentionValid(normalizedGuarantorMention, normalizedGuarantorMentionRequired)) {
+        throw new BadRequestException('Invalid guarantor mention');
+      }
+    }
+
     const docR = await this.pool.query(`SELECT * FROM documents WHERE id=$1`, [documentId]);
     if (!docR.rowCount) throw new BadRequestException('Unknown document');
     const doc = docR.rows[0];
+
+    let effectiveSignerName = String(signerName || "").trim();
+
+    if (String(signerRole).toUpperCase() === "BAILLEUR") {
+      const landlord = await this.getLandlordForLease(String(doc.lease_id || ""));
+      const landlordName = String(landlord?.name || "").trim();
+
+      if (!effectiveSignerName || effectiveSignerName.toLowerCase() === "bailleur") {
+        effectiveSignerName = landlordName || "Bailleur";
+      }
+    }
 
     if (!this.isMultiSignableDocType(doc.type)) {
       throw new BadRequestException(`Unsupported signable document type: ${doc.type}`);
@@ -4306,9 +4531,20 @@ code{word-break:break-all}
       userAgent: req.headers['user-agent'],
       documentId,
       signerRole,
-      signerName,
+      signerName: effectiveSignerName,
       tenantId: signerRole === 'LOCATAIRE' ? effectiveTenantId : null,
       originalPdfSha256: originalSha,
+
+      ...(String(signerRole).toUpperCase() === 'GARANT'
+        ? {
+            guarantorMention: normalizedGuarantorMention,
+            guarantorMentionRequired: normalizedGuarantorMentionRequired,
+            guarantorMentionMatched: isGuarantorMentionValid(
+              normalizedGuarantorMention,
+              normalizedGuarantorMentionRequired,
+            ),
+          }
+        : {}),
     };
 
     await this.pool.query(
@@ -4317,7 +4553,7 @@ code{word-break:break-all}
       [
         doc.id,
         signerRole as SignRole,
-        signerName,
+        effectiveSignerName,
         signerRole === 'LOCATAIRE' ? (effectiveTenantId || null) : null,
         sigAbs.replace(this.storageBase, ''),
         req.ip,

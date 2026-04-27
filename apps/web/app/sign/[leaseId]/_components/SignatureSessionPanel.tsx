@@ -12,6 +12,10 @@ type Props = {
   onPointerUp: (e: React.PointerEvent<HTMLCanvasElement>) => void;
   isSubmitting?: boolean;
   isSignatureDirty?: boolean;
+  guarantorMention?: string;
+  onGuarantorMentionChange?: (value: string) => void;
+  requiredGuarantorMention?: string;
+  guarantorMentionValid?: boolean;
 };
 
 export function SignatureSessionPanel({
@@ -25,6 +29,10 @@ export function SignatureSessionPanel({
   onPointerUp,
   isSubmitting = false,
   isSignatureDirty = false,
+  guarantorMention = "",
+  onGuarantorMentionChange,
+  requiredGuarantorMention = "",
+  guarantorMentionValid = true,
 }: Props) {
   if (!task) {
     return (
@@ -58,6 +66,9 @@ export function SignatureSessionPanel({
       </div>
     );
   }
+
+  const isGuarantor = String(task.kind || "").toUpperCase() === "GUARANTOR";
+  const guarantorMentionOk = !isGuarantor || guarantorMentionValid;
 
   return (
     <div style={panel}>
@@ -113,6 +124,33 @@ export function SignatureSessionPanel({
             <div style={documentLabelValue}>{task.documentLabel}</div>
           </div>
 
+          {isGuarantor ? (
+            <div style={mentionBox}>
+              <div style={mentionTitle}>Mention obligatoire du garant</div>
+
+              <div style={mentionHelp}>
+                Pour confirmer que le garant comprend son engagement, recopiez exactement la phrase suivante avant de signer :
+              </div>
+
+              <div style={mentionRequired}>
+                {requiredGuarantorMention}
+              </div>
+
+              <textarea
+                value={guarantorMention}
+                onChange={(e) => onGuarantorMentionChange?.(e.target.value)}
+                rows={4}
+                style={mentionTextarea}
+                placeholder="Recopiez ici la mention ci-dessus"
+              />
+              {!guarantorMentionOk ? (
+                <div style={{ fontSize: 12, color: "#b42318", marginTop: 4 }}>
+                  ⚠️ Mention incomplète — vérifiez la somme et la formulation d’engagement.
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
           <div style={canvasWrap}>
             {!isSignatureDirty ? (
               <div style={canvasHint}>Le signataire signe ici</div>
@@ -137,10 +175,10 @@ export function SignatureSessionPanel({
             <button
               type="button"
               onClick={onConfirm}
-              disabled={isSubmitting || !isSignatureDirty}
+              disabled={isSubmitting || !isSignatureDirty || !guarantorMentionOk}
               style={{
                 ...primaryButton,
-                ...(isSubmitting || !isSignatureDirty ? primaryButtonDisabled : null),
+                ...(isSubmitting || !isSignatureDirty || !guarantorMentionOk ? primaryButtonDisabled : null),
               }}
             >
               {isSubmitting ? "Enregistrement…" : "Confirmer la signature"}
@@ -512,4 +550,49 @@ const ghostWideButton: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
   fontFamily: UI_FONT,
+};
+
+const mentionBox: React.CSSProperties = {
+  marginBottom: 14,
+  padding: 12,
+  borderRadius: 14,
+  border: "1px solid #D9E2EC",
+  background: "#F8FAFC",
+  display: "grid",
+  gap: 10,
+};
+
+const mentionTitle: React.CSSProperties = {
+  fontSize: 13,
+  fontWeight: 700,
+  color: "#1C2434",
+};
+
+const mentionHelp: React.CSSProperties = {
+  fontSize: 12.5,
+  lineHeight: 1.5,
+  color: "#6B7688",
+};
+
+const mentionRequired: React.CSSProperties = {
+  padding: 10,
+  borderRadius: 10,
+  border: "1px solid #D9E2EC",
+  background: "#FFFFFF",
+  fontSize: 12.5,
+  lineHeight: 1.5,
+  color: "#1C2434",
+};
+
+const mentionTextarea: React.CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  minHeight: 92,
+  padding: 10,
+  borderRadius: 10,
+  border: "1px solid #AEBACC",
+  fontFamily: UI_FONT,
+  fontSize: 13,
+  lineHeight: 1.45,
+  resize: "vertical",
 };

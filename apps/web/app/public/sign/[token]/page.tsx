@@ -16,6 +16,7 @@ function friendlyMessage(msg: string) {
   if (m.includes("invalid token")) return "❌ Lien invalide.";
   if (m.includes("unauthorized")) return "❌ Lien invalide ou expiré.";
   if (m.includes("download window expired")) return "⏳ Le délai de téléchargement après signature est dépassé. Demandez un nouveau lien.";
+  if (m.includes("recopier exactement")) return msg;
   return "❌ Lien indisponible.";
 }
 
@@ -27,6 +28,26 @@ function labelRole(role: string) {
   return r;
 }
 
+function normalizeMention(s: string) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[.,€]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isMentionValid(input: string, expected: string) {
+  const a = normalizeMention(input);
+  const e = normalizeMention(expected);
+
+  return (
+    a.includes("en me portant caution") &&
+    a.includes("je reconnais avoir pris connaissance") &&
+    (a.includes("somme") || a.includes("montant")) &&
+    a.length > e.length * 0.7
+  );
+}
+
 export default function PublicSignPage({ params }: { params: { token: string } }) {
   const token = params.token;
 
@@ -35,9 +56,29 @@ export default function PublicSignPage({ params }: { params: { token: string } }
   const [error, setError] = useState<string>("");
   const [signerName, setSignerName] = useState("");
   const [signerRole, setSignerRole] = useState<string>("");
+  const [guarantorMention, setGuarantorMention] = useState("");
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
+  const isGuarantor = String(signerRole || "").toUpperCase() === "GARANT";
+
+  const guaranteedTenantName = String(info?.tenantName || "le locataire")
+  .replace(/^Garant pour\s+/i, "")
+  .trim();
+
+  function formatEurosFromCents(cents: number) {
+    return `${(Number(cents || 0) / 100).toFixed(2)} €`;
+  }
+
+  const guaranteeCapText = formatEurosFromCents(Number(info?.guaranteeCapCents || 0));
+  const guaranteeCapLetters = "";
+  const guaranteeDurationText = `${Number(info?.durationMonths || 12)} mois`;
+
+  const requiredGuarantorMention = info
+    ? `En me portant caution solidaire de ${guaranteedTenantName || "le locataire"}, dans la limite de la somme de ${guaranteeCapText} couvrant le paiement du principal, des intérêts et, le cas échéant, des pénalités ou intérêts de retard, et pour une durée de ${guaranteeDurationText}, je m'engage à rembourser au bailleur les sommes dues sur mes revenus et mes biens si ${guaranteedTenantName || "le locataire"} n'y satisfait pas lui-même.
+
+  Je reconnais avoir parfaitement connaissance de la nature et de l'étendue de mon engagement.`
+    : "";
 
   function setupCanvas(c: HTMLCanvasElement) {
     const w = Math.min(520, window.innerWidth - 32);
@@ -138,11 +179,25 @@ export default function PublicSignPage({ params }: { params: { token: string } }
     setError("");
 
     try {
+      if (isGuarantor) {
+        const expected = requiredGuarantorMention.trim();
+        const actual = guarantorMention.trim();
+
+        if (!isMentionValid(actual, expected)) {
+          throw new Error("La mention de caution est incomplète ou incorrecte.");
+        }
+      }
+
       const signatureDataUrl = getDataUrl();
       const r = await fetch(`${API}/public/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, signatureDataUrl }),
+        body: JSON.stringify({
+          token,
+          signatureDataUrl,
+          guarantorMention: isGuarantor ? guarantorMention.trim() : null,
+          guarantorMentionRequired: isGuarantor ? requiredGuarantorMention.trim() : null,
+        }),
       });
       const j = await r.json();
 
@@ -218,6 +273,28 @@ export default function PublicSignPage({ params }: { params: { token: string } }
               <input value={signerName} readOnly style={{ width: "100%", background: "#f6f6f6" }} />
             </label>
 
+            {isGuarantor && (
+              <div style={{ marginTop: 14, border: "1px solid #ddd", borderRadius: 10, padding: 12, background: "#fafafa" }}>
+                <b>Mention obligatoire du garant</b>
+
+                <p style={{ fontSize: 13, color: "#555" }}>
+                  Pour confirmer que vous comprenez votre engagement, recopiez exactement la phrase suivante avant de signer :
+                </p>
+
+                <div style={{ border: "1px solid #ddd", borderRadius: 8, padding: 10, background: "#fff", fontSize: 13 }}>
+                  {requiredGuarantorMention}
+                </div>
+
+                <textarea
+                  value={guarantorMention}
+                  onChange={(e) => setGuarantorMention(e.target.value)}
+                  rows={4}
+                  style={{ marginTop: 10, width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #aaa", padding: 10 }}
+                  placeholder="Recopiez ici la mention ci-dessus"
+                />
+              </div>
+            )}
+
             <div style={{ marginTop: 10 }}>
               <canvas
                 ref={canvasRef}
@@ -234,7 +311,12 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
             <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
               <button onClick={clear}>Effacer</button>
-              <button onClick={sign}>Signer</button>
+              <button
+                onClick={sign}
+                disabled={isGuarantor && !isMentionValid(guarantorMention, requiredGuarantorMention)}
+              >
+                Signer
+              </button>
             </div>
 
             {status && <p style={{ marginTop: 10 }}>{status}</p>}

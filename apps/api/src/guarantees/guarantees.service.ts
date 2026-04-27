@@ -53,11 +53,18 @@ export class GuaranteesService {
       input?.guarantorEmail ?? input?.guarantor_email ?? '',
     ).trim();
 
+    const address = String(
+      input?.guarantorAddress ?? input?.guarantor_address ?? '',
+    ).trim();
+
     if (!name) {
       throw new BadRequestException('CAUTION requires guarantor_full_name');
     }
     if (!email || !email.includes('@')) {
       throw new BadRequestException('CAUTION requires valid guarantor_email');
+    }
+    if (!address) {
+      throw new BadRequestException('CAUTION requires guarantor_address');
     }
   }
 
@@ -160,7 +167,8 @@ export class GuaranteesService {
       body?.guarantorEmail ?? body?.guarantor_email ?? null;
     const guarantorPhone =
       body?.guarantorPhone ?? body?.guarantor_phone ?? null;
-
+    const guarantorAddress =
+      body?.guarantorAddress ?? body?.guarantor_address ?? null;
     const visaleReference =
       body?.visaleReference ?? body?.visale_reference ?? null;
     const visaleValidatedAt =
@@ -184,15 +192,15 @@ export class GuaranteesService {
         `
         INSERT INTO lease_guarantees
           (lease_tenant_id, lease_id, type, status, selected, rank,
-          guarantor_full_name, guarantor_email, guarantor_phone,
+          guarantor_full_name, guarantor_email, guarantor_phone, guarantor_address,
           visale_reference, visale_validated_at)
         VALUES
-          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+          ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
         RETURNING *
         `,
         [
           leaseTenantId,
-          leaseTenant.lease_id, // ✅ FIX: c'était lt.lease_id (lt n'existe pas)
+          leaseTenant.lease_id,
           type,
           status,
           selected,
@@ -200,6 +208,7 @@ export class GuaranteesService {
           guarantorFullName,
           guarantorEmail,
           guarantorPhone,
+          guarantorAddress,
           visaleReference,
           visaleValidatedAt,
         ],
@@ -293,6 +302,8 @@ export class GuaranteesService {
         body?.guarantorFullName ?? body?.guarantor_full_name ?? cur.guarantor_full_name,
       guarantor_email:
         body?.guarantorEmail ?? body?.guarantor_email ?? cur.guarantor_email,
+      guarantor_address:
+        body?.guarantorAddress ?? body?.guarantor_address ?? cur.guarantor_address,
       // type comes from DB (source of truth)
       type: cur.type,
     };
@@ -302,6 +313,7 @@ export class GuaranteesService {
     const guarantorFullName = body?.guarantorFullName ?? body?.guarantor_full_name ?? null;
     const guarantorEmail = body?.guarantorEmail ?? body?.guarantor_email ?? null;
     const guarantorPhone = body?.guarantorPhone ?? body?.guarantor_phone ?? null;
+    const guarantorAddress = body?.guarantorAddress ?? body?.guarantor_address ?? null;
     const visaleReference = body?.visaleReference ?? body?.visale_reference ?? null;
 
     const selected = typeof body?.selected === 'boolean' ? body.selected : null;
@@ -322,13 +334,14 @@ export class GuaranteesService {
       SET guarantor_full_name = COALESCE($2, guarantor_full_name),
           guarantor_email     = COALESCE($3, guarantor_email),
           guarantor_phone     = COALESCE($4, guarantor_phone),
-          visale_reference    = COALESCE($5, visale_reference),
-          selected            = COALESCE($6, selected),
+          guarantor_address   = COALESCE($5, guarantor_address),
+          visale_reference    = COALESCE($6, visale_reference),
+          selected            = COALESCE($7, selected),
           updated_at          = NOW()
       WHERE id=$1
       RETURNING *
       `,
-      [id, guarantorFullName, guarantorEmail, guarantorPhone, visaleReference, selected],
+      [id, guarantorFullName, guarantorEmail, guarantorPhone, guarantorAddress, visaleReference, selected]
     );
 
     return { ok: true, item: updQ.rows[0] };

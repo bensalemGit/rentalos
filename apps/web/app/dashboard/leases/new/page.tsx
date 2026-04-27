@@ -47,6 +47,7 @@ type GuaranteeDraft = {
   guarantorFullName: string;
   guarantorEmail: string;
   guarantorPhone: string;
+  guarantorAddress: string;
   visaleReference: string;
 };
 
@@ -101,6 +102,7 @@ function emptyGuaranteeDraft(): GuaranteeDraft {
     guarantorFullName: "",
     guarantorEmail: "",
     guarantorPhone: "",
+    guarantorAddress: "",
     visaleReference: "",
   };
 }
@@ -550,7 +552,10 @@ export default function NewLeasePage() {
       if (g.type === "CAUTION") {
         const full = String(g.guarantorFullName || "").trim();
         const em = String(g.guarantorEmail || "").trim();
-        if (!full || !em) throw new Error(`Caution: nom/email manquants pour le locataire ${tenantId}`);
+        const addr = String(g.guarantorAddress || "").trim();
+        if (!full || !em || !addr) {
+          throw new Error(`Caution: nom/email/adresse manquants pour le locataire ${tenantId}`);
+        }
 
         const gr = await fetch(`${API}/guarantees`, {
           method: "POST",
@@ -564,6 +569,7 @@ export default function NewLeasePage() {
             guarantorFullName: full,
             guarantorEmail: em,
             guarantorPhone: String(g.guarantorPhone || "").trim() || null,
+            guarantorAddress: addr,
           }),
         });
 
@@ -1367,6 +1373,15 @@ export default function NewLeasePage() {
                                   value={g.guarantorPhone}
                                   onChange={(e) =>
                                     updateGuaranteeDraft(t.id, { guarantorPhone: e.target.value })
+                                  }
+                                  style={inputStyle}
+                                />
+                              </Field>
+                              <Field label="Adresse garant *">
+                                <input
+                                  value={g.guarantorAddress}
+                                  onChange={(e) =>
+                                    updateGuaranteeDraft(t.id, { guarantorAddress: e.target.value })
                                   }
                                   style={inputStyle}
                                 />

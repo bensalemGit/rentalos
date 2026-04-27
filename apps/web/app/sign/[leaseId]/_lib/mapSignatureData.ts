@@ -116,6 +116,7 @@ type MapSignatureDataArgs = {
   tenants: LeaseTenantLite[];
   docs: DocLite[];
   guaranteeActOverride: Record<string, string>;
+  landlordName?: string | null;
 };
 
 type MapSignatureDataResult = {
@@ -179,11 +180,13 @@ function mapLandlordTaskStatus(args: {
   contractDocumentId?: string | null;
   signatureStatus?: string | null;
   hasActiveLink: boolean;
+  allTenantsSigned: boolean;
 }): SignerTaskStatus {
   const raw = String(args.signatureStatus || "").toUpperCase();
 
   if (!args.contractDocumentId) return "NOT_READY";
   if (raw === "SIGNED") return "SIGNED";
+  if (!args.allTenantsSigned) return "NOT_READY";
   if (args.hasActiveLink) return "LINK_SENT";
   return "READY";
 }
@@ -405,8 +408,17 @@ function buildLandlordGuaranteeSubTasks(
     .filter(Boolean) as SignerTask[];
 }
 
-function mapLandlordTask(sigStatus: SignatureStatusPayloadLite | null): SignerTask {
+function mapLandlordTask(
+  sigStatus: SignatureStatusPayloadLite | null,
+  landlordName?: string | null,
+): SignerTask {
   const contract = sigStatus?.contract;
+  const contractTenants = contract?.tenants || [];
+
+  const allTenantsSigned =
+    contractTenants.length > 0 &&
+    contractTenants.every((t) => String(t.signatureStatus || "").toUpperCase() === "SIGNED");
+
   const hasActiveLink = Boolean(
     contract?.landlord?.lastLink && !contract?.landlord?.lastLink?.consumedAt,
   );
@@ -415,12 +427,13 @@ function mapLandlordTask(sigStatus: SignatureStatusPayloadLite | null): SignerTa
     contractDocumentId: contract?.documentId,
     signatureStatus: contract?.landlord?.signatureStatus,
     hasActiveLink,
+    allTenantsSigned,
   });
 
   return {
     id: "landlord:contract",
     kind: "LANDLORD",
-    displayName: "Bailleur",
+    displayName: String(landlordName || "").trim() || "Bailleur",
     roleLabel: "Bailleur",
     documentId: contract?.documentId || null,
     documentLabel: "Contrat de location",
@@ -428,8 +441,8 @@ function mapLandlordTask(sigStatus: SignatureStatusPayloadLite | null): SignerTa
     status,
     statusLabel: toTaskStatusLabel(status),
     activeMode: status === "LINK_SENT" ? "EMAIL" : null,
-    canSignOnSite: Boolean(contract?.documentId) && status !== "SIGNED",
-    canSendEmailLink: Boolean(contract?.documentId) && status !== "SIGNED",
+    canSignOnSite: Boolean(contract?.documentId) && allTenantsSigned && status !== "SIGNED",
+    canSendEmailLink: Boolean(contract?.documentId) && allTenantsSigned && status !== "SIGNED",
     canResendLink: status === "LINK_SENT",
     canDownloadSigned: Boolean(contract?.signedFinalDocumentId),
     signedFinalDocumentId: contract?.signedFinalDocumentId || null,
@@ -437,8 +450,12 @@ function mapLandlordTask(sigStatus: SignatureStatusPayloadLite | null): SignerTa
     hasActiveLink,
     activeLinkCreatedAt: contract?.landlord?.lastLink?.createdAt || null,
     isOptional: false,
-    isBlocked: !contract?.documentId,
-    blockedReason: !contract?.documentId ? "Contrat non généré" : null,
+    isBlocked: !contract?.documentId || !allTenantsSigned,
+    blockedReason: !contract?.documentId
+      ? "Contrat non généré"
+      : !allTenantsSigned
+        ? "Tous les locataires doivent signer avant le bailleur"
+        : null,
   };
 }
 
@@ -679,6 +696,13 @@ function computeGlobalStatus(args: {
   };
 }
 
+function flattenSignerTasks(tasks: SignerTask[]): SignerTask[] {
+  return tasks.flatMap((task) => [
+    task,
+    ...((task.subTasks || []) as SignerTask[]),
+  ]);
+}
+
 function mapOverview(args: {
   leaseId: string;
   sigStatus: SignatureStatusPayloadLite | null;
@@ -701,12 +725,16 @@ function mapOverview(args: {
     (t) => t.status !== "SIGNED" && t.status !== "NOT_REQUIRED",
   ).length;
 
-  const landlordSigned = args.signerTasks.some(
-    (t) => t.kind === "LANDLORD" && t.id === "landlord:contract" && t.status === "SIGNED",
-  );
+  const allTasks = flattenSignerTasks(args.signerTasks);
 
-  const signableTasks = args.signerTasks.filter((t) => t.status !== "NOT_REQUIRED");
+  const landlordTasks = allTasks.filter((t) => t.kind === "LANDLORD");
+  const landlordSigned =
+    landlordTasks.length > 0 && landlordTasks.every((t) => t.status === "SIGNED");
+
+  const signableTasks = allTasks.filter((t) => t.status !== "NOT_REQUIRED");
   const signedTasks = signableTasks.filter((t) => t.status === "SIGNED").length;
+
+
   const remainingCount = Math.max(signableTasks.length - signedTasks, 0);
   const progressPercent =
     signableTasks.length === 0 ? 0 : Math.round((signedTasks / signableTasks.length) * 100);
@@ -908,7 +936,7 @@ function sortSignerTasks(tasks: SignerTask[]): SignerTask[] {
 export function mapSignatureData(args: MapSignatureDataArgs): MapSignatureDataResult {
   const tenantTasks = mapTenantTasks(args.sigStatus);
   const guarantorTasks = mapGuarantorTasks(args.sigStatus, args.guaranteeActOverride);
-  const landlordTask = mapLandlordTask(args.sigStatus);
+  const landlordTask = mapLandlordTask(args.sigStatus, args.landlordName);
   const secondaryDocTasks = mapSecondaryDocTasks(args.sigStatus);
   const landlordGuaranteeSubTasks = buildLandlordGuaranteeSubTasks(
     args.sigStatus,

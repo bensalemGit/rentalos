@@ -469,6 +469,8 @@ export class SignatureWorkflowService {
         }
       }
 
+      const landlordLastLink = inventoryEntry.landlordLastLink ?? null;
+      const landlordSigned = !!inventoryEntry.need?.landlord?.signed;
       const anyTenantSigned = Array.isArray(inventoryEntry.need?.tenants)
         ? inventoryEntry.need.tenants.some((t: { signed: boolean }) => t.signed)
         : false;
@@ -484,8 +486,8 @@ export class SignatureWorkflowService {
         documentStatus: this.resolveDocumentStatus({
           documentId: inventoryEntry.documentId ?? null,
           signedFinalDocumentId: inventoryEntry.signedFinalDocumentId ?? null,
-          hasAnySignedSignature: anyTenantSigned,
-          hasActiveLink: false,
+          hasAnySignedSignature: anyTenantSigned || landlordSigned,
+          hasActiveLink: this.resolveLinkStatus(landlordLastLink) === 'ACTIVE',
         }),
         signedFinalDocumentId: inventoryEntry.signedFinalDocumentId ?? null,
 
@@ -496,27 +498,27 @@ export class SignatureWorkflowService {
 
         signatureStatus: this.resolveSignatureStatus({
           documentId: inventoryEntry.documentId ?? null,
-          signerSigned: !!inventoryEntry.need?.landlord?.signed,
-          linkStatus: 'NEVER_SENT',
+          signerSigned: landlordSigned,
+          linkStatus: this.resolveLinkStatus(landlordLastLink),
           blockedReason: inventoryEntry.documentId ? null : "Inventaire d'entrée non généré",
         }),
 
-        signatureMode: 'ONSITE',
+        signatureMode: landlordLastLink ? 'PUBLIC_LINK' : 'ONSITE',
 
-        publicLinkStatus: 'NEVER_SENT',
+        publicLinkStatus: this.resolveLinkStatus(landlordLastLink),
         publicLinkId: null,
-        publicLinkCreatedAt: null,
-        publicLinkExpiresAt: null,
-        publicLinkConsumedAt: null,
+        publicLinkCreatedAt: landlordLastLink?.createdAt ?? null,
+        publicLinkExpiresAt: landlordLastLink?.expiresAt ?? null,
+        publicLinkConsumedAt: landlordLastLink?.consumedAt ?? null,
 
-        canSignOnsite: !!inventoryEntry.documentId && !inventoryEntry.need?.landlord?.signed,
-        canSendLink: false,
-        canResendLink: false,
+        canSignOnsite: !!inventoryEntry.documentId && !landlordSigned,
+        canSendLink: !!inventoryEntry.documentId && !landlordSigned,
+        canResendLink: !!landlordLastLink && !landlordSigned,
         canDownloadSigned: !!inventoryEntry.signedFinalDocumentId,
 
         blockingReason: inventoryEntry.documentId ? null : "Inventaire d'entrée non généré",
         helperText: null,
-        progressText: inventoryEntry.need?.landlord?.signed ? 'Bailleur signé' : null,
+        progressText: landlordSigned ? 'Bailleur signé' : null,
       });
     }
 

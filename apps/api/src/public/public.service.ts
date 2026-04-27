@@ -64,13 +64,18 @@ export class PublicService {
         p.id AS project_id,
         p.landlord_id,
         p.landlord_profile_id,
+
         pl.id AS landlord_resolved_id,
-        pl.name AS landlord_name,
-        pl.email AS landlord_email
+        COALESCE(pl.name, lp.name) AS landlord_name,
+        COALESCE(pl.email, lp.email) AS landlord_email
+
       FROM leases l
       JOIN units u ON u.id = l.unit_id
       JOIN projects p ON p.id = u.project_id
+
       LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
+      LEFT JOIN landlord_profiles lp ON lp.id = p.landlord_profile_id
+
       WHERE l.id = $1
       LIMIT 1
       `,
@@ -2774,9 +2779,18 @@ async createGuaranteeLandlordSignLinkAndEmail(
     const tokenHash = this.sha256(token);
 
     const q = await this.pool.query(
-      `SELECT pl.*, d.filename, d.storage_path, l.start_date, l.end_date_theoretical,
-              u.code as unit_code, t.full_name as tenant_name
-       FROM public_links pl
+        `SELECT
+                pl.*,
+                d.filename,
+                d.storage_path,
+                l.start_date,
+                l.end_date_theoretical,
+                l.rent_cents,
+                l.charges_cents,
+                l.lease_terms,
+                u.code as unit_code,
+                t.full_name as tenant_name
+        FROM public_links pl
        JOIN documents d ON d.id = pl.document_id
        JOIN leases l ON l.id = pl.lease_id
        JOIN units u ON u.id = l.unit_id
@@ -2844,6 +2858,17 @@ async createGuaranteeLandlordSignLinkAndEmail(
 
   async getPublicInfo(token: string) {
     const row = await this.resolveToken(token, { consume: false });
+
+    const leaseTerms =
+      typeof row.lease_terms === 'string'
+        ? JSON.parse(row.lease_terms || '{}')
+        : row.lease_terms || {};
+
+    const durationMonths = Number(leaseTerms?.durationMonths || 12);
+    const rentCents = Number(row.rent_cents || 0);
+    const chargesCents = Number(row.charges_cents || 0);
+    const guaranteeCapCents = Math.max(0, durationMonths * (rentCents + chargesCents));
+
     return {
       ok: true,
       purpose: row.purpose,
@@ -2855,6 +2880,10 @@ async createGuaranteeLandlordSignLinkAndEmail(
       startDate: row.start_date,
       endDateTheoretical: row.end_date_theoretical,
       filename: row.filename,
+      rentCents,
+      chargesCents,
+      durationMonths,
+      guaranteeCapCents,
 
       signerRole: row.signer_role ?? null,
       signerTenantId: row.signer_tenant_id ?? null,
@@ -2939,7 +2968,14 @@ async createGuaranteeLandlordSignLinkAndEmail(
 
     const result = await this.docs.signDocumentMulti(
       row.document_id,
-      { signerName, signerRole, signatureDataUrl, signerTenantId },
+      {
+        signerName,
+        signerRole,
+        signatureDataUrl,
+        signerTenantId,
+        guarantorMention: body?.guarantorMention ?? null,
+        guarantorMentionRequired: body?.guarantorMentionRequired ?? null,
+      },
       req,
     );
 

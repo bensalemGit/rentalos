@@ -31,6 +31,7 @@ type Guarantee = {
   guarantor_full_name: string | null;
   guarantor_email: string | null;
   guarantor_phone: string | null;
+  guarantor_address: string | null;
 
   visale_reference: string | null;
   visale_validated_at: string | null;
@@ -60,6 +61,7 @@ type GuaranteeEditDraft = {
   guarantor_full_name?: string;
   guarantor_email?: string;
   guarantor_phone?: string;
+  guarantor_address?: string;
   visale_reference?: string;
 };
 
@@ -247,6 +249,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
             ...(patch.guarantorFullName !== undefined ? { guarantor_full_name: patch.guarantorFullName || null } : {}),
             ...(patch.guarantorEmail !== undefined ? { guarantor_email: patch.guarantorEmail || null } : {}),
             ...(patch.guarantorPhone !== undefined ? { guarantor_phone: patch.guarantorPhone || null } : {}),
+            ...(patch.guarantorAddress !== undefined ? { guarantor_address: patch.guarantorAddress || null } : {}),
             ...(patch.visaleReference !== undefined ? { visale_reference: patch.visaleReference || null } : {}),
             updated_at: new Date().toISOString(),
           };
@@ -259,6 +262,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
         if (patch.guarantorFullName !== undefined) delete cur.guarantor_full_name;
         if (patch.guarantorEmail !== undefined) delete cur.guarantor_email;
         if (patch.guarantorPhone !== undefined) delete cur.guarantor_phone;
+        if (patch.guarantorAddress !== undefined) delete cur.guarantor_address;
         if (patch.visaleReference !== undefined) delete cur.visale_reference;
 
         const next = { ...prev };
@@ -298,6 +302,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
           guarantorFullName: "",
           guarantorEmail: "",
           guarantorPhone: "",
+          guarantorAddress: "",
           visaleReference: "",
         },
       };
@@ -327,6 +332,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
         payload.guarantorFullName = String(d.guarantorFullName || "").trim();
         payload.guarantorEmail = String(d.guarantorEmail || "").trim();
         payload.guarantorPhone = String(d.guarantorPhone || "").trim() || null;
+        payload.guarantorAddress = String(d.guarantorAddress || "").trim() || null;
         if (!payload.guarantorFullName || !payload.guarantorEmail) {
           throw new Error("Pour CAUTION, nom + email du garant sont requis.");
         }
@@ -544,6 +550,14 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
                         style={input()}
                         placeholder="06…"
                       />
+
+                      <div style={labelMuted()}>Adresse garant *</div>
+                      <input
+                        value={draftByLt[lt.id].guarantorAddress || ""}
+                        onChange={(e) => updateDraft(lt.id, { guarantorAddress: e.target.value })}
+                        style={input()}
+                        placeholder="Adresse complète du garant"
+                      />
                     </div>
                   ) : (
                     <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
@@ -684,6 +698,31 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
                                   style={input()}
                                 />
                               </div>
+
+                              <div
+                                style={{
+                                  display: "grid",
+                                  gridTemplateColumns: "160px 1fr",
+                                  gap: 10,
+                                  alignItems: "center",
+                                }}
+                              >
+                                <div style={labelMuted()}>Adresse garant</div>
+                                <input
+                                  value={String(getEditValue(g.id, "guarantor_address", g.guarantor_address || ""))}
+                                  onChange={(e) => {
+                                    const v = e.target.value;
+                                    setEditById((prev) => ({
+                                      ...prev,
+                                      [g.id]: { ...(prev[g.id] || {}), guarantor_address: v },
+                                    }));
+                                    debouncePatch(g.id, { guarantorAddress: v });
+                                  }}
+                                  style={input()}
+                                />
+                              </div>
+
+
                             </>
                           ) : (
                             <div
