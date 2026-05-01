@@ -71,28 +71,64 @@ export default function PublicSignPage({ params }: { params: { token: string } }
   }
 
   const guaranteeCapText = formatEurosFromCents(Number(info?.guaranteeCapCents || 0));
-  const guaranteeCapLetters = "";
   const guaranteeDurationText = `${Number(info?.durationMonths || 12)} mois`;
 
   const requiredGuarantorMention = info
     ? `En me portant caution solidaire de ${guaranteedTenantName || "le locataire"}, dans la limite de la somme de ${guaranteeCapText} couvrant le paiement du principal, des intérêts et, le cas échéant, des pénalités ou intérêts de retard, et pour une durée de ${guaranteeDurationText}, je m'engage à rembourser au bailleur les sommes dues sur mes revenus et mes biens si ${guaranteedTenantName || "le locataire"} n'y satisfait pas lui-même.
 
-  Je reconnais avoir parfaitement connaissance de la nature et de l'étendue de mon engagement.`
+  Je reconnais avoir pris connaissance de la nature et de l'étendue de mon engagement.`
     : "";
 
   function setupCanvas(c: HTMLCanvasElement) {
-    const w = Math.min(520, window.innerWidth - 32);
-    c.width = w;
-    c.height = 160;
+    const dpr = window.devicePixelRatio || 1;
+    const rect = c.getBoundingClientRect();
+
+    c.style.touchAction = "none";
+
+    const cssWidth = Math.max(280, Math.floor(rect.width || Math.min(520, window.innerWidth - 32)));
+    const cssHeight = 180;
+
+    c.width = Math.floor(cssWidth * dpr);
+    c.height = Math.floor(cssHeight * dpr);
+
+    c.style.width = "100%";
+    c.style.height = `${cssHeight}px`;
+
     const ctx = c.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.lineWidth = 2.2;
     ctx.lineCap = "round";
+    ctx.lineJoin = "round";
   }
 
   useEffect(() => {
-    const c = canvasRef.current;
-    if (c) setupCanvas(c);
-  }, []);
+    if (!info) return;
+
+    let cleanup: (() => void) | undefined;
+
+    const id = window.setTimeout(() => {
+      const c = canvasRef.current;
+      if (!c) return;
+
+      const apply = () => setupCanvas(c);
+      apply();
+
+      const observer = new ResizeObserver(apply);
+      observer.observe(c);
+
+      window.addEventListener("resize", apply);
+
+      cleanup = () => {
+        observer.disconnect();
+        window.removeEventListener("resize", apply);
+      };
+    }, 50);
+
+    return () => {
+      window.clearTimeout(id);
+      cleanup?.();
+    };
+  }, [info]);
 
   // 4️⃣ loadInfo avec nom par rôle
   async function loadInfo() {
@@ -142,14 +178,18 @@ export default function PublicSignPage({ params }: { params: { token: string } }
 
   function pos(e: any, c: HTMLCanvasElement) {
     const rect = c.getBoundingClientRect();
-    const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const y = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    const point = e.touches?.[0] || e.changedTouches?.[0] || e;
+    const x = point.clientX - rect.left;
+    const y = point.clientY - rect.top;
     return { x, y };
   }
 
   function start(e: any) {
-    const c = canvasRef.current!;
-    drawing.current = true;
+    e.preventDefault?.();
+
+    const c = canvasRef.current;
+    if (!c) return;
+      drawing.current = true;
     const ctx = c.getContext("2d")!;
     const p = pos(e, c);
     ctx.beginPath();
@@ -157,15 +197,19 @@ export default function PublicSignPage({ params }: { params: { token: string } }
   }
 
   function move(e: any) {
+    e.preventDefault?.();
+
     if (!drawing.current) return;
-    const c = canvasRef.current!;
+    const c = canvasRef.current;
+    if (!c) return;
     const ctx = c.getContext("2d")!;
     const p = pos(e, c);
     ctx.lineTo(p.x, p.y);
     ctx.stroke();
   }
 
-  function end() {
+  function end(e?: any) {
+    e?.preventDefault?.();
     drawing.current = false;
   }
 
@@ -257,7 +301,7 @@ export default function PublicSignPage({ params }: { params: { token: string } }
           </div>
 
           <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={download}>Télécharger / Voir le document</button>
+            <button style={{ minHeight: 44, padding: "10px 16px" }} onClick={download}>Télécharger / Voir le document</button>
           </div>
 
           <div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
@@ -288,8 +332,17 @@ export default function PublicSignPage({ params }: { params: { token: string } }
                 <textarea
                   value={guarantorMention}
                   onChange={(e) => setGuarantorMention(e.target.value)}
-                  rows={4}
-                  style={{ marginTop: 10, width: "100%", boxSizing: "border-box", borderRadius: 8, border: "1px solid #aaa", padding: 10 }}
+                  rows={6}
+                  style={{
+                    marginTop: 10,
+                    width: "100%",
+                    boxSizing: "border-box",
+                    borderRadius: 8,
+                    border: "1px solid #aaa",
+                    padding: 12,
+                    fontSize: 16,
+                    minHeight: 120,
+                  }}
                   placeholder="Recopiez ici la mention ci-dessus"
                 />
               </div>
@@ -298,7 +351,14 @@ export default function PublicSignPage({ params }: { params: { token: string } }
             <div style={{ marginTop: 10 }}>
               <canvas
                 ref={canvasRef}
-                style={{ border: "1px solid #aaa", borderRadius: 8, touchAction: "none" }}
+                style={{
+                  width: "100%",
+                  height: 180,
+                  border: "1px solid #aaa",
+                  borderRadius: 8,
+                  touchAction: "none",
+                  display: "block",
+                }}
                 onMouseDown={start}
                 onMouseMove={move}
                 onMouseUp={end}
@@ -310,8 +370,12 @@ export default function PublicSignPage({ params }: { params: { token: string } }
             </div>
 
             <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <button onClick={clear}>Effacer</button>
+              <button style={{ minHeight: 44, padding: "10px 16px" }} onClick={clear}>
+                Effacer
+              </button>
+
               <button
+                style={{ minHeight: 44, padding: "10px 16px" }}
                 onClick={sign}
                 disabled={isGuarantor && !isMentionValid(guarantorMention, requiredGuarantorMention)}
               >
@@ -326,7 +390,11 @@ export default function PublicSignPage({ params }: { params: { token: string } }
             Ce lien est personnel et expirera automatiquement.
           </p>
 
-          <Link href="/"><button>Retour</button></Link>
+          <Link href="/">
+            <button style={{ minHeight: 44, padding: "10px 16px" }}>
+              Retour
+            </button>
+          </Link>
         </>
       )}
     </main>

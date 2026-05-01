@@ -41,6 +41,14 @@ type InvLine = {
   unit?: string | null;
 };
 
+type InventoryPhoto = {
+  id: string;
+  inventory_line_id: string;
+  filename: string;
+  created_at?: string;
+};
+
+
 function fmtDate(s?: string) {
   if (!s) return "";
   return String(s).slice(0, 19).replace("T", " ");
@@ -105,6 +113,9 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [notesOpen, setNotesOpen] = useState<Record<string, boolean>>({});
+  const [photosOpen, setPhotosOpen] = useState<Record<string, boolean>>({});
+  const [photosByLine, setPhotosByLine] = useState<Record<string, InventoryPhoto[]>>({});
+  const [uploadingPhotoLineId, setUploadingPhotoLineId] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // modal add line
@@ -901,6 +912,92 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
     }
   }
 
+async function loadPhotos(inventoryLineId: string) {
+  try {
+    const r = await fetch(`${API}/inventory/photos?inventoryLineId=${inventoryLineId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+
+    const j = await r.json().catch(() => []);
+    const arr: InventoryPhoto[] = Array.isArray(j) ? j : [];
+    setPhotosByLine((p) => ({ ...p, [inventoryLineId]: arr }));
+  } catch {}
+}
+
+async function uploadPhoto(inventoryLineId: string, file: File) {
+  setError("");
+  setStatus("Upload photo…");
+
+  try {
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("inventoryLineId", inventoryLineId);
+    fd.append("leaseId", leaseId);
+
+    const r = await fetch(`${API}/inventory/photos`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+      body: fd,
+    });
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
+      setStatus("");
+      setError(j?.message || JSON.stringify(j));
+      pushToast({ kind: "err", message: "Erreur upload" });
+      return;
+    }
+
+    setStatus("Photo ajoutée ✅");
+    pushToast({ kind: "ok", message: "Photo ajoutée ✅" });
+    await loadPhotos(inventoryLineId);
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
+    pushToast({ kind: "err", message: "Erreur réseau (upload)" });
+  }
+}
+
+async function downloadPhoto(photoId: string) {
+  setError("");
+  setStatus("Téléchargement…");
+
+  try {
+    const r = await fetch(`${API}/inventory/photos/${photoId}/download`, {
+      headers: { Authorization: `Bearer ${token}` },
+      credentials: "include",
+    });
+
+    if (!r.ok) {
+      const t = await r.text();
+      setStatus("");
+      setError("Erreur téléchargement: " + t);
+      pushToast({ kind: "err", message: "Erreur téléchargement" });
+      return;
+    }
+
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    window.open(url, "_blank", "noopener,noreferrer");
+    setTimeout(() => URL.revokeObjectURL(url), 30_000);
+
+    setStatus("Téléchargé ✅");
+    pushToast({ kind: "ok", message: "Téléchargé ✅" });
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
+    pushToast({ kind: "err", message: "Erreur réseau (download)" });
+  }
+}
+
+function togglePhotos(lineId: string) {
+  setPhotosOpen((p) => ({ ...p, [lineId]: !p[lineId] }));
+  if (!photosByLine[lineId]) loadPhotos(lineId);
+}
+
   function toggleNotes(id: string) {
     setNotesOpen((p) => ({ ...p, [id]: !p[id] }));
   }
@@ -1414,6 +1511,27 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
 
                             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, flexWrap: "wrap" }}>
                               <button onClick={() => toggleNotes(ln.id)} style={btnGhost(border)}>Notes</button>
+
+                              <button onClick={() => togglePhotos(ln.id)} style={btnGhost(border)}>
+                                {photosOpen[ln.id] ? "Masquer photos" : "Photos"}
+                                {(photosByLine[ln.id] || []).length ? ` (${(photosByLine[ln.id] || []).length})` : ""}
+                              </button>
+
+                              <label style={{ ...btnGhost(border), display: "inline-flex", alignItems: "center", cursor: "pointer" }}>
+                                {uploadingPhotoLineId === ln.id ? "Upload…" : "Ajouter photo"}
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  style={{ display: "none" }}
+                                  disabled={uploadingPhotoLineId === ln.id}
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0] || null;
+                                    e.currentTarget.value = "";
+                                    if (file) uploadPhoto(ln.id, file);
+                                  }}
+                                />
+                              </label>
+
                               <button
                                 onClick={() => deleteInventoryLine(ln)}
                                 style={{ ...btnGhost(border), borderColor: "rgba(220,38,38,0.35)", color: "#7f1d1d" }}
@@ -1481,6 +1599,65 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
                                     }}
                                   />
                                 </div>
+                              )}
+                            </div>
+                          )}
+
+                          {photosOpen[ln.id] && (
+                            <div
+                              style={{
+                                marginTop: 10,
+                                border: `1px solid ${border}`,
+                                borderRadius: 14,
+                                padding: 10,
+                                background: "#fbfbfd",
+                                display: "grid",
+                                gap: 8,
+                              }}
+                            >
+                              <div style={{ fontWeight: 950, fontSize: 12 }}>
+                                Photos inventaire
+                              </div>
+
+                              {(photosByLine[ln.id] || []).length === 0 ? (
+                                <div style={{ color: muted, fontSize: 12, fontWeight: 800 }}>
+                                  Aucune photo.
+                                </div>
+                              ) : (
+                                (photosByLine[ln.id] || []).map((photo) => (
+                                  <div
+                                    key={photo.id}
+                                    style={{
+                                      border: `1px solid ${border}`,
+                                      borderRadius: 12,
+                                      background: "#fff",
+                                      padding: 10,
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      gap: 10,
+                                      alignItems: "center",
+                                      flexWrap: "wrap",
+                                    }}
+                                  >
+                                    <div>
+                                      <div style={{ fontWeight: 950 }}>{photo.filename}</div>
+                                      <div style={{ color: muted, fontSize: 11 }}>
+                                        {fmtDate(photo.created_at)}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                      <button
+                                        type="button"
+                                        onClick={() => downloadPhoto(photo.id)}
+                                        style={btnPrimary(blue)}
+                                      >
+                                        Télécharger
+                                      </button>
+
+                                    </div>
+                                  </div>
+                                ))
                               )}
                             </div>
                           )}

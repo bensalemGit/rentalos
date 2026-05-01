@@ -575,17 +575,38 @@ export class LeasesService {
     return { ok: true, lease: r.rows[0] };
   }
 
-  async setNotice(leaseId: string) {
+  async setNotice(leaseId: string, body: any = {}) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
+    const noticeReceivedAt = String(body?.noticeReceivedAt || '').slice(0, 10);
+    const plannedExitDate = String(body?.plannedExitDate || '').slice(0, 10);
+
+    if (!noticeReceivedAt) {
+      throw new BadRequestException('Missing noticeReceivedAt');
+    }
+
+    if (!plannedExitDate) {
+      throw new BadRequestException('Missing plannedExitDate');
+    }
+
     const r = await this.pool.query(
-      `UPDATE leases
-       SET status='notice'
-       WHERE id=$1 AND status='active'
-       RETURNING *`,
-      [leaseId],
+      `
+      UPDATE leases
+      SET
+        status = 'notice',
+        notice_received_at = $2::date,
+        planned_exit_date = $3::date
+      WHERE id = $1
+        AND status IN ('active', 'draft')
+      RETURNING *
+      `,
+      [leaseId, noticeReceivedAt, plannedExitDate],
     );
-    if (!r.rowCount) throw new BadRequestException('Lease not found or not active');
+
+    if (!r.rowCount) {
+      throw new BadRequestException('Lease not found or cannot be set to notice');
+    }
+
     return { ok: true, lease: r.rows[0] };
   }
 
@@ -593,59 +614,159 @@ export class LeasesService {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const r = await this.pool.query(
-      `UPDATE leases
-       SET status='active'
-       WHERE id=$1 AND status='notice'
-       RETURNING *`,
+      `
+      UPDATE leases
+      SET
+        status = 'active',
+        notice_received_at = NULL,
+        planned_exit_date = NULL
+      WHERE id = $1
+        AND status = 'notice'
+      RETURNING *
+      `,
       [leaseId],
     );
-    if (!r.rowCount) throw new BadRequestException('Lease not found or not in notice');
+
+    if (!r.rowCount) {
+      throw new BadRequestException('Lease not found or not in notice');
+    }
+
     return { ok: true, lease: r.rows[0] };
   }
 
-  async closeLease(leaseId: string) {
+  async closeLease(leaseId: string, body: any = {}) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const actualExitDate = String(body?.actualExitDate || '').slice(0, 10);
+
+    if (!actualExitDate) {
+      throw new BadRequestException('Missing actualExitDate');
+    }
+
     const client = await this.pool.connect();
+
     try {
       await client.query('BEGIN');
 
       const leaseRes = await client.query(`SELECT * FROM leases WHERE id=$1`, [leaseId]);
       if (!leaseRes.rowCount) throw new BadRequestException('Unknown leaseId');
+
       const lease = leaseRes.rows[0];
 
-      if (lease.status === 'ended') throw new BadRequestException('Lease already ended');
+      if (lease.status === 'ended') {
+        throw new BadRequestException('Lease already ended');
+      }
 
-      const edl = await client.query(
-        `SELECT id FROM edl_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`,
+      const signedExitDocs = await client.query(
+        `
+        WITH roots AS (
+          SELECT id, type, signed_final_document_id
+          FROM documents
+          WHERE lease_id = $1
+            AND parent_document_id IS NULL
+            AND type IN ('EDL_SORTIE', 'INVENTAIRE_SORTIE')
+        ),
+        resolved AS (
+          SELECT
+            r.type,
+            COALESCE(sf.id, child.id) AS signed_final_id
+          FROM roots r
+          LEFT JOIN documents sf
+            ON sf.id = r.signed_final_document_id
+          LEFT JOIN documents child
+            ON child.parent_document_id = r.id
+          AND child.filename ILIKE '%SIGNED_FINAL%'
+        )
+        SELECT
+          COUNT(*) FILTER (WHERE type = 'EDL_SORTIE' AND signed_final_id IS NOT NULL) AS edl_signed_count,
+          COUNT(*) FILTER (WHERE type = 'INVENTAIRE_SORTIE' AND signed_final_id IS NOT NULL) AS inventory_signed_count
+        FROM resolved
+        `,
         [leaseId],
       );
+
+      const edlSignedCount = Number(signedExitDocs.rows[0]?.edl_signed_count || 0);
+      const inventorySignedCount = Number(signedExitDocs.rows[0]?.inventory_signed_count || 0);
+
+      if (edlSignedCount <= 0) {
+        throw new BadRequestException('Cannot close lease: EDL sortie signed final is missing');
+      }
+
+      if (inventorySignedCount <= 0) {
+        throw new BadRequestException('Cannot close lease: inventaire sortie signed final is missing');
+      }
+
+      const edl = await client.query(
+        `
+        SELECT id
+        FROM edl_sessions
+        WHERE lease_id = $1
+          AND status = 'exit'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
+        [leaseId],
+      );
+
       const inv = await client.query(
-        `SELECT id FROM inventory_sessions WHERE lease_id=$1 ORDER BY created_at DESC LIMIT 1`,
+        `
+        SELECT id
+        FROM inventory_sessions
+        WHERE lease_id = $1
+          AND status = 'exit'
+        ORDER BY created_at DESC
+        LIMIT 1
+        `,
         [leaseId],
       );
 
       const edlId = edl.rowCount ? edl.rows[0].id : null;
       const invId = inv.rowCount ? inv.rows[0].id : null;
 
-      await client.query(`UPDATE leases SET status='ended' WHERE id=$1`, [leaseId]);
-
-      if (edlId) {
-        await client.query(`UPDATE edl_sessions SET status='exit_signed', exit_done_at=now() WHERE id=$1`, [edlId]);
-      }
-
-      if (invId) {
-        await client.query(`UPDATE inventory_sessions SET status='exit_signed' WHERE id=$1`, [invId]);
-      }
-
       await client.query(
-        `INSERT INTO unit_reference_state (unit_id, reference_edl_session_id, reference_inventory_session_id, updated_at)
-         VALUES ($1,$2,$3,now())
-         ON CONFLICT (unit_id)
-         DO UPDATE SET reference_edl_session_id=$2, reference_inventory_session_id=$3, updated_at=now()`,
-        [lease.unit_id, edlId, invId],
+        `
+        UPDATE leases
+        SET
+          status = 'ended',
+          actual_exit_date = $2::date,
+          end_date_theoretical = $2::date,
+          closed_at = now()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [leaseId, actualExitDate],
       );
 
+      if (edlId || invId) {
+        await client.query(
+          `
+          INSERT INTO unit_reference_state (
+            unit_id,
+            reference_edl_session_id,
+            reference_inventory_session_id,
+            updated_at
+          )
+          VALUES ($1,$2,$3,now())
+          ON CONFLICT (unit_id)
+          DO UPDATE SET
+            reference_edl_session_id = COALESCE($2, unit_reference_state.reference_edl_session_id),
+            reference_inventory_session_id = COALESCE($3, unit_reference_state.reference_inventory_session_id),
+            updated_at = now()
+          `,
+          [lease.unit_id, edlId, invId],
+        );
+      }
+
       await client.query('COMMIT');
-      return { ok: true, leaseId, unitId: lease.unit_id, referenceEdl: edlId, referenceInventory: invId };
+
+      return {
+        ok: true,
+        leaseId,
+        unitId: lease.unit_id,
+        actualExitDate,
+        referenceEdl: edlId,
+        referenceInventory: invId,
+      };
     } catch (e) {
       await client.query('ROLLBACK');
       throw e;

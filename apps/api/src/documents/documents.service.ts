@@ -52,7 +52,14 @@ export class DocumentsService {
   }
 
   private absFromStoragePath(storagePath: any): string {
-    const rel = String(storagePath || '').replace(/^\/+/, '');
+    const raw = String(storagePath || '').trim();
+    if (!raw) return '';
+
+    if (raw === this.storageBase || raw.startsWith(this.storageBase + path.sep)) {
+      return raw;
+    }
+
+    const rel = raw.replace(/^\/+/, '');
     return path.join(this.storageBase, rel);
   }
 
@@ -2537,11 +2544,12 @@ h1{font-size:16pt;margin:0 0 10px 0}
     const photosQ = await this.pool.query(
       `SELECT p.id, p.edl_item_id, p.filename, p.mime_type, p.storage_path, p.created_at,
               i.section, i.label
-       FROM edl_photos p
-       JOIN edl_items i ON i.id = p.edl_item_id
-       WHERE p.lease_id=$1
-       ORDER BY i.section, i.label, p.created_at ASC`,
-      [leaseId],
+      FROM edl_photos p
+      JOIN edl_items i ON i.id = p.edl_item_id
+      WHERE p.lease_id=$1
+        AND i.edl_session_id=$2
+      ORDER BY i.section, i.label, p.created_at ASC`,
+      [leaseId, edlSession.id],
     );
     const photos = photosQ.rows;
 
@@ -2582,13 +2590,33 @@ h1{font-size:16pt;margin:0 0 10px 0}
           annexHtml += `<div class="annex-item"><h3>${this.escapeHtml(p.section)} — ${this.escapeHtml(p.label)}</h3></div>`;
         }
 
-        const abs = this.absFromStoragePath(p.storage_path);
+        const candidates = [
+          this.absFromStoragePath(p.storage_path),
+          String(p.storage_path || ''),
+          path.join(this.storageBase, String(p.storage_path || '').replace(/^\/+/, '')),
+        ].filter(Boolean);
+
         let dataUrl = '';
-        try {
-          const buf = fsSync.readFileSync(abs);
-          dataUrl = `data:${p.mime_type};base64,${buf.toString('base64')}`;
-        } catch {
-          dataUrl = '<div class="missing">Photo introuvable</div>';
+        let foundPath = '';
+
+        for (const candidate of candidates) {
+          try {
+            if (fsSync.existsSync(candidate)) {
+              const buf = fsSync.readFileSync(candidate);
+              dataUrl = `data:${p.mime_type || 'image/jpeg'};base64,${buf.toString('base64')}`;
+              foundPath = candidate;
+              break;
+            }
+          } catch {}
+        }
+
+        if (!dataUrl) {
+          console.warn('[EDL PHOTO MISSING]', {
+            photoId: p.id,
+            filename: p.filename,
+            storagePath: p.storage_path,
+            candidates,
+          });
         }
 
         annexHtml += `
@@ -2764,16 +2792,51 @@ ${annexHtml}
     }
 
     const linesQ = await this.pool.query(
-      `SELECT c.category, c.name,
-              il.entry_qty, il.entry_state, il.entry_notes,
-              il.exit_qty, il.exit_state, il.exit_notes
-       FROM inventory_lines il
-       JOIN inventory_catalog_items c ON c.id = il.catalog_item_id
-       WHERE il.inventory_session_id=$1
-       ORDER BY c.category, c.name`,
+      `SELECT
+              il.id,
+              c.category,
+              c.name,
+              il.entry_qty,
+              il.entry_state,
+              il.entry_notes,
+              il.exit_qty,
+              il.exit_state,
+              il.exit_notes
+      FROM inventory_lines il
+      JOIN inventory_catalog_items c ON c.id = il.catalog_item_id
+      WHERE il.inventory_session_id=$1
+      ORDER BY c.category, c.name`,
       [invSession.id],
     );
     const lines = linesQ.rows;
+
+    const photosQ = await this.pool.query(
+      `SELECT
+          p.id,
+          p.inventory_line_id,
+          p.filename,
+          p.mime_type,
+          p.storage_path,
+          p.created_at,
+          c.category,
+          c.name
+      FROM inventory_photos p
+      JOIN inventory_lines il ON il.id = p.inventory_line_id
+      JOIN inventory_catalog_items c ON c.id = il.catalog_item_id
+      WHERE p.lease_id=$1
+        AND il.inventory_session_id=$2
+      ORDER BY c.category, c.name, p.created_at ASC`,
+      [leaseId, invSession.id],
+    );
+
+    const photos = photosQ.rows;
+
+    const photoMap = new Map<string, any[]>();
+    for (const p of photos) {
+      const arr = photoMap.get(p.inventory_line_id) || [];
+      arr.push(p);
+      photoMap.set(p.inventory_line_id, arr);
+    }
 
     let currentCat = '';
     const rowsHtml = lines
@@ -2783,9 +2846,11 @@ ${annexHtml}
           cat !== currentCat
             ? (() => {
                 currentCat = cat;
-                return `<tr class="catrow"><td colspan="4"><b>${this.escapeHtml(cat)}</b></td></tr>`;
+                return `<tr class="catrow"><td colspan="5"><b>${this.escapeHtml(cat)}</b></td></tr>`;
               })()
             : '';
+        const photoCount = (photoMap.get(ln.id) || []).length;
+
         return (
           header +
           `<tr>
@@ -2793,10 +2858,49 @@ ${annexHtml}
             <td class="qty">${showExit ? (ln.exit_qty ?? '') : (ln.entry_qty ?? '')}</td>
             <td class="state">${this.escapeHtml(showExit ? (ln.exit_state ?? '') : (ln.entry_state ?? ''))}</td>
             <td class="notes">${this.escapeHtml(showExit ? (ln.exit_notes ?? '') : (ln.entry_notes ?? ''))}</td>
+            <td class="pc">${photoCount}</td>
           </tr>`
         );
       })
       .join('\n');
+
+    let annexHtml = '';
+
+    if (photos.length > 0) {
+      annexHtml += `<div class="pagebreak"></div><h2>Annexes — Photos</h2>`;
+
+      let currentKey = '';
+
+      for (const p of photos) {
+        const key = `${p.category}||${p.name}`;
+
+        if (key !== currentKey) {
+          currentKey = key;
+          annexHtml += `<div class="annex-item"><h3>${this.escapeHtml(p.category)} — ${this.escapeHtml(p.name)}</h3></div>`;
+        }
+
+        const abs = String(p.storage_path || '');
+        let dataUrl = '';
+
+        try {
+          const buf = fsSync.readFileSync(abs);
+          dataUrl = `data:${p.mime_type || 'image/jpeg'};base64,${buf.toString('base64')}`;
+        } catch {
+          dataUrl = '';
+        }
+
+        annexHtml += `
+          <div class="photo-block">
+            <div class="photo-meta">${this.escapeHtml(p.filename)} • ${String(p.created_at).slice(0, 19)}</div>
+            ${
+              dataUrl
+                ? `<img src="${dataUrl}" />`
+                : `<div class="missing">Photo introuvable</div>`
+            }
+          </div>
+        `;
+      }
+    }
 
     const leaseFullRow = await this.fetchLeaseBundle(leaseId);
     const tenantsPlainLabel = this.buildTenantsPlainLabel(leaseFullRow);  
@@ -2811,10 +2915,18 @@ table{border-collapse:collapse;width:100%}
 th,td{border:1px solid #ddd;padding:6px;vertical-align:top}
 th{background:#f5f5f5}
 .catrow td{background:#fafafa}
+h2{font-size:13.5pt;margin:12px 0 6px 0}
+h3{font-size:12pt;margin:10px 0 6px 0}
 .item{width:18%}
 .qty{width:7%; text-align:center}
 .state{width:10%}
 .notes{width:24%}
+.pc{width:6%; text-align:center}
+.pagebreak{page-break-before: always;}
+.photo-block{border:1px solid #eee;border-radius:8px;padding:8px;margin:8px 0}
+.photo-meta{font-size:9pt;color:#666;margin-bottom:6px}
+.photo-block img{max-width:100%;height:auto;border:1px solid #ddd;border-radius:6px}
+.missing{color:#b00;font-size:10pt}
 </style></head>
 <body>
 <h1>Inventaire ${phaseLabel === 'ENTREE' ? "d’entrée" : "de sortie"} — ${this.escapeHtml(lease.unit_code)}</h1>
@@ -2834,12 +2946,14 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
       <th>${phaseLabel} — Qté</th>
       <th>${phaseLabel} — État</th>
       <th>${phaseLabel} — Obs</th>
+      <th>Photos</th>
     </tr>
   </thead>
   <tbody>${rowsHtml}</tbody>
 </table>
 
-<p class="small">Document généré par RentalOS.</p>
+<p class="small">Document généré par RentalOS. Les photos sont ajoutées en annexe.</p>
+${annexHtml}
 </body></html>`;
     
     // ✅ IDEMPOTENCE + FORCE REBUILD (même logique que contrat)
@@ -3663,8 +3777,8 @@ ${this.escapeHtml(lease.address_line1)}, ${this.escapeHtml(lease.postal_code)} $
 
     // Ensure EDL + Inventory docs exist for this phase
     // Reco: auto-generate if missing (smooth UX)
-    const edlRes = await this.generateEdlPdf(leaseId, { phase, force: false });
-    const invRes = await this.generateInventoryPdf(leaseId, { phase, force: false });
+    const edlRes = await this.generateEdlPdf(leaseId, { phase, force });
+    const invRes = await this.generateInventoryPdf(leaseId, { phase, force });
 
     // ----- Variables template (reuse pack style) -----
     const signature_date_fr = this.formatDateFr(new Date());

@@ -9,8 +9,13 @@ import {
   Param,
   BadRequestException,
   UseGuards,
-  ParseUUIDPipe, // ✅ AJOUT
+  ParseUUIDPipe,
+  UploadedFile,
+  UseInterceptors,
+  Res,
 } from '@nestjs/common';
+import type { Response } from 'express';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { InventoryService } from './inventory.service';
 import { JwtGuard } from '../auth/jwt.guard';
 
@@ -136,6 +141,25 @@ export class InventoryController {
     }
 
     return this.inventory.copyEntryToExitForSession({ exitSessionId: id, fromSessionId });
+  }
+
+  @Get('photos')
+  photos(@Query('inventoryLineId') inventoryLineId: string) {
+    if (!inventoryLineId) throw new BadRequestException('Missing inventoryLineId');
+    return this.inventory.listPhotos(inventoryLineId);
+  }
+
+  @Post('photos')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadPhoto(@UploadedFile() file: any, @Body() body: any) {
+    return this.inventory.uploadPhoto(file, body);
+  }
+
+  @Get('photos/:id/download')
+  async downloadPhoto(@Param('id') id: string, @Res() res: Response) {
+    if (!id) throw new BadRequestException('Missing id');
+    const f = await this.inventory.getPhotoFile(id);
+    return res.download(f.absPath, f.filename);
   }
 
   // GET /inventory/sessions/:id/diff

@@ -46,6 +46,7 @@ export function SignerSection({
 
   return (
     <section
+      className="signer-section"
       style={{
         display: "grid",
         gap: 24,
@@ -57,6 +58,7 @@ export function SignerSection({
     >
       {tasks.length === 0 ? (
         <div
+          className="signer-section-empty"
           style={{
             background: "linear-gradient(180deg,#FFFFFF 0%,#FCFDFF 100%)",
             border: "1px solid rgba(26,39,66,0.06)",
@@ -70,6 +72,7 @@ export function SignerSection({
         </div>
       ) : (
         <div
+          className="signer-section-grid"
           style={{
             display: "grid",
             gridTemplateColumns: enableAutoScroll ? "repeat(2, minmax(0, 1fr))" : "1fr",
@@ -96,6 +99,28 @@ export function SignerSection({
           ))}
         </div>
       )}
+
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media (max-width: 700px) {
+              .signer-section {
+                gap: 16px !important;
+              }
+
+              .signer-section-grid {
+                grid-template-columns: 1fr !important;
+                gap: 14px !important;
+              }
+
+              .signer-section-empty {
+                padding: 16px !important;
+                border-radius: 20px !important;
+              }
+            }
+          `,
+        }}
+      />
     </section>
   );
 }

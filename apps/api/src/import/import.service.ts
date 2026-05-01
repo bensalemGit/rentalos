@@ -73,8 +73,16 @@ export class ImportService {
     // 4) Resolve template by typology + duplex, puis charger items base + variantes
     const dto = typeof arg1 === 'string' ? ({} as ImportHousingDto) : (arg1 as ImportHousingDto);
 
-    const code = this.normalizeTemplateCode(dto?.typology);
-    const isDuplex = !!dto?.duplex;
+    const typology =
+      String(dto?.typology || '').trim() ||
+      String(lease.unit_type || '').trim() ||
+      (lease.rooms_count ? `T${lease.rooms_count}` : '');
+
+    const code = this.normalizeTemplateCode(typology);
+    const isDuplex =
+      dto?.duplex !== undefined
+        ? !!dto.duplex
+        : Boolean(lease.is_duplex);
 
     const variants = Array.isArray(dto?.variants)
       ? dto.variants.map((v) => String(v).trim().toUpperCase()).filter(Boolean)
@@ -111,7 +119,7 @@ export class ImportService {
     return {
       ok: true,
       leaseId,
-      typology: String(dto?.typology || '').trim() || code.toUpperCase(),
+      typology: typology || code.toUpperCase(),
       furnished: !!dto?.furnished,
       duplex: isDuplex,
       variants,
@@ -131,8 +139,30 @@ export class ImportService {
   // -------------------------
   // Lease helpers
   // -------------------------
-  private async getLease(leaseId: string): Promise<{ id: string; unit_id: string }> {
-    const r = await this.pool.query(`SELECT id, unit_id FROM leases WHERE id=$1`, [leaseId]);
+  private async getLease(leaseId: string): Promise<{
+    id: string;
+    unit_id: string;
+    unit_type?: string | null;
+    rooms_count?: number | null;
+    bedrooms_count?: number | null;
+    is_duplex?: boolean | null;
+  }> {
+    const r = await this.pool.query(
+      `
+      SELECT
+        l.id,
+        l.unit_id,
+        u.unit_type,
+        u.rooms_count,
+        u.bedrooms_count,
+        u.is_duplex
+      FROM leases l
+      JOIN units u ON u.id = l.unit_id
+      WHERE l.id=$1
+      `,
+      [leaseId],
+    );
+
     if (!r.rowCount) throw new BadRequestException(`Unknown leaseId: ${leaseId}`);
     return r.rows[0];
   }

@@ -18,6 +18,8 @@ import {
   RefreshCw,
   Shield,
   Wallet,
+  CreditCard,
+  FileText,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -51,6 +53,10 @@ type Lease = {
   payment_day: number;
   status: "draft" | "active" | "notice" | "ended" | string;
   created_at: string;
+  notice_received_at?: string | null;
+  planned_exit_date?: string | null;
+  actual_exit_date?: string | null;
+  closed_at?: string | null;
   unit_code?: string;
   tenant_name?: string;
   kind?: string;
@@ -68,6 +74,16 @@ type Lease = {
   irlReferenceQuarter?: string | null;
 };
 
+type Payment = {
+  id: string;
+  lease_id: string;
+  paid_at: string;
+  amount_cents: number;
+  method: string;
+  note?: string | null;
+  period_year?: number;
+  period_month?: number;
+};
 
 function kindLabel(k?: string) {
   const v = String(k || "MEUBLE_RP").toUpperCase();
@@ -77,15 +93,105 @@ function kindLabel(k?: string) {
   return v;
 }
 
+function getCurrentPaymentPeriod() {
+  const now = new Date();
+
+  return {
+    year: now.getFullYear(),
+    month: now.getMonth() + 1,
+    label: new Intl.DateTimeFormat("fr-FR", {
+      month: "short",
+      year: "numeric",
+    }).format(new Date(now.getFullYear(), now.getMonth(), 1)),
+  };
+}
+
+function getLeasePaymentStatus(
+  lease: Lease,
+  payments: Payment[] | undefined,
+): {
+  status: "paid" | "partial" | "unpaid";
+  label: string;
+  paidCents: number;
+  dueCents: number;
+  periodLabel: string;
+} {
+  const period = getCurrentPaymentPeriod();
+
+  const dueCents = Number(lease.rent_cents || 0) + Number(lease.charges_cents || 0);
+
+  const paidCents = (payments || [])
+    .filter(
+      (payment) =>
+        Number(payment.period_year) === period.year &&
+        Number(payment.period_month) === period.month,
+    )
+    .reduce((sum, payment) => sum + Number(payment.amount_cents || 0), 0);
+
+  if (dueCents > 0 && paidCents >= dueCents) {
+    return {
+      status: "paid",
+      label: "Payé",
+      paidCents,
+      dueCents,
+      periodLabel: period.label,
+    };
+  }
+
+  if (paidCents > 0) {
+    return {
+      status: "partial",
+      label: "Partiel",
+      paidCents,
+      dueCents,
+      periodLabel: period.label,
+    };
+  }
+
+  return {
+    status: "unpaid",
+    label: "Impayé",
+    paidCents,
+    dueCents,
+    periodLabel: period.label,
+  };
+}
+
+function paymentStatusChip(status: "paid" | "partial" | "unpaid") {
+  if (status === "paid") {
+    return {
+      border: "rgba(31,157,97,0.16)",
+      background: "#ECF9F1",
+      color: "#1F7A4D",
+    } as const;
+  }
+
+  if (status === "partial") {
+    return {
+      border: "rgba(160,106,44,0.18)",
+      background: "#FFF7E8",
+      color: "#A06A2C",
+    } as const;
+  }
+
+  return {
+    border: "rgba(220,38,38,0.20)",
+    background: "#FFF5F5",
+    color: "#A12C2C",
+  } as const;
+}
+
 
 export default function LeasesPage() {
   const router = useRouter();
   const [token, setToken] = useState("");
   const [leases, setLeases] = useState<Lease[]>([]);
+  const [paymentsByLease, setPaymentsByLease] = useState<Record<string, Payment[]>>({});
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [showArchives, setShowArchives] = useState(false);
   const [openLeaseMenuId, setOpenLeaseMenuId] = useState<string | null>(null);
+  const [isMobile, setIsMobile] = useState(false);
 
 
   useEffect(() => {
@@ -126,10 +232,19 @@ export default function LeasesPage() {
     setToken(localStorage.getItem("token") || "");
   }, []);
 
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 900);
+    check();
+
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
+
 
   async function loadAll() {
     setError("");
     setStatus("Chargement…");
+
     try {
       const l = await fetch(`${API}/leases`, {
         headers: { Authorization: `Bearer ${token}` },
@@ -138,6 +253,26 @@ export default function LeasesPage() {
 
       const leasesArr: Lease[] = Array.isArray(l) ? l : [];
       setLeases(leasesArr);
+
+      const activeOrNoticeLeases = leasesArr.filter((lease) => lease.status !== "ended");
+
+      const paymentsEntries = await Promise.all(
+        activeOrNoticeLeases.map(async (lease) => {
+          try {
+            const r = await fetch(`${API}/payments?leaseId=${lease.id}`, {
+              headers: { Authorization: `Bearer ${token}` },
+              credentials: "include",
+            });
+
+            const j = await r.json().catch(() => []);
+            return [lease.id, Array.isArray(j) ? j : []] as const;
+          } catch {
+            return [lease.id, []] as const;
+          }
+        }),
+      );
+
+      setPaymentsByLease(Object.fromEntries(paymentsEntries));
 
       setStatus("");
     } catch (e: any) {
@@ -332,20 +467,43 @@ if (!r.ok) {
   }
 
   async function setNoticeLease(id: string) {
+    const today = new Date().toISOString().slice(0, 10);
+
+    const noticeReceivedAt =
+      window.prompt("Date de réception du préavis (YYYY-MM-DD) :", today) || "";
+
+    if (!noticeReceivedAt) return;
+
+    const plannedExitDate =
+      window.prompt("Date de sortie prévue (YYYY-MM-DD) :", noticeReceivedAt) || "";
+
+    if (!plannedExitDate) return;
+
     setError("");
     setStatus("Passage en préavis…");
+
     try {
       const r = await fetch(`${API}/leases/${id}/notice`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         credentials: "include",
+        body: JSON.stringify({
+          noticeReceivedAt,
+          plannedExitDate,
+        }),
       });
+
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) {
         setStatus("");
         setError(j?.message || JSON.stringify(j));
         return;
       }
+
       setStatus("Préavis activé ✅");
       await loadAll();
     } catch (e: any) {
@@ -378,22 +536,45 @@ if (!r.ok) {
   }
 
   async function closeLease(id: string) {
-    if (!confirm("Clôturer ce bail ? (EDL/Inventaire sortie seront figés et reportés)")) return;
+    const lease = leases.find((x) => x.id === id);
+    const defaultExitDate =
+      String(lease?.planned_exit_date || "").slice(0, 10) ||
+      new Date().toISOString().slice(0, 10);
+
+    const actualExitDate =
+      window.prompt("Date de sortie effective (YYYY-MM-DD) :", defaultExitDate) || "";
+
+    if (!actualExitDate) return;
+
+    const ok = window.confirm(
+      "Clôturer ce bail ?\n\n" +
+        "La clôture sera refusée si l’EDL sortie signé final ou l’inventaire sortie signé final sont manquants.",
+    );
+
+    if (!ok) return;
 
     setError("");
     setStatus("Clôture…");
+
     try {
       const r = await fetch(`${API}/leases/${id}/close`, {
         method: "POST",
-        headers: { Authorization: `Bearer ${token}` },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         credentials: "include",
+        body: JSON.stringify({ actualExitDate }),
       });
+
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) {
         setStatus("");
         setError(j?.message || JSON.stringify(j));
         return;
       }
+
       setStatus("Bail clôturé ✅");
       await loadAll();
     } catch (e: any) {
@@ -413,11 +594,14 @@ if (!r.ok) {
   return (
     <main
       style={{
+        width: "100%",
         maxWidth: 1280,
+        boxSizing: "border-box",
         margin: "0 auto",
-        padding: "32px 36px 56px",
+        padding: isMobile ? "18px 14px 48px" : "32px 36px 56px",
         background: shellBg,
         minHeight: "100vh",
+        overflowX: isMobile ? "hidden" : undefined,
         fontFamily: "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
       }}
     >
@@ -436,7 +620,7 @@ if (!r.ok) {
             style={{
               marginTop: 0,
               marginBottom: 8,
-              fontSize: 34,
+              fontSize: isMobile ? 28 : 34,
               lineHeight: 1.02,
               letterSpacing: "-0.04em",
               color: title,
@@ -453,13 +637,26 @@ if (!r.ok) {
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: 12,
+            flexWrap: "wrap",
+            alignItems: "center",
+            width: isMobile ? "100%" : "auto",
+          }}
+        >
           <button
             type="button"
             onClick={() => {
               router.push("/dashboard/leases/new");
             }}
-            style={btnPrimaryWide(blue)}
+            style={{
+            ...btnPrimaryWide(blue),
+            flex: isMobile ? "1 1 100%" : undefined,
+            justifyContent: "center",
+            minHeight: 44,
+          }}
           >
             <>
               <Plus size={16} strokeWidth={2.3} />
@@ -467,7 +664,12 @@ if (!r.ok) {
             </>
           </button>
 
-          <button onClick={loadAll} style={btnSecondary(border)}>
+          <button onClick={loadAll} style={{
+                                      ...btnSecondary(border),
+                                      flex: isMobile ? "1 1 100%" : undefined,
+                                      justifyContent: "center",
+                                      minHeight: 44,
+                                    }}>
             <RefreshCw size={13} strokeWidth={2} />
             Rafraîchir
           </button>
@@ -496,6 +698,9 @@ if (!r.ok) {
                       ? "Activer"
                       : "Contrat + signatures";
 
+                  const paymentStatus = getLeasePaymentStatus(l, paymentsByLease[l.id]);
+                  const paymentTone = paymentStatusChip(paymentStatus.status);
+
 
                   return (
                     <div
@@ -512,10 +717,10 @@ if (!r.ok) {
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                          gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto",
                           gap: 18,
                           alignItems: "center",
-                          padding: "18px 22px 14px",
+                          padding: isMobile ? "16px 14px 12px" : "18px 22px 14px",
                         }}
                       >
                         <div style={{ minWidth: 0 }}>
@@ -556,13 +761,25 @@ if (!r.ok) {
 
                         <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end", flexWrap: "wrap" }}>
                           {l.status === "draft" ? (
-                            <button onClick={() => activateLease(l.id)} style={{ ...btnCompactPrimary(blue), minWidth: 170, justifyContent: "center" }}>
+                            <button onClick={() => activateLease(l.id)} style={{
+                                                                          ...btnCompactPrimary(blue),
+                                                                          minWidth: isMobile ? "100%" : 170,
+                                                                          width: isMobile ? "100%" : undefined,
+                                                                          justifyContent: "center",
+                                                                          minHeight: 44,
+                                                                        }}>
                               <ArrowRightLeft size={16} strokeWidth={2.2} />
                               {primaryLabel}
                             </button>
                           ) : (
                             <Link href={`/sign/${l.id}`}>
-                              <button style={{ ...btnCompactPrimary(blue), minWidth: 170, justifyContent: "center" }}>
+                              <button style={{
+                                        ...btnCompactPrimary(blue),
+                                        minWidth: isMobile ? "100%" : 170,
+                                        width: isMobile ? "100%" : undefined,
+                                        justifyContent: "center",
+                                        minHeight: 44,
+                                      }}>
                                 <FilePenLine size={16} strokeWidth={2.2} />
                                 {primaryLabel}
                               </button>
@@ -676,10 +893,10 @@ if (!r.ok) {
                       <div
                         style={{
                           display: "grid",
-                          gridTemplateColumns: "minmax(0, 1fr) auto",
+                          gridTemplateColumns: "1fr",
                           gap: 12,
                           alignItems: "center",
-                          padding: "0 22px 14px",
+                          padding: isMobile ? "0 14px 14px" : "0 22px 14px",
                         }}
                       >
                         <div
@@ -698,12 +915,50 @@ if (!r.ok) {
                             <span style={{ ...statusChip(l.status, border), padding: "4px 10px", fontSize: 12 }}>
                               {l.status === "notice" ? "Préavis" : l.status === "active" ? "Actif" : l.status}
                             </span>
+                            {l.status === "notice" && l.planned_exit_date ? (
+                              <span
+                                style={{
+                                  ...chip("rgba(160,106,44,0.18)", "#A06A2C"),
+                                  background: "#FBF2E8",
+                                  padding: "4px 10px",
+                                  fontSize: 12,
+                                }}
+                              >
+                                Sortie prévue {String(l.planned_exit_date).slice(0, 10)}
+                              </span>
+                            ) : null}
                           </span>
 
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}>
                             <Wallet size={13} strokeWidth={2} color={softText} />
                             {(l.rent_cents / 100).toFixed(0)} € + {(l.charges_cents / 100).toFixed(0)} €
                           </span>
+
+                          <Link
+                            href={`/dashboard/leases/${l.id}/payments`}
+                            style={{ textDecoration: "none" }}
+                          >
+                            <span
+                              title={`${paymentStatus.periodLabel} · ${paymentStatus.paidCents / 100}€ / ${paymentStatus.dueCents / 100}€`}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 7,
+                                padding: "5px 10px",
+                                borderRadius: 999,
+                                border: `1px solid ${paymentTone.border}`,
+                                background: paymentTone.background,
+                                color: paymentTone.color,
+                                fontSize: 12,
+                                fontWeight: 800,
+                                lineHeight: 1,
+                                cursor: "pointer",
+                              }}
+                            >
+                              <CreditCard size={13} strokeWidth={2.1} />
+                              {paymentStatus.periodLabel} · {paymentStatus.label}
+                            </span>
+                          </Link>
 
                           <span style={{ display: "inline-flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                             <HandCoins size={13} strokeWidth={2} color={softText} />
@@ -744,45 +999,113 @@ if (!r.ok) {
                       <div
                         style={{
                           borderTop: `1px solid ${line}`,
-                          padding: "12px 22px 14px",
-                          display: "flex",
+                          padding: isMobile ? "12px 14px 14px" : "12px 22px 14px",
+                          display: isMobile ? "grid" : "flex",
+                          gridTemplateColumns: isMobile ? "1fr 1fr" : undefined,
                           gap: 10,
-                          flexWrap: "wrap",
+                          flexWrap: isMobile ? undefined : "wrap",
                           alignItems: "center",
                           background: "#FBFCFE",
                         }}
                       >
                         <Link href={`/import/${l.id}`}>
-                          <button style={docChipButton(border)}>
+                          <button style={{
+                                    ...docChipButton(border),
+                                    width: isMobile ? "100%" : undefined,
+                                    justifyContent: isMobile ? "center" : undefined,
+                                    minHeight: isMobile ? 44 : 38,
+                                  }}>
                             <Building2 size={14} strokeWidth={2.1} />
                             Import
                           </button>
                         </Link>
 
-                        <span
-                          style={{
-                            width: 1,
-                            height: 22,
-                            background: "rgba(27,39,64,0.10)",
-                            display: "inline-block",
-                          }}
-                        />
+                        {!isMobile && (
+                          <span
+                            style={{
+                              width: 1,
+                              height: 22,
+                              background: "rgba(27,39,64,0.10)",
+                              display: "inline-block",
+                            }}
+                          />
+                        )}
 
                         <Link href={`/guarantor-act/${l.id}`}>
-                          <button style={docChipButton(border)}>
+                          <button style={{
+                                    ...docChipButton(border),
+                                    width: isMobile ? "100%" : undefined,
+                                    justifyContent: isMobile ? "center" : undefined,
+                                    minHeight: isMobile ? 44 : 38,
+                                  }}>
                             <Shield size={14} strokeWidth={2.1} /> Acte caution
                           </button>
                         </Link>
 
                         <Link href={`/edl/${l.id}`}>
-                          <button style={docChipButton(border)}>
+                          <button style={{
+                                    ...docChipButton(border),
+                                    width: isMobile ? "100%" : undefined,
+                                    justifyContent: isMobile ? "center" : undefined,
+                                    minHeight: isMobile ? 44 : 38,
+                                  }}>
                             <FolderKanban size={14} strokeWidth={2.1} /> EDL
                           </button>
                         </Link>
 
                         <Link href={`/inventory/${l.id}`}>
-                          <button style={docChipButton(border)}>
+                          <button style={{
+                                    ...docChipButton(border),
+                                    width: isMobile ? "100%" : undefined,
+                                    justifyContent: isMobile ? "center" : undefined,
+                                    minHeight: isMobile ? 44 : 38,
+                                  }}>
                             <PackageSearch size={14} strokeWidth={2.1} /> Inventaire
+                          </button>
+                        </Link>
+                        {!isMobile && (
+                          <span
+                            style={{
+                              width: 1,
+                              height: 22,
+                              background: "rgba(27,39,64,0.10)",
+                              display: "inline-block",
+                            }}
+                          />
+                        )}
+
+                        <Link href={`/dashboard/leases/${l.id}/payments`}>
+                          <button style={{
+                                    ...docChipButton(border),
+                                    width: isMobile ? "100%" : undefined,
+                                    justifyContent: isMobile ? "center" : undefined,
+                                    minHeight: isMobile ? 44 : 38,
+                                  }}>
+                            <CreditCard size={14} strokeWidth={2.1} /> Paiements & solde
+                          </button>
+                        </Link>
+
+                        {!isMobile && (
+                          <span
+                            style={{
+                              width: 1,
+                              height: 22,
+                              background: "rgba(27,39,64,0.10)",
+                              display: "inline-block",
+                            }}
+                          />
+                        )}
+
+                        <Link href={`/dashboard/leases/${l.id}/documents`}>
+                          <button
+                            style={{
+                              ...docChipButton(border),
+                              width: isMobile ? "100%" : undefined,
+                              justifyContent: isMobile ? "center" : undefined,
+                              minHeight: isMobile ? 44 : 38,
+                            }}
+                          >
+                            <FileText size={14} strokeWidth={2.1} /> Documents
                           </button>
                         </Link>
                       </div>
@@ -895,6 +1218,18 @@ if (!r.ok) {
                                   Inventaire
                                 </span>
                               </Link>
+
+                              <Link
+                                href={`/dashboard/leases/${l.id}/payments`}
+                                style={leasePopoverLinkReset()}
+                                onClick={() => setOpenLeaseMenuId(null)}
+                              >
+                                <span style={leasePopoverItemStyle()}>
+                                  <CreditCard size={15} strokeWidth={2.1} />
+                                  Paiements & solde
+                                </span>
+                              </Link>
+                              
                             </div>
                           </div>
                         )}
@@ -912,6 +1247,34 @@ if (!r.ok) {
                     <Link href={`/guarantor-act/${l.id}`}><button style={docChipButton(border)}><Shield size={14} strokeWidth={2.1} /> Acte caution</button></Link>
                     <Link href={`/edl/${l.id}`}><button style={docChipButton(border)}><FolderKanban size={14} strokeWidth={2.1} /> EDL</button></Link>
                     <Link href={`/inventory/${l.id}`}><button style={docChipButton(border)}><PackageSearch size={14} strokeWidth={2.1} /> Inventaire</button></Link>
+                    <span
+                      style={{
+                        width: 1,
+                        height: 22,
+                        background: "rgba(27,39,64,0.10)",
+                        display: "inline-block",
+                      }}
+                    />
+
+                    <Link href={`/dashboard/leases/${l.id}/payments`}>
+                      <button style={docChipButton(border)}>
+                        <CreditCard size={14} strokeWidth={2.1} /> Paiements & solde
+                      </button>
+                    </Link>
+                    <span
+                      style={{
+                        width: 1,
+                        height: 22,
+                        background: "rgba(27,39,64,0.10)",
+                        display: "inline-block",
+                      }}
+                    />
+
+                    <Link href={`/dashboard/leases/${l.id}/documents`}>
+                      <button style={docChipButton(border)}>
+                        <FileText size={14} strokeWidth={2.1} /> Documents
+                      </button>
+                    </Link>
                   </div>
                 </div>
               ))}

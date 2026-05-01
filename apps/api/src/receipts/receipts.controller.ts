@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtGuard } from '../auth/jwt.guard';
 import { ReceiptsService } from './receipts.service';
 
@@ -7,13 +7,16 @@ import { ReceiptsService } from './receipts.service';
 export class ReceiptsController {
   constructor(private readonly receipts: ReceiptsService) {}
 
-  // Generate (or reuse) receipt PDF for month
+  @Get()
+  list(@Query('leaseId') leaseId: string) {
+    return this.receipts.list(leaseId);
+  }
+
   @Post('generate')
   generate(@Body() body: any) {
     return this.receipts.generate(body);
   }
 
-  // Send receipt email (generates if needed)
   @Post('send')
   send(@Body() body: any) {
     return this.receipts.send(body);

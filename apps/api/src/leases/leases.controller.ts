@@ -35,8 +35,8 @@ export class LeasesController {
   }
 
   @Post(':id/notice')
-  notice(@Param('id') id: string) {
-    return this.leases.setNotice(id);
+  notice(@Param('id') id: string, @Body() body: any) {
+    return this.leases.setNotice(id, body);
   }
 
   @Post(':id/cancel-notice')
@@ -45,8 +45,8 @@ export class LeasesController {
   }
 
   @Post(':id/close')
-  close(@Param('id') id: string) {
-    return this.leases.closeLease(id);
+  close(@Param('id') id: string, @Body() body: any) {
+    return this.leases.closeLease(id, body);
   }
 
   @Post(':id/tenants')

@@ -1,10 +1,14 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as crypto from 'crypto';
+import * as path from 'path';
+import * as fs from 'fs';
+import { promises as fsp } from 'fs';
 
 @Injectable()
 export class InventoryService {
   private pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  private uploadRoot = process.env.UPLOAD_ROOT || '/storage/uploads';
 
   async listSessions(leaseId?: string) {
     if (leaseId) {
@@ -256,7 +260,7 @@ export class InventoryService {
             crypto.randomUUID(),
             exitSessionId,
             ln.catalog_item_id,
-            ln.ref_key ?? (ln.catalog_item_id?.toString?.() ?? crypto.randomUUID()),
+            ln.ref_key ?? null,
             ln.entry_qty ?? 0,
             ln.entry_state ?? 'OK',
             ln.entry_notes ?? null,
@@ -663,6 +667,108 @@ export class InventoryService {
     };
   }
 
+  async listPhotos(inventoryLineId: string) {
+  if (!inventoryLineId) throw new BadRequestException('Missing inventoryLineId');
+
+  const r = await this.pool.query(
+    `SELECT id, inventory_line_id, filename, created_at
+     FROM inventory_photos
+     WHERE inventory_line_id=$1
+     ORDER BY created_at DESC`,
+    [inventoryLineId],
+  );
+
+  return r.rows;
+}
+
+private async ensureDir(dir: string) {
+  await fsp.mkdir(dir, { recursive: true });
+}
+
+async uploadPhoto(file: any, body: any) {
+  const inventoryLineId = body?.inventoryLineId || body?.inventory_line_id;
+  const leaseId = body?.leaseId || body?.lease_id;
+
+  if (!inventoryLineId) throw new BadRequestException('Missing inventoryLineId');
+  if (!leaseId) throw new BadRequestException('Missing leaseId');
+  if (!file) throw new BadRequestException('Missing file');
+
+  let buf: Buffer;
+
+  if (file.buffer && Buffer.isBuffer(file.buffer)) {
+    buf = file.buffer;
+  } else if (file.path) {
+    buf = await fsp.readFile(file.path);
+    try {
+      await fsp.unlink(file.path);
+    } catch {}
+  } else {
+    throw new BadRequestException('Unsupported upload (no buffer/path)');
+  }
+
+  const sha256 = crypto.createHash('sha256').update(buf).digest('hex');
+  const extGuess =
+    (typeof file.originalname === 'string' && path.extname(file.originalname)) || '';
+  const mime = String(file.mimetype || 'application/octet-stream');
+
+  const id = crypto.randomUUID();
+  const safeName = String(file.originalname || `photo${extGuess || '.bin'}`)
+    .replace(/[^\w.\-() ]+/g, '_')
+    .slice(0, 120);
+
+  const dir = path.join(this.uploadRoot, 'inventory', String(leaseId));
+  await this.ensureDir(dir);
+
+  const storageFilename = `${id}${extGuess || ''}`;
+  const absPath = path.join(dir, storageFilename);
+
+  await fsp.writeFile(absPath, buf);
+
+  await this.pool.query(
+    `INSERT INTO inventory_photos (
+      id,
+      inventory_line_id,
+      lease_id,
+      filename,
+      storage_path,
+      mime_type,
+      sha256
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    [id, inventoryLineId, leaseId, safeName, absPath, mime, sha256],
+  );
+
+  return {
+    ok: true,
+    id,
+    inventoryLineId,
+    leaseId,
+    filename: safeName,
+  };
+}
+
+async getPhotoFile(id: string) {
+  if (!id) throw new BadRequestException('Missing id');
+
+  const r = await this.pool.query(
+    `SELECT id, filename, storage_path
+     FROM inventory_photos
+     WHERE id=$1`,
+    [id],
+  );
+
+  if (!r.rowCount) throw new BadRequestException('Unknown photo');
+
+  const row = r.rows[0];
+  const absPath = String(row.storage_path || '');
+  const filename = String(row.filename || 'photo');
+
+  if (!absPath) throw new BadRequestException('Photo storage_path missing');
+  if (!fs.existsSync(absPath)) throw new BadRequestException('Photo file missing on disk');
+
+  return { absPath, filename };
+}
+
 }
 
 function normStr(x: any): string | null {
@@ -684,11 +790,9 @@ function invLabel(ln: any): string {
 }
 
 function invKey(ln: any): string {
-  const rk = normStr(ln?.ref_key);
-  if (rk) return `ref:${rk}`;
-
   const c = invCategory(ln).toLowerCase();
   const l = invLabel(ln).toLowerCase();
+
   return `cl:${c}__${l}`;
 }
 
