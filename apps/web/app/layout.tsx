@@ -1,6 +1,13 @@
+import type { Viewport } from "next";
 export const metadata = {
   title: "RentalOS",
   description: "RentalOS",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -27,7 +34,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 --radius:14px;
               }
               *{box-sizing:border-box}
-              html,body{height:100%}
+              html,body{
+                height:100%;
+                max-width:100%;
+                overflow-x:hidden;
+                -webkit-text-size-adjust:100%;
+              }
               body{
                 margin:0;
                 background:var(--bg);
@@ -35,8 +47,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                 font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji";
               }
               a{color:inherit;text-decoration:none}
-              button,input,select,textarea{font:inherit}
-            `,
+              button,input,select,textarea{
+                font:inherit;
+                font-size:16px;
+              }
+              button{
+                min-height:44px;
+                touch-action:manipulation;
+              }
+              img,svg,canvas,video{
+                max-width:100%;
+              }
+                          `,
           }}
         />
         {children}

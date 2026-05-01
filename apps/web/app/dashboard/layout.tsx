@@ -11,6 +11,8 @@ import {
   LogOut,
   Users,
   FileText,
+  Menu,
+  X,
 } from "lucide-react";
 
 function hasToken() {
@@ -43,10 +45,20 @@ const SHELL = {
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [ok, setOk] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
   const pathname = usePathname();
 
   useEffect(() => {
     setOk(hasToken());
+  }, []);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 900);
+    check();
+
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
   }, []);
 
   const activeHref = useMemo(() => {
@@ -78,6 +90,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               alignItems: "center",
               justifyContent: "center",
               padding: "10px 14px",
+              minHeight: 44,
               borderRadius: 12,
               border: "1px solid rgba(31,94,220,0.14)",
               background: "linear-gradient(135deg, #1F5EDC 0%, #20C7C7 100%)",
@@ -98,30 +111,78 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       style={{
         minHeight: "100vh",
         display: "grid",
-        gridTemplateColumns: "264px 1fr",
+        gridTemplateColumns: isMobile ? "1fr" : "264px 1fr",
         background: SHELL.bg,
+        maxWidth: "100%",
+        overflowX: "hidden",
       }}
     >
+      {isMobile && (
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 50,
+            background: "#fff",
+            borderBottom: `1px solid ${SHELL.border}`,
+            padding: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <RentalosLogo />
+
+          <button
+            onClick={() => setMobileNavOpen((v) => !v)}
+            style={{
+              minHeight: 44,
+              padding: "10px 14px",
+              borderRadius: 14,
+              border: `1px solid ${SHELL.border}`,
+              background: "#fff",
+              fontWeight: 800,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 8,
+              cursor: "pointer",
+              color: SHELL.text,
+            }}
+          >
+            {mobileNavOpen ? <X size={20} /> : <Menu size={20} />}
+            Menu
+          </button>
+        </div>
+      )}
+
       <aside
         style={{
+          display: isMobile ? (mobileNavOpen ? "flex" : "none") : "flex",
           background: SHELL.sidebarBg,
-          borderRight: `1px solid ${SHELL.border}`,
+          borderRight: isMobile ? "none" : `1px solid ${SHELL.border}`,
+          borderBottom: isMobile ? `1px solid ${SHELL.border}` : "none",
           padding: 20,
-          position: "sticky",
+          position: isMobile ? "relative" : "sticky",
           top: 0,
-          height: "100vh",
+          height: isMobile ? "auto" : "100vh",
           overflow: "auto",
-          display: "flex",
           flexDirection: "column",
           gap: 18,
         }}
       >
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ display: "flex", alignItems: "center" }}>
-            <RentalosLogo />
+        {!isMobile && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center" }}>
+              <RentalosLogo />
+            </div>
+            <div style={{ fontSize: 12, color: SHELL.muted, paddingLeft: 4 }}>Admin · PROD</div>
           </div>
+        )}
+
+        {isMobile && (
           <div style={{ fontSize: 12, color: SHELL.muted, paddingLeft: 4 }}>Admin · PROD</div>
-        </div>
+        )}
 
         <div style={{ fontSize: 12, color: SHELL.muted, fontWeight: 800, marginTop: 6 }}>
           Navigation
@@ -135,11 +196,13 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               <Link
                 key={n.href}
                 href={n.href}
+                onClick={() => setMobileNavOpen(false)}
                 style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 12,
                   padding: "13px 14px",
+                  minHeight: 44,
                   borderRadius: 16,
                   border: active ? "1px solid rgba(31,94,220,0.08)" : "1px solid transparent",
                   background: active ? "#EEF4FF" : "transparent",
@@ -147,6 +210,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
                   fontWeight: active ? 800 : 700,
                   boxShadow: active ? "0 6px 18px rgba(31,94,220,0.06)" : "none",
                   transition: "all .18s ease",
+                  textDecoration: "none",
                 }}
               >
                 <Icon size={18} strokeWidth={2.1} />
@@ -164,6 +228,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             }}
             style={{
               width: "100%",
+              minHeight: 44,
               padding: "12px 14px",
               borderRadius: 16,
               border: `1px solid ${SHELL.border}`,
@@ -188,8 +253,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
       </aside>
 
-      <main style={{ padding: 28 }}>
-        <div style={{ maxWidth: 1500, margin: "0 auto" }}>{children}</div>
+      <main style={{ padding: isMobile ? 14 : 28, minWidth: 0 }}>
+        <div style={{ maxWidth: 1500, margin: "0 auto", minWidth: 0 }}>{children}</div>
       </main>
     </div>
   );

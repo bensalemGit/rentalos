@@ -222,7 +222,7 @@ export class EdlService {
             exitSessionId,
             it.section,
             it.label,
-            it.ref_key ?? crypto.randomUUID(),
+            it.ref_key ?? null,
             it.entry_condition ?? null,
             it.entry_notes ?? null,
             // préremplissage sortie = entrée
@@ -692,11 +692,9 @@ function normStr(x: any): string | null {
 }
 
 function edlKey(it: any): string {
-  const rk = normStr(it?.ref_key);
-  if (rk) return `ref:${rk}`;
-
   const sec = (normStr(it?.section) ?? 'Divers').toLowerCase();
   const lab = (normStr(it?.label) ?? '').toLowerCase();
+
   return `sl:${sec}__${lab}`;
 }
 

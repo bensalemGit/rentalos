@@ -17,6 +17,28 @@ export class UnitsService {
     return n;
   }
 
+  private normalizeNullableInteger(v: any): number | null {
+    if (v === '' || v === null || v === undefined) return null;
+
+    const n = Number(v);
+    if (!Number.isInteger(n) || n < 0) {
+      throw new BadRequestException('Integer field must be a positive integer');
+    }
+
+    return n;
+  }
+
+  private normalizeBoolean(v: any, fallback = false): boolean {
+    if (v === '' || v === null || v === undefined) return fallback;
+    if (typeof v === 'boolean') return v;
+
+    const s = String(v).trim().toLowerCase();
+    if (['true', '1', 'yes', 'oui'].includes(s)) return true;
+    if (['false', '0', 'no', 'non'].includes(s)) return false;
+
+    return fallback;
+  }
+
   async create(data: any) {
     const code = this.normalizeText(data?.code, '');
     const label = this.normalizeText(data?.label, '');
@@ -29,6 +51,11 @@ export class UnitsService {
 
     const surfaceM2 = this.normalizeNumber(data?.surfaceM2, 0);
     const floor = this.normalizeNumber(data?.floor, 0);
+
+    const unitType = this.normalizeText(data?.unitType ?? data?.unit_type, '');
+    const roomsCount = this.normalizeNullableInteger(data?.roomsCount ?? data?.rooms_count);
+    const bedroomsCount = this.normalizeNullableInteger(data?.bedroomsCount ?? data?.bedrooms_count);
+    const isDuplex = this.normalizeBoolean(data?.isDuplex ?? data?.is_duplex, false);
 
     const projectId = data?.projectId ? String(data.projectId) : null;
     const buildingId = data?.buildingId ? String(data.buildingId) : null;
@@ -50,10 +77,38 @@ export class UnitsService {
 
     try {
       const r = await this.pool.query(
-        `INSERT INTO units (code, label, address_line1, city, postal_code, surface_m2, floor, project_id, building_id)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-         RETURNING *`,
-        [code, label, addressLine1, city, postalCode, surfaceM2, floor, projectId, buildingId]
+        `INSERT INTO units (
+          code,
+          label,
+          address_line1,
+          city,
+          postal_code,
+          surface_m2,
+          floor,
+          project_id,
+          building_id,
+          unit_type,
+          rooms_count,
+          bedrooms_count,
+          is_duplex
+        )
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        RETURNING *`,
+        [
+          code,
+          label,
+          addressLine1,
+          city,
+          postalCode,
+          surfaceM2,
+          floor,
+          projectId,
+          buildingId,
+          unitType || null,
+          roomsCount,
+          bedroomsCount,
+          isDuplex,
+        ]
       );
       return r.rows[0];
     } catch (e: any) {
@@ -95,6 +150,26 @@ export class UnitsService {
     const nextFloor =
       patch?.floor !== undefined ? this.normalizeNumber(patch.floor, 0) : Number(existing.floor ?? 0);
 
+    const nextUnitType =
+      patch?.unitType !== undefined || patch?.unit_type !== undefined
+        ? this.normalizeText(patch?.unitType ?? patch?.unit_type, '')
+        : existing.unit_type;
+
+    const nextRoomsCount =
+      patch?.roomsCount !== undefined || patch?.rooms_count !== undefined
+        ? this.normalizeNullableInteger(patch?.roomsCount ?? patch?.rooms_count)
+        : existing.rooms_count;
+
+    const nextBedroomsCount =
+      patch?.bedroomsCount !== undefined || patch?.bedrooms_count !== undefined
+        ? this.normalizeNullableInteger(patch?.bedroomsCount ?? patch?.bedrooms_count)
+        : existing.bedrooms_count;
+
+    const nextIsDuplex =
+      patch?.isDuplex !== undefined || patch?.is_duplex !== undefined
+        ? this.normalizeBoolean(patch?.isDuplex ?? patch?.is_duplex, false)
+        : Boolean(existing.is_duplex);
+
     const nextProjectId =
       patch?.projectId !== undefined ? (patch.projectId ? String(patch.projectId) : null) : existing.project_id;
     const nextBuildingId =
@@ -118,10 +193,38 @@ export class UnitsService {
     try {
       const r = await this.pool.query(
         `UPDATE units
-         SET code=$2, label=$3, address_line1=$4, city=$5, postal_code=$6, surface_m2=$7, floor=$8, project_id=$9, building_id=$10
-         WHERE id=$1
-         RETURNING *`,
-        [id, nextCode, nextLabel, nextAddress, nextCity, nextPostal, nextSurface, nextFloor, nextProjectId, nextBuildingId]
+        SET
+          code=$2,
+          label=$3,
+          address_line1=$4,
+          city=$5,
+          postal_code=$6,
+          surface_m2=$7,
+          floor=$8,
+          project_id=$9,
+          building_id=$10,
+          unit_type=$11,
+          rooms_count=$12,
+          bedrooms_count=$13,
+          is_duplex=$14
+        WHERE id=$1
+        RETURNING *`,
+        [
+          id,
+          nextCode,
+          nextLabel,
+          nextAddress,
+          nextCity,
+          nextPostal,
+          nextSurface,
+          nextFloor,
+          nextProjectId,
+          nextBuildingId,
+          nextUnitType || null,
+          nextRoomsCount,
+          nextBedroomsCount,
+          nextIsDuplex,
+        ]
       );
       return r.rows[0];
     } catch (e: any) {

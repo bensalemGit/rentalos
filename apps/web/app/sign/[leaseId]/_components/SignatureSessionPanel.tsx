@@ -36,7 +36,7 @@ export function SignatureSessionPanel({
 }: Props) {
   if (!task) {
     return (
-      <div style={panel}>
+      <div className="sig-session-panel" style={panel}>
         <div style={panelTitle}>Poste de signature</div>
 
         <div style={panelLead}>
@@ -71,7 +71,7 @@ export function SignatureSessionPanel({
   const guarantorMentionOk = !isGuarantor || guarantorMentionValid;
 
   return (
-    <div style={panel}>
+    <div className="sig-session-panel" style={panel}>
       <div style={panelTitle}>Session de signature</div>
 
       <div style={panelLead}>
@@ -112,6 +112,7 @@ export function SignatureSessionPanel({
         ) : null}
 
         <div
+          className="sig-session-shell"
           style={{
             ...signatureShell,
             ...(isSubmitting ? signatureShellSubmitting : null),
@@ -125,14 +126,14 @@ export function SignatureSessionPanel({
           </div>
 
           {isGuarantor ? (
-            <div style={mentionBox}>
+            <div className="sig-session-mention" style={mentionBox}>
               <div style={mentionTitle}>Mention obligatoire du garant</div>
 
               <div style={mentionHelp}>
                 Pour confirmer que le garant comprend son engagement, recopiez exactement la phrase suivante avant de signer :
               </div>
 
-              <div style={mentionRequired}>
+              <div className="sig-session-mention-required" style={mentionRequired}>
                 {requiredGuarantorMention}
               </div>
 
@@ -151,7 +152,7 @@ export function SignatureSessionPanel({
             </div>
           ) : null}
 
-          <div style={canvasWrap}>
+          <div className="sig-session-canvas-wrap" style={canvasWrap}>
             {!isSignatureDirty ? (
               <div style={canvasHint}>Le signataire signe ici</div>
             ) : null}
@@ -167,7 +168,7 @@ export function SignatureSessionPanel({
             />
           </div>
 
-          <div style={actionsRow}>
+          <div className="sig-session-actions" style={actionsRow}>
             <button type="button" onClick={onClear} style={secondaryButton}>
               Effacer
             </button>
@@ -189,9 +190,60 @@ export function SignatureSessionPanel({
             La signature sera horodatée et enregistrée dans le dossier locatif.
           </div>
 
-          <button type="button" onClick={onClose} style={ghostWideButton}>
+          <button type="button" onClick={onClose} className="sig-session-close" style={ghostWideButton}>
             Terminer cette session
           </button>
+          <style
+            dangerouslySetInnerHTML={{
+              __html: `
+                @media (max-width: 700px) {
+                  .sig-session-panel {
+                    padding: 16px !important;
+                    border-radius: 20px !important;
+                  }
+
+                  .sig-session-shell {
+                    padding: 14px !important;
+                    border-radius: 18px !important;
+                  }
+
+                  .sig-session-canvas-wrap {
+                    height: 240px !important;
+                    border-radius: 18px !important;
+                  }
+
+                  .sig-session-actions {
+                    display: grid !important;
+                    grid-template-columns: 1fr !important;
+                    gap: 10px !important;
+                  }
+
+                  .sig-session-actions button,
+                  .sig-session-close {
+                    width: 100% !important;
+                    min-height: 48px !important;
+                    height: auto !important;
+                    padding: 12px 14px !important;
+                    font-size: 15px !important;
+                  }
+
+                  .sig-session-mention textarea {
+                    min-height: 130px !important;
+                    font-size: 16px !important;
+                    padding: 12px !important;
+                  }
+
+                  .sig-session-mention-required {
+                    font-size: 13px !important;
+                    line-height: 1.6 !important;
+                    max-height: 180px !important;
+                    overflow: auto !important;
+                    -webkit-overflow-scrolling: touch !important;
+                  }
+                }
+              `,
+            }}
+          />
         </div>
       </div>
     </div>

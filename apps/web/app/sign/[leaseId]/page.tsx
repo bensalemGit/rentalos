@@ -282,6 +282,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
 function setupCanvasHiDpi(canvas: HTMLCanvasElement) {
   const dpr = window.devicePixelRatio || 1;
   const rect = canvas.getBoundingClientRect();
+  canvas.style.touchAction = "none";
 
   // Taille CSS visible
   const cssW = Math.max(1, Math.floor(rect.width));
@@ -311,17 +312,33 @@ function getCanvasPoint(canvas: HTMLCanvasElement, e: any) {
 }
 
 useEffect(() => {
-  const c = canvasRef.current;
-  if (!c) return;
+  if (!sessionDraft.open) return;
 
-  const apply = () => setupCanvasHiDpi(c);
-  apply();
+  let cleanup: (() => void) | undefined;
 
-  const onResize = () => apply();
-  window.addEventListener("resize", onResize);
+  const id = window.setTimeout(() => {
+    const c = canvasRef.current;
+    if (!c) return;
 
-  return () => window.removeEventListener("resize", onResize);
-}, []);
+    const apply = () => setupCanvasHiDpi(c);
+    apply();
+
+    const observer = new ResizeObserver(apply);
+    observer.observe(c);
+
+    window.addEventListener("resize", apply);
+
+    cleanup = () => {
+      observer.disconnect();
+      window.removeEventListener("resize", apply);
+    };
+  }, 50);
+
+  return () => {
+    window.clearTimeout(id);
+    cleanup?.();
+  };
+}, [sessionDraft.open, sessionDraft.signerTaskId]);
 
 
 useEffect(() => {
@@ -574,29 +591,50 @@ async function generateExitPack() {
   }
 }
 
-  async function generateContract() {
-    setError("");
-    setStatus("Génération du contrat…");
-    try {
-      const r = await fetch(`${API}/documents/contract`, {
+async function generateContract(force = false) {
+  setError("");
+
+  const shouldForce =
+    force ||
+    Boolean(contractDoc?.id && !finalSignedDoc?.id);
+
+  if (shouldForce && contractDoc?.id && !finalSignedDoc?.id) {
+    const ok = window.confirm(
+      "Un contrat existe déjà. Voulez-vous le régénérer avec les dernières données du bail ?\n\n" +
+      "Possible uniquement si aucune signature n’a encore été enregistrée."
+    );
+
+    if (!ok) return;
+  }
+
+  setStatus(shouldForce ? "Régénération du contrat…" : "Génération du contrat…");
+
+  try {
+    const r = await fetch(
+      `${API}/documents/contract${shouldForce ? "?force=true" : ""}`,
+      {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         credentials: "include",
         body: JSON.stringify({ leaseId }),
-      });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        setStatus("");
-        setError(j?.message || JSON.stringify(j));
-        return;
       }
-      setStatus("Contrat généré ✅");
-      await refreshAll();
-    } catch (e: any) {
+    );
+
+    const j = await r.json().catch(() => ({}));
+
+    if (!r.ok) {
       setStatus("");
-      setError(String(e?.message || e));
+      setError(j?.message || JSON.stringify(j));
+      return;
     }
+
+    setStatus(shouldForce ? "Contrat régénéré ✅" : "Contrat généré ✅");
+    await refreshAll();
+  } catch (e: any) {
+    setStatus("");
+    setError(String(e?.message || e));
   }
+}
 
   async function generateNotice() {
     setError("");
@@ -622,23 +660,29 @@ async function generateExitPack() {
     }
   }
 
-  async function generateEdl(phase: "entry" | "exit") {
+  async function generateEdl(phase: "entry" | "exit", force = false) {
     setError("");
-    setStatus(`Génération EDL ${phase === "entry" ? "entrée" : "sortie"}…`);
+    setStatus(
+      `${force ? "Régénération" : "Génération"} EDL ${phase === "entry" ? "entrée" : "sortie"}…`
+    );
+
     try {
       const r = await fetch(`${API}/documents/edl`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         credentials: "include",
-        body: JSON.stringify({ leaseId, phase }),
+        body: JSON.stringify({ leaseId, phase, force }),
       });
+
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) {
         setStatus("");
         setError(j?.message || JSON.stringify(j));
         return;
       }
-      setStatus("EDL généré ✅");
+
+      setStatus(force ? "EDL régénéré ✅" : "EDL généré ✅");
       await refreshAll();
     } catch (e: any) {
       setStatus("");
@@ -646,23 +690,29 @@ async function generateExitPack() {
     }
   }
 
-  async function generateInventory(phase: "entry" | "exit") {
+  async function generateInventory(phase: "entry" | "exit", force = false) {
     setError("");
-    setStatus(`Génération inventaire ${phase === "entry" ? "entrée" : "sortie"}…`);
+    setStatus(
+      `${force ? "Régénération" : "Génération"} inventaire ${phase === "entry" ? "entrée" : "sortie"}…`
+    );
+
     try {
       const r = await fetch(`${API}/documents/inventory`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         credentials: "include",
-        body: JSON.stringify({ leaseId, phase }),
+        body: JSON.stringify({ leaseId, phase, force }),
       });
+
       const j = await r.json().catch(() => ({}));
+
       if (!r.ok) {
         setStatus("");
         setError(j?.message || JSON.stringify(j));
         return;
       }
-      setStatus("Inventaire généré ✅");
+
+      setStatus(force ? "Inventaire régénéré ✅" : "Inventaire généré ✅");
       await refreshAll();
     } catch (e: any) {
       setStatus("");
@@ -1515,6 +1565,7 @@ function dataUrl(c: HTMLCanvasElement | null) {
 }
 
 function onPointerDown(e: any) {
+  e.preventDefault?.();
   const c = canvasRef.current;
   if (!c) return;
 
@@ -1535,6 +1586,7 @@ function onPointerDown(e: any) {
 }
 
 function onPointerMove(e: any) {
+  e.preventDefault?.();
   if (!drawing.current) return;
 
   const c = canvasRef.current;
@@ -2208,6 +2260,11 @@ console.log("[PACK FINAL READINESS PAGE]", {
             onDownloadSignedDocument={downloadSignedDocumentResource}
             onGenerateExitCertificate={generateExitCertificate}
             onGenerateExitPack={generateExitPack}
+            onRegenerateContract={() => generateContract(true)}
+            onRegenerateEdlEntry={() => generateEdl("entry", true)}
+            onRegenerateInventoryEntry={() => generateInventory("entry", true)}
+            onRegenerateEdlExit={() => generateEdl("exit", true)}
+            onRegenerateInventoryExit={() => generateInventory("exit", true)}
           />
         </div>
 

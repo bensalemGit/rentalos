@@ -40,19 +40,15 @@ export default function UnitReferencesPage({
       return;
     }
 
-    const ctrl = new AbortController();
-
     try {
-      const url = `${API}/unit-references/preview?unitId=${encodeURIComponent(
-        unitId
-      )}`;
-
-      const r = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}` },
-        credentials: "include",
-        cache: "no-store",
-        signal: ctrl.signal,
-      });
+      const r = await fetch(
+        `${API}/unit-references/preview?unitId=${encodeURIComponent(unitId)}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+          credentials: "include",
+          cache: "no-store",
+        }
+      );
 
       const j = await r.json().catch(() => ({}));
 
@@ -66,19 +62,16 @@ export default function UnitReferencesPage({
       setData(j);
       setStatus("");
     } catch (e: any) {
-      if (e?.name === "AbortError") return;
       setStatus("");
       setError(String(e?.message || e));
       setData(null);
     }
-
-    return () => ctrl.abort();
   }, [token, unitId]);
 
-  useEffect(() => {
-    if (!token) return;
-    load();
-  }, [token, load]);
+    useEffect(() => {
+      if (!token) return;
+      load();
+    }, [token, load]);
 
   // ---- shape API réelle ----
   const reference = data?.reference || {};
@@ -102,8 +95,8 @@ export default function UnitReferencesPage({
     return s.size;
   }, [invLines]);
 
-  const edlPreview = useMemo(() => edlItems.slice(0, 12), [edlItems]);
-  const invPreview = useMemo(() => invLines.slice(0, 12), [invLines]);
+  const edlPreview = useMemo(() => edlItems, [edlItems]);
+  const invPreview = useMemo(() => invLines, [invLines]);
 
   return (
     <main
@@ -161,7 +154,7 @@ export default function UnitReferencesPage({
           marginTop: 12,
           display: "grid",
           gap: 12,
-          gridTemplateColumns: "1fr 1fr",
+          gridTemplateColumns: "repeat(auto-fit, minmax(360px, 1fr))",
         }}
       >
         {/* EDL */}
@@ -204,10 +197,11 @@ export default function UnitReferencesPage({
                 marginBottom: 8,
               }}
             >
-              Preview (12)
+              Aperçu ({edlItems.length})
             </div>
 
-            {edlPreview.map((x: any, idx: number) => (
+            <div style={previewScroll()}>
+              {edlPreview.map((x: any, idx: number) => (
               <div key={idx} style={row(border)}>
                 <div style={{ fontWeight: 900, minWidth: 0 }}>
                   <div
@@ -240,6 +234,7 @@ export default function UnitReferencesPage({
                 </div>
               </div>
             ))}
+          </div>
 
             {!edlSessionId && (
               <div style={{ color: muted, fontSize: 12 }}>
@@ -248,14 +243,9 @@ export default function UnitReferencesPage({
             )}
           </div>
 
-          <div style={{ marginTop: 12 }}>
-            <button
-              style={{ ...btnSecondary(border), width: "100%" }}
-              disabled
-              title="On fait l’écran d’édition juste après"
-            >
-              Éditer la référence EDL (à venir)
-            </button>
+          <div style={infoBox(border, muted)}>
+            Pour modifier cette référence, ouvrez un inventaire, ajustez les lignes, puis cliquez sur
+            “Définir référence”.
           </div>
         </section>
 
@@ -299,10 +289,11 @@ export default function UnitReferencesPage({
                 marginBottom: 8,
               }}
             >
-              Preview (12)
+              Aperçu ({invLines.length})
             </div>
 
-            {invPreview.map((x: any, idx: number) => (
+            <div style={previewScroll()}>
+              {invPreview.map((x: any, idx: number) => (
               <div key={idx} style={row(border)}>
                 <div style={{ fontWeight: 900, minWidth: 0 }}>
                   <div
@@ -335,6 +326,7 @@ export default function UnitReferencesPage({
                 </div>
               </div>
             ))}
+          </div>
 
             {!invSessionId && (
               <div style={{ color: muted, fontSize: 12 }}>
@@ -343,14 +335,9 @@ export default function UnitReferencesPage({
             )}
           </div>
 
-          <div style={{ marginTop: 12 }}>
-            <button
-              style={{ ...btnSecondary(border), width: "100%" }}
-              disabled
-              title="On fait l’écran d’édition juste après"
-            >
-              Éditer la référence Inventaire (à venir)
-            </button>
+          <div style={infoBox(border, muted)}>
+            Pour modifier cette référence, ouvrez un EDL, ajustez les items, puis cliquez sur
+            “Définir référence”.
           </div>
         </section>
       </div>
@@ -420,5 +407,27 @@ function tag(border: string) {
     fontSize: 12,
     fontWeight: 900,
     background: "#fff",
+  } as const;
+}
+
+function previewScroll() {
+  return {
+    maxHeight: 560,
+    overflowY: "auto",
+    paddingRight: 6,
+  } as const;
+}
+
+function infoBox(border: string, muted: string) {
+  return {
+    marginTop: 12,
+    border: `1px solid ${border}`,
+    borderRadius: 12,
+    padding: 10,
+    background: "#fbfbfd",
+    color: muted,
+    fontSize: 12,
+    fontWeight: 800,
+    lineHeight: 1.45,
   } as const;
 }

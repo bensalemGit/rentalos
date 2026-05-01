@@ -6,6 +6,7 @@ import type {
 import { FileText, ChevronRight } from "lucide-react";
 import { SIGN_UI, InlineTextStatus, SectionTitle, statusToneFromLabel } from "./signature-ui";
 
+
 type DocumentsSectionProps = {
   documents: DocumentResource[];
   packFinalReadiness: PackFinalReadiness | null;
@@ -17,6 +18,11 @@ type DocumentsSectionProps = {
   onDownloadSignedDocument: (doc: DocumentResource) => void;
   onGenerateExitCertificate: () => void;
   onGenerateExitPack: () => void;
+  onRegenerateContract?: () => void;
+  onRegenerateEdlEntry?: () => void;
+  onRegenerateInventoryEntry?: () => void;
+  onRegenerateEdlExit?: () => void;
+  onRegenerateInventoryExit?: () => void;
 };
 
 function DocumentActionLink({
@@ -100,6 +106,7 @@ function PackFinalPanel({
     : [];
 
   const tone = hasError ? "danger" : ready ? "success" : "neutral";
+
 
   return (
     <div
@@ -268,7 +275,22 @@ export function DocumentsSection({
   onDownloadSignedDocument,
   onGenerateExitCertificate,
   onGenerateExitPack,
+  onRegenerateContract,
+  onRegenerateEdlEntry,
+  onRegenerateInventoryEntry,
+  onRegenerateEdlExit,
+  onRegenerateInventoryExit,
 }: DocumentsSectionProps) {
+
+  function getRegenerateHandler(doc: DocumentResource) {
+    if (doc.label === "Contrat de location") return onRegenerateContract;
+    if (doc.label === "EDL entrée") return onRegenerateEdlEntry;
+    if (doc.label === "Inventaire entrée") return onRegenerateInventoryEntry;
+    if (doc.label === "EDL sortie") return onRegenerateEdlExit;
+    if (doc.label === "Inventaire sortie") return onRegenerateInventoryExit;
+    return undefined;
+  }
+
   return (
     <section
       style={{
@@ -368,13 +390,14 @@ export function DocumentsSection({
           Les documents apparaîtront ici dès que le contrat, les actes ou les packs auront été générés.
         </div>
       ) : (
-        <div style={{ borderTop: `1px solid ${SIGN_UI.colors.line}` }}>
+        <div className="documents-list" style={{ borderTop: `1px solid ${SIGN_UI.colors.line}` }}>
           {documents.map((doc, index) => {
             const tone = statusToneFromLabel(doc.statusLabel);
 
             return (
               <div
                 key={doc.id}
+                className="document-row"
                 style={{
                   display: "grid",
                   gridTemplateColumns: "minmax(0,1fr) auto",
@@ -432,6 +455,7 @@ export function DocumentsSection({
                 </div>
 
                 <div
+                  className="document-actions"
                   style={{
                     display: "flex",
                     alignItems: "center",
@@ -451,12 +475,51 @@ export function DocumentsSection({
                       Télécharger signé
                     </DocumentActionLink>
                   ) : null}
+
+                  {getRegenerateHandler(doc) ? (
+                    <DocumentActionLink onClick={getRegenerateHandler(doc)!}>
+                      Régénérer
+                    </DocumentActionLink>
+                  ) : null}
                 </div>
               </div>
             );
           })}
         </div>
       )}
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+            @media (max-width: 700px) {
+              .document-row {
+                grid-template-columns: 1fr !important;
+                gap: 10px !important;
+                align-items: start !important;
+                padding: 16px 0 !important;
+              }
+
+              .document-actions {
+                display: grid !important;
+                grid-template-columns: 1fr !important;
+                justify-content: stretch !important;
+                gap: 8px !important;
+                width: 100% !important;
+              }
+
+              .document-actions button {
+                width: 100% !important;
+                min-height: 44px !important;
+                justify-content: center !important;
+                padding: 10px 12px !important;
+                border: 1px solid rgba(47,99,224,0.14) !important;
+                border-radius: 12px !important;
+                background: #ffffff !important;
+                font-size: 14px !important;
+              }
+            }
+          `,
+        }}
+      />
     </section>
   );
 }

@@ -366,6 +366,7 @@ function StatusChip({
 }) {
   return (
     <span
+      className="signer-card-status"
       style={{
         flexShrink: 0,
         display: "inline-flex",
@@ -445,10 +446,10 @@ function PrimaryActionButton(props: {
   onClick: () => void;
 }) {
   const Icon = props.icon;
-  const isOnSiteAction = props.label === "Signer sur place";
 
   return (
     <button
+      className="signer-card-action signer-card-action-primary"
       type="button"
       onClick={props.onClick}
       style={{
@@ -487,6 +488,7 @@ function SecondaryActionButton(props: {
 
   return (
     <button
+      className="signer-card-action signer-card-action-secondary"
       type="button"
       onClick={props.onClick}
       style={{
@@ -530,6 +532,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
     ref,
   ) {
     const effectiveTask = getPriorityTask(task);
+    const displayTask = task;
 
     console.log("[SIGNER CARD EFFECTIVE TASK]", {
       cardTaskId: task.id,
@@ -539,7 +542,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
       effectiveTaskStatus: effectiveTask.status,
     });
 
-    const roleMeta = getRoleMeta(effectiveTask);
+    const roleMeta = getRoleMeta(displayTask);
     const statusMeta = getStatusMeta(effectiveTask);
     const progressItems = buildProgressItems(effectiveTask);
     const historyItems = buildHistoryPreview(effectiveTask);
@@ -553,6 +556,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
     return (
       <article
         ref={ref}
+        className="signer-card"
         style={{
           ...getCardSurface(isActive),
           padding: 22,
@@ -570,6 +574,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
           }}
         >
           <div
+            className="signer-card-header"
             style={{
               display: "flex",
               alignItems: "flex-start",
@@ -595,6 +600,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
               </div>
 
               <div
+                className="signer-card-name"
                 style={{
                   fontSize: 19,
                   letterSpacing: "-0.03em",
@@ -604,10 +610,10 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                   wordBreak: "break-word",
                 }}
               >
-                {effectiveTask.displayName}
+                {displayTask.displayName}
               </div>
 
-              {effectiveTask.tenantLabel ? (
+              {displayTask.tenantLabel ? (
                 <div
                   style={{
                     marginTop: 6,
@@ -617,11 +623,11 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                     fontWeight: 700,
                   }}
                 >
-                  {effectiveTask.tenantLabel}
+                  {displayTask.tenantLabel}
                 </div>
               ) : null}
 
-              {effectiveTask.subtypeLabel ? (
+              {displayTask.subtypeLabel ? (
                 <div
                   style={{
                     marginTop: 6,
@@ -630,7 +636,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                     color: "#8A94A8",
                   }}
                 >
-                  {effectiveTask.subtypeLabel}
+                  {displayTask.subtypeLabel}
                 </div>
               ) : null}
             </div>
@@ -667,6 +673,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
 
             {(task as any).subTasks?.length > 0 && (
               <div
+                className="signer-card-subtasks"
                 style={{
                   display: "grid",
                   gap: 6,
@@ -747,6 +754,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
 
             {primaryAction || secondaryAction ? (
               <div
+                className="signer-card-actions"
                 style={{
                   display: "flex",
                   gap: 10,
@@ -859,6 +867,56 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
             </div>
           </div>
         </div>
+
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              @media (max-width: 700px) {
+                .signer-card {
+                  padding: 16px !important;
+                  border-radius: 20px !important;
+                }
+
+                .signer-card-header {
+                  display: grid !important;
+                  grid-template-columns: 1fr !important;
+                  gap: 10px !important;
+                }
+
+                .signer-card-status {
+                  justify-self: start !important;
+                  min-height: 32px !important;
+                }
+
+                .signer-card-name {
+                  font-size: 18px !important;
+                  line-height: 1.25 !important;
+                }
+
+                .signer-card-actions {
+                  display: grid !important;
+                  grid-template-columns: 1fr !important;
+                  gap: 10px !important;
+                  margin-top: 14px !important;
+                }
+
+                .signer-card-action {
+                  width: 100% !important;
+                  min-height: 48px !important;
+                  padding: 12px 14px !important;
+                  font-size: 15px !important;
+                }
+
+                .signer-card-subtasks > div {
+                  display: grid !important;
+                  grid-template-columns: 1fr !important;
+                  gap: 4px !important;
+                  align-items: start !important;
+                }
+              }
+            `,
+          }}
+        />
       </article>
     );
   },
