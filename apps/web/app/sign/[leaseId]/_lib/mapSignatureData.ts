@@ -220,6 +220,7 @@ function mapTenantTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTas
       roleLabel: String(t.role || "").toLowerCase() === "principal" ? "Locataire principal" : "Cotitulaire",
       documentId: contract?.documentId || null,
       documentLabel: documentTypeLabel("CONTRAT"),
+      documentType: "CONTRAT",
       documentFilename: contract?.filename || null,
       status,
       statusLabel: toTaskStatusLabel(status),
@@ -323,6 +324,7 @@ function mapGuarantorTasks(
       landlordPendingOnDocument: !isVisale && Boolean(effectiveActId) && !landlordSigned,
       documentId: isVisale ? null : effectiveActId,
       documentLabel: isVisale ? "Garantie VISALE" : documentTypeLabel("GUARANTOR_ACT"),
+      documentType: isVisale ? "VISALE" : "GUARANTOR_ACT",
       documentFilename: null,
       status,
       statusLabel: toTaskStatusLabel(status),
@@ -390,6 +392,7 @@ function buildLandlordGuaranteeSubTasks(
           : "En attente de la signature du garant",
         documentId: effectiveActId,
         documentLabel: documentTypeLabel("GUARANTOR_ACT"),
+        documentType: "GUARANTOR_ACT",
         documentFilename: null,
         status,
         statusLabel: toTaskStatusLabel(status),
@@ -442,6 +445,7 @@ function mapLandlordTask(
     roleLabel: "Bailleur",
     documentId: contract?.documentId || null,
     documentLabel: documentTypeLabel("CONTRAT"),
+    documentType: "CONTRAT",
     documentFilename: contract?.filename || null,
     status,
     statusLabel: toTaskStatusLabel(status),
@@ -467,6 +471,7 @@ function mapLandlordTask(
 function buildSecondaryTenantTasks(args: {
   block: SignableDocBlockLite | null | undefined;
   documentLabel: string;
+  documentType: string;
   contractTenants: Array<{
     leaseTenantId: string;
     tenantId: string;
@@ -474,7 +479,7 @@ function buildSecondaryTenantTasks(args: {
     role?: string | null;
   }>;
 }): SignerTask[] {
-  const { block, documentLabel, contractTenants } = args;
+  const { block, documentLabel, documentType, contractTenants } = args;
   if (!block?.documentId) return [];
 
   const tenantNeedByTenantId = new Map(
@@ -504,6 +509,7 @@ function buildSecondaryTenantTasks(args: {
           : "Cotitulaire",
       documentId: block.documentId,
       documentLabel,
+      documentType,
       documentFilename: block.filename || null,
       status,
       statusLabel: toTaskStatusLabel(status),
@@ -530,8 +536,9 @@ function buildSecondaryTenantTasks(args: {
 function buildSecondaryLandlordTask(args: {
   block: SignableDocBlockLite | null | undefined;
   documentLabel: string;
+  documentType: string;
 }): SignerTask[] {
-  const { block, documentLabel } = args;
+  const { block, documentLabel, documentType } = args;
   if (!block?.documentId) return [];
 
   const signed = Boolean(block.need?.landlord?.signed);
@@ -547,6 +554,7 @@ function buildSecondaryLandlordTask(args: {
       roleLabel: "Bailleur",
       documentId: block.documentId,
       documentLabel,
+      documentType,
       documentFilename: block.filename || null,
       status,
       statusLabel: toTaskStatusLabel(status),
@@ -581,42 +589,50 @@ function mapSecondaryDocTasks(sigStatus: SignatureStatusPayloadLite | null): Sig
   return [
     ...buildSecondaryTenantTasks({
       block: edlEntry,
-      documentLabel: "EDL entrée",
+      documentLabel: documentTypeLabel("EDL_ENTREE"),
+      documentType: "EDL_ENTREE",
       contractTenants,
     }),
     ...buildSecondaryLandlordTask({
       block: edlEntry,
-      documentLabel: "EDL entrée",
+      documentLabel: documentTypeLabel("EDL_ENTREE"),
+      documentType: "EDL_ENTREE",
     }),
 
     ...buildSecondaryTenantTasks({
       block: inventoryEntry,
-      documentLabel: "Inventaire entrée",
+      documentLabel: documentTypeLabel("INVENTAIRE_ENTREE"),
+      documentType: "INVENTAIRE_ENTREE",
       contractTenants,
     }),
     ...buildSecondaryLandlordTask({
       block: inventoryEntry,
-      documentLabel: "Inventaire entrée",
+      documentLabel: documentTypeLabel("INVENTAIRE_ENTREE"),
+      documentType: "INVENTAIRE_ENTREE",
     }),
 
     ...buildSecondaryTenantTasks({
       block: edlExit,
-      documentLabel: "EDL sortie",
+      documentLabel: documentTypeLabel("EDL_SORTIE"),
+      documentType: "EDL_SORTIE",
       contractTenants,
     }),
     ...buildSecondaryLandlordTask({
       block: edlExit,
-      documentLabel: "EDL sortie",
+      documentLabel: documentTypeLabel("EDL_SORTIE"),
+      documentType: "EDL_SORTIE",
     }),
 
     ...buildSecondaryTenantTasks({
       block: inventoryExit,
-      documentLabel: "Inventaire sortie",
+      documentLabel: documentTypeLabel("INVENTAIRE_SORTIE"),
+      documentType: "INVENTAIRE_SORTIE",
       contractTenants,
     }),
     ...buildSecondaryLandlordTask({
       block: inventoryExit,
-      documentLabel: "Inventaire sortie",
+      documentLabel: documentTypeLabel("INVENTAIRE_SORTIE"),
+      documentType: "INVENTAIRE_SORTIE",
     }),
   ];
 }
@@ -894,14 +910,23 @@ function mapDocuments(args: {
 
 function sortSignerTasks(tasks: SignerTask[]): SignerTask[] {
   function docRank(task: SignerTask): number {
-    if (task.documentLabel === "Contrat de location") return 1;
-    if (task.documentLabel === "Acte de caution") return 2;
-    if (task.documentLabel === "EDL entrée") return 3;
-    if (task.documentLabel === "Inventaire entrée") return 4;
-    if (task.documentLabel === "EDL sortie") return 5;
-    if (task.documentLabel === "Inventaire sortie") return 6;
-    return 99;
+  switch (task.documentType) {
+    case "CONTRAT":
+      return 1;
+    case "GUARANTOR_ACT":
+      return 2;
+    case "EDL_ENTREE":
+      return 3;
+    case "INVENTAIRE_ENTREE":
+      return 4;
+    case "EDL_SORTIE":
+      return 5;
+    case "INVENTAIRE_SORTIE":
+      return 6;
+    default:
+      return 99;
   }
+}
 
   function personRank(task: SignerTask): number {
     if (task.kind === "TENANT" && task.roleLabel === "Locataire principal") return 1;

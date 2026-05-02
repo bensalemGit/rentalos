@@ -40,7 +40,9 @@ export type SignerTask = {
 
   documentId: string | null;
   documentLabel: string;
+  documentType?: string | null;
   documentFilename?: string | null;
+
 
   status: SignerTaskStatus;
   statusLabel: string;
