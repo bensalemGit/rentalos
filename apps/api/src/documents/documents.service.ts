@@ -5,6 +5,7 @@ import * as fsSync from 'fs';
 import { PDFDocument } from 'pdf-lib';
 import * as fs from 'fs/promises';
 import * as path from 'path';
+import { MailerService } from '../mailer/mailer.service';
 
 type SignRole = 'BAILLEUR' | 'LOCATAIRE' | 'GARANT';
 type LeaseKind = 'MEUBLE_RP' | 'NU_RP' | 'SAISONNIER';
@@ -40,6 +41,8 @@ type AnyRow = any;
 
 @Injectable()
 export class DocumentsService {
+  constructor(private readonly mailer: MailerService) {}
+
   private pool = new Pool({ connectionString: process.env.DATABASE_URL });
   private storageBase = process.env.STORAGE_BASE_PATH || '/storage';
   private gotenberg = process.env.GOTENBERG_URL || 'http://gotenberg:3000';
@@ -74,6 +77,235 @@ private assertUuidV4(id: string, label: string) {
   if (!this.isUuidV4(id)) {
     throw new BadRequestException(`Invalid ${label} (expected uuid v4)`);
   }
+}
+
+private async getLatestRootDocumentByType(leaseId: string, type: DocType) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const q = await this.pool.query(
+    `
+    SELECT id, filename, type, created_at
+    FROM documents
+    WHERE lease_id = $1
+      AND type = $2
+      AND parent_document_id IS NULL
+    ORDER BY created_at DESC NULLS LAST
+    LIMIT 1
+    `,
+    [leaseId, type],
+  );
+
+  return q.rows[0] || null;
+}
+
+private async readDocumentAttachment(documentId: string) {
+  this.assertUuidV4(documentId, 'documentId');
+
+  const file = await this.getDocumentFile(documentId);
+  const content = await fs.readFile(file.absPath);
+
+  return {
+    filename: file.filename,
+    content,
+    contentType: 'application/pdf',
+  };
+}
+
+private async getLeaseTenantsForMail(leaseId: string) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const q = await this.pool.query(
+    `
+    SELECT
+      lt.id AS lease_tenant_id,
+      t.id AS tenant_id,
+      t.full_name,
+      t.email
+    FROM lease_tenants lt
+    JOIN tenants t ON t.id = lt.tenant_id
+    WHERE lt.lease_id = $1
+    ORDER BY lt.created_at ASC NULLS LAST
+    `,
+    [leaseId],
+  );
+
+  return q.rows;
+}
+
+private async getSignedCautionGuaranteesForMail(leaseId: string) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const q = await this.pool.query(
+    `
+    SELECT
+      lg.id AS guarantee_id,
+      lg.guarantor_full_name,
+      lg.guarantor_email,
+      lg.signed_final_document_id,
+      t.full_name AS tenant_full_name
+    FROM lease_guarantees lg
+    LEFT JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
+    LEFT JOIN tenants t ON t.id = lt.tenant_id
+    WHERE lg.lease_id = $1
+      AND UPPER(COALESCE(lg.type, '')) = 'CAUTION'
+      AND lg.signed_final_document_id IS NOT NULL
+    ORDER BY lg.created_at ASC NULLS LAST
+    `,
+    [leaseId],
+  );
+
+  return q.rows;
+}
+
+async sendEntryPackToTenants(leaseId: string) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const pack = await this.getLatestRootDocumentByType(leaseId, 'PACK_FINAL');
+  if (!pack?.id) {
+    throw new BadRequestException('Pack entrée introuvable. Génère le PACK_FINAL avant envoi.');
+  }
+
+  const tenants = await this.getLeaseTenantsForMail(leaseId);
+  const recipients = tenants.filter((t: any) => String(t.email || '').includes('@'));
+
+  if (recipients.length === 0) {
+    throw new BadRequestException('Aucun email locataire disponible.');
+  }
+
+  const attachment = await this.readDocumentAttachment(String(pack.id));
+
+  const results = [];
+  for (const tenant of recipients) {
+    const to = String(tenant.email || '').trim();
+    const name = String(tenant.full_name || '').trim() || 'Locataire';
+
+    const subject = 'Votre pack d’entrée RentalOS';
+    const html = `
+      <p>Bonjour ${this.escapeHtml(name)},</p>
+      <p>Vous trouverez en pièce jointe votre pack d’entrée relatif au bail.</p>
+      <p>Cordialement,<br/>RentalOS</p>
+    `;
+
+    const sent = await this.mailer.sendMail(to, subject, html, [attachment]);
+    results.push({
+      tenantId: tenant.tenant_id,
+      email: to,
+      sent: sent.sent === true,
+      error: sent.error || null,
+    });
+  }
+
+  return {
+    ok: true,
+    documentId: pack.id,
+    sent: results.filter((r) => r.sent).length,
+    failed: results.filter((r) => !r.sent).length,
+    results,
+  };
+}
+
+async sendGuarantorActsToGuarantors(leaseId: string) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const guarantees = await this.getSignedCautionGuaranteesForMail(leaseId);
+  const recipients = guarantees.filter((g: any) => String(g.guarantor_email || '').includes('@'));
+
+  if (recipients.length === 0) {
+    throw new BadRequestException('Aucun acte de caution signé avec email garant disponible.');
+  }
+
+  const results = [];
+
+  for (const g of recipients) {
+    const to = String(g.guarantor_email || '').trim();
+    const guarantorName = String(g.guarantor_full_name || '').trim() || 'Garant';
+    const tenantName = String(g.tenant_full_name || '').trim();
+
+    const attachment = await this.readDocumentAttachment(String(g.signed_final_document_id));
+
+    const subject = 'Votre acte de caution signé RentalOS';
+    const html = `
+      <p>Bonjour ${this.escapeHtml(guarantorName)},</p>
+      <p>Vous trouverez en pièce jointe votre acte de caution signé${tenantName ? ` pour ${this.escapeHtml(tenantName)}` : ''}.</p>
+      <p>Cordialement,<br/>RentalOS</p>
+    `;
+
+    const sent = await this.mailer.sendMail(to, subject, html, [attachment]);
+    results.push({
+      guaranteeId: g.guarantee_id,
+      documentId: g.signed_final_document_id,
+      email: to,
+      sent: sent.sent === true,
+      error: sent.error || null,
+    });
+  }
+
+  return {
+    ok: true,
+    sent: results.filter((r) => r.sent).length,
+    failed: results.filter((r) => !r.sent).length,
+    results,
+  };
+}
+
+async sendExitDocumentsToTenants(leaseId: string) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const exitPack = await this.getLatestRootDocumentByType(leaseId, 'PACK_EDL_INV_SORTIE');
+  const exitCertificate = await this.getLatestRootDocumentByType(leaseId, 'ATTESTATION_SORTIE');
+
+  if (!exitPack?.id) {
+    throw new BadRequestException('Pack sortie introuvable. Génère le PACK_EDL_INV_SORTIE avant envoi.');
+  }
+
+  if (!exitCertificate?.id) {
+    throw new BadRequestException('Attestation sortie introuvable. Génère ATTESTATION_SORTIE avant envoi.');
+  }
+
+  const tenants = await this.getLeaseTenantsForMail(leaseId);
+  const recipients = tenants.filter((t: any) => String(t.email || '').includes('@'));
+
+  if (recipients.length === 0) {
+    throw new BadRequestException('Aucun email locataire disponible.');
+  }
+
+  const attachments = [
+    await this.readDocumentAttachment(String(exitPack.id)),
+    await this.readDocumentAttachment(String(exitCertificate.id)),
+  ];
+
+  const results = [];
+
+  for (const tenant of recipients) {
+    const to = String(tenant.email || '').trim();
+    const name = String(tenant.full_name || '').trim() || 'Locataire';
+
+    const subject = 'Vos documents de sortie RentalOS';
+    const html = `
+      <p>Bonjour ${this.escapeHtml(name)},</p>
+      <p>Vous trouverez en pièces jointes vos documents de sortie : pack de sortie et attestation de sortie.</p>
+      <p>Cordialement,<br/>RentalOS</p>
+    `;
+
+    const sent = await this.mailer.sendMail(to, subject, html, attachments);
+    results.push({
+      tenantId: tenant.tenant_id,
+      email: to,
+      sent: sent.sent === true,
+      error: sent.error || null,
+    });
+  }
+
+  return {
+    ok: true,
+    documentIds: {
+      exitPackId: exitPack.id,
+      exitCertificateId: exitCertificate.id,
+    },
+    sent: results.filter((r) => r.sent).length,
+    failed: results.filter((r) => !r.sent).length,
+    results,
+  };
 }
 
 // -------------------------------------
