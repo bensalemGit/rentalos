@@ -2,6 +2,17 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import {
+  ArrowLeft,
+  BadgeCheck,
+  CircleAlert,
+  FileSignature,
+  Mail,
+  RefreshCw,
+  Shield,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 
 const API =
   typeof window !== "undefined"
@@ -71,6 +82,46 @@ function friendlyError(msg: string) {
   if (m.includes("invalid guarantee type")) return "Type de garantie invalide.";
   if (m.includes("missing")) return "Champs manquant.";
   return msg || "Erreur";
+}
+const blue = "#3467EB";
+const border = "rgba(27,39,64,0.08)";
+const cardBorder = "rgba(27,39,64,0.06)";
+const shellBg = "#F6F8FC";
+const title = "#17233A";
+const muted = "#667085";
+const softText = "#8D99AE";
+
+function roleLabel(role?: string | null) {
+  const v = String(role || "").toLowerCase();
+
+  if (v === "principal") return "Locataire principal";
+  if (v === "cotenant") return "Colocataire";
+  if (v === "co_tenant") return "Colocataire";
+
+  return v || "Locataire";
+}
+
+function guaranteeTypeLabel(type?: string | null) {
+  const v = String(type || "").toUpperCase();
+
+  if (v === "CAUTION") return "Caution";
+  if (v === "VISALE") return "VISALE";
+
+  return v || "Garantie";
+}
+
+function guaranteeStatusLabel(status?: string | null) {
+  const v = String(status || "").toUpperCase();
+
+  if (v === "DRAFT") return "Brouillon";
+  if (v === "READY") return "Prête";
+  if (v === "SENT") return "Envoyée";
+  if (v === "SIGNED") return "Signée";
+  if (v === "REJECTED") return "Rejetée";
+  if (v === "EXPIRED") return "Expirée";
+  if (v === "CANCELLED") return "Annulée";
+
+  return v || "—";
 }
 
 export default function GuaranteesPage({ params }: { params: { leaseId: string } }) {
@@ -404,21 +455,64 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
   const hasAny = items.length > 0;
 
   return (
-    <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto", fontFamily: "Arial" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+    <main
+      style={{
+        width: "100%",
+        maxWidth: 1180,
+        boxSizing: "border-box",
+        margin: "0 auto",
+        padding: "32px 36px 56px",
+        background: shellBg,
+        minHeight: "100vh",
+        fontFamily:
+          "Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 16,
+          flexWrap: "wrap",
+          alignItems: "flex-start",
+          marginBottom: 18,
+        }}
+      >
         <div>
-          <h1 style={{ margin: 0 }}>Garanties du bail</h1>
-          <div style={{ color: "#6b7280", marginTop: 6, fontSize: 13 }}>
-            Bail {leaseId.slice(0, 8)}… • {items.length} garantie(s)
+          <h1
+            style={{
+              marginTop: 0,
+              marginBottom: 8,
+              fontSize: 34,
+              lineHeight: 1.02,
+              letterSpacing: "-0.04em",
+              color: title,
+              fontWeight: 900,
+            }}
+          >
+            Garanties du bail
+          </h1>
+
+          <p style={{ margin: 0, fontSize: 15, color: muted, lineHeight: 1.65 }}>
+            Gestion des cautions et garanties VISALE par locataire.
+          </p>
+
+          <div style={{ marginTop: 10, fontSize: 13, color: softText, fontWeight: 700 }}>
+            {tenants.length} locataire(s) · {items.length} garantie(s)
           </div>
         </div>
 
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <button onClick={load} style={btnSecondary()}>
+            <RefreshCw size={14} strokeWidth={2.1} />
             Rafraîchir
           </button>
+
           <Link href={`/dashboard/leases/${leaseId}/edit`}>
-            <button style={btnSecondary()}>← Retour bail</button>
+            <button style={btnSecondary()}>
+              <ArrowLeft size={14} strokeWidth={2.1} />
+              Retour bail
+            </button>
           </Link>
         </div>
       </div>
@@ -473,15 +567,42 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
             <div style={card()}>
               <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
                 <div>
-                  <div style={{ fontWeight: 900 }}>
-                    {lt.tenant_full_name || "Locataire"}{" "}
-                    <span style={{ color: "#6b7280", fontWeight: 700, fontSize: 12 }}>
-                      {lt.role ? `(${lt.role})` : ""} • lease_tenant_id: {lt.id.slice(0, 8)}…
-                    </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <div
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 16,
+                        background: "#EEF4FF",
+                        color: blue,
+                        border: "1px solid rgba(47,99,224,0.10)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        flexShrink: 0,
+                      }}
+                    >
+                      <UserRound size={20} strokeWidth={2.1} />
+                    </div>
+
+                    <div>
+                      <div style={{ fontWeight: 900, fontSize: 18, color: title, letterSpacing: "-0.03em" }}>
+                        {lt.tenant_full_name || "Locataire"}
+                      </div>
+
+                      <div style={{ color: muted, fontSize: 13, marginTop: 4 }}>
+                        {roleLabel(lt.role)} · {lt.tenant_email || "email non renseigné"}
+                      </div>
+                    </div>
                   </div>
-                  <div style={{ color: "#6b7280", fontSize: 13 }}>
-                    {lt.tenant_email || "—"} • sélection:{" "}
-                    <b>{selected ? `${selected.type} (${selected.id.slice(0, 8)}…)` : "—"}</b>
+
+                  <div style={{ color: muted, fontSize: 13, marginTop: 10 }}>
+                    Garantie sélectionnée :{" "}
+                    <b>
+                      {selected
+                        ? guaranteeTypeLabel(selected.type)
+                        : "aucune"}
+                    </b>
                     {selected && String(selected.type).toUpperCase() === "VISALE" && (
                       <div style={{ marginTop: 6, color: "#6b7280", fontSize: 12 }}>
                         ℹ️ VISALE sélectionné : pas d’acte de caution à signer (pas de lien garant).
@@ -492,7 +613,8 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                   <button onClick={() => ensureDraft(lt.id)} style={btnAction()}>
-                    + Ajouter une garantie
+                    <Shield size={14} strokeWidth={2.1} />
+                    Ajouter une garantie
                   </button>
 
                   <button
@@ -507,6 +629,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
                         : ""
                     }
                   >
+                    <Mail size={14} strokeWidth={2.1} />
                     Envoyer lien garant
                   </button>
 
@@ -522,7 +645,8 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
                         : ""
                     }
                   >
-                    Renvoyer garant (force)
+                    <Mail size={14} strokeWidth={2.1} />
+                    Renvoyer lien
                   </button>
                 </div>
               </div>
@@ -637,20 +761,42 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
                         }}
                       >
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
-                          <div style={{ fontWeight: 900 }}>
-                            {g.type}{" "}
-                            <span style={{ fontSize: 12, color: "#6b7280", fontWeight: 700 }}>
-                              • {g.status} • {g.id.slice(0, 8)}…
+                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                            <div style={{ fontWeight: 900, color: title, display: "inline-flex", alignItems: "center", gap: 8 }}>
+                              {g.type === "CAUTION" ? (
+                                <FileSignature size={16} strokeWidth={2.1} />
+                              ) : (
+                                <BadgeCheck size={16} strokeWidth={2.1} />
+                              )}
+                              {guaranteeTypeLabel(g.type)}
+                            </div>
+
+                            <span style={statusPill(g.status)}>
+                              {guaranteeStatusLabel(g.status)}
                             </span>
+
+                            {g.selected && (
+                              <span style={selectedPill()}>
+                                Sélectionnée
+                              </span>
+                            )}
+
+                            {g.type === "CAUTION" && g.guarantor_act_document_id && (
+                              <span style={docReadyPill()}>
+                                Acte généré
+                              </span>
+                            )}
                           </div>
 
                           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                             {!g.selected && (
                               <button onClick={() => selectGuarantee(g.id)} style={btnAction()}>
+                                <BadgeCheck size={14} strokeWidth={2.1} />
                                 Sélectionner
                               </button>
                             )}
                             <button onClick={() => removeGuarantee(g.id)} style={btnDanger()}>
+                              <Trash2 size={14} strokeWidth={2.1} />
                               Supprimer
                             </button>
                           </div>
@@ -778,9 +924,9 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
                             </div>
                           )}
 
-                          <div style={{ color: "#6b7280", fontSize: 12 }}>
-                            selected={String(g.selected)} • updated={String(g.updated_at).slice(0, 19)}
-                            {savingById[g.id] && <span style={{ marginLeft: 8 }}>⏳ sauvegarde…</span>}
+                          <div style={{ color: softText, fontSize: 12, fontWeight: 600 }}>
+                            Dernière mise à jour : {String(g.updated_at).slice(0, 10)}
+                            {savingById[g.id] && <span style={{ marginLeft: 8 }}>Sauvegarde…</span>}
                           </div>
                         </div>
                       </div>
@@ -798,11 +944,12 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
 
 function card() {
   return {
-    border: "1px solid #e5e7eb",
-    borderRadius: 16,
+    border: `1px solid ${cardBorder}`,
+    borderRadius: 20,
     background: "#fff",
-    padding: 14,
-    marginTop: 12,
+    padding: 18,
+    marginTop: 14,
+    boxShadow: "0 10px 30px rgba(16,24,40,0.05)",
   } as const;
 }
 
@@ -810,24 +957,31 @@ function input() {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid #e5e7eb",
+    border: `1px solid ${border}`,
     width: "100%",
     boxSizing: "border-box" as const,
+    background: "#fff",
+    color: title,
   } as const;
 }
 
 function labelMuted() {
-  return { fontSize: 12, color: "#6b7280", fontWeight: 800 } as const;
+  return { fontSize: 12, color: muted, fontWeight: 800 } as const;
 }
 
 function btnSecondary() {
   return {
     padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid #e5e7eb",
+    borderRadius: 14,
+    border: `1px solid ${border}`,
     background: "#fff",
     cursor: "pointer",
     fontWeight: 800,
+    color: "#243247",
+    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
   } as const;
 }
 
@@ -835,12 +989,17 @@ function btnAction() {
   return {
     padding: "10px 12px",
     borderRadius: 12,
-    border: "1px solid #e5e7eb",
-    background: "#fff",
+    border: `1px solid ${border}`,
+    background: "#F8FAFC",
     cursor: "pointer",
     fontWeight: 800,
     minWidth: 160,
     textAlign: "center" as const,
+    color: "#243247",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   } as const;
 }
 
@@ -848,11 +1007,15 @@ function btnPrimary() {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: "1px solid rgba(31,111,235,0.35)",
-    background: "rgba(31,111,235,0.10)",
-    color: "#0b2a6f",
+    border: "1px solid rgba(52,103,235,0.16)",
+    background: blue,
+    color: "#fff",
     fontWeight: 900,
     cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 8,
+    boxShadow: "0 8px 18px rgba(52,103,235,0.16)",
   } as const;
 }
 
@@ -860,10 +1023,88 @@ function btnDanger() {
   return {
     padding: "10px 14px",
     borderRadius: 12,
-    border: "1px solid rgba(220,38,38,0.35)",
-    background: "rgba(220,38,38,0.08)",
-    color: "#7f1d1d",
+    border: "1px solid rgba(220,38,38,0.20)",
+    background: "#FFF5F5",
+    color: "#A12C2C",
     fontWeight: 900,
     cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  } as const;
+}
+
+function statusPill(status?: string | null) {
+  const v = String(status || "").toUpperCase();
+
+  if (v === "SIGNED") {
+    return {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: "1px solid rgba(31,157,97,0.16)",
+      background: "#ECF9F1",
+      color: "#1F7A4D",
+      fontSize: 12,
+      fontWeight: 800,
+    } as const;
+  }
+
+  if (v === "SENT" || v === "READY") {
+    return {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: "1px solid rgba(52,103,235,0.16)",
+      background: "#EEF4FF",
+      color: blue,
+      fontSize: 12,
+      fontWeight: 800,
+    } as const;
+  }
+
+  if (v === "REJECTED" || v === "EXPIRED" || v === "CANCELLED") {
+    return {
+      padding: "5px 10px",
+      borderRadius: 999,
+      border: "1px solid rgba(220,38,38,0.20)",
+      background: "#FFF5F5",
+      color: "#A12C2C",
+      fontSize: 12,
+      fontWeight: 800,
+    } as const;
+  }
+
+  return {
+    padding: "5px 10px",
+    borderRadius: 999,
+    border: `1px solid ${border}`,
+    background: "#F8FAFC",
+    color: muted,
+    fontSize: 12,
+    fontWeight: 800,
+  } as const;
+}
+
+function selectedPill() {
+  return {
+    padding: "5px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(31,157,97,0.16)",
+    background: "#ECF9F1",
+    color: "#1F7A4D",
+    fontSize: 12,
+    fontWeight: 800,
+  } as const;
+}
+
+function docReadyPill() {
+  return {
+    padding: "5px 10px",
+    borderRadius: 999,
+    border: "1px solid rgba(52,103,235,0.16)",
+    background: "#EEF4FF",
+    color: blue,
+    fontSize: 12,
+    fontWeight: 800,
   } as const;
 }
