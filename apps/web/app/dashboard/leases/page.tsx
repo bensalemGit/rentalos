@@ -1187,6 +1187,17 @@ if (!r.ok) {
                               <div style={leasePopoverSectionLabelStyle()}>Documents</div>
 
                               <Link
+                                href={`/import/${l.id}`}
+                                style={leasePopoverLinkReset()}
+                                onClick={() => setOpenLeaseMenuId(null)}
+                              >
+                                <span style={leasePopoverItemStyle()}>
+                                  <Building2 size={15} strokeWidth={2.1} />
+                                  Import
+                                </span>
+                              </Link>
+
+                              <Link
                                 href={`/guarantor-act/${l.id}`}
                                 style={leasePopoverLinkReset()}
                                 onClick={() => setOpenLeaseMenuId(null)}
@@ -1229,6 +1240,17 @@ if (!r.ok) {
                                   Paiements & solde
                                 </span>
                               </Link>
+
+                              <Link
+                                href={`/dashboard/leases/${l.id}/documents`}
+                                style={leasePopoverLinkReset()}
+                                onClick={() => setOpenLeaseMenuId(null)}
+                              >
+                                <span style={leasePopoverItemStyle()}>
+                                  <FileText size={15} strokeWidth={2.1} />
+                                  Documents
+                                </span>
+                              </Link>
                               
                             </div>
                           </div>
@@ -1243,35 +1265,126 @@ if (!r.ok) {
                     <span style={{ display: "inline-flex", alignItems: "center", gap: 7 }}><Shield size={13} strokeWidth={2} color={softText} />{(l.deposit_cents / 100).toFixed(0)} €</span>
                   </div>
 
-                  <div style={{ borderTop: `1px solid ${line}`, padding: "12px 22px 14px", display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    <Link href={`/guarantor-act/${l.id}`}><button style={docChipButton(border)}><Shield size={14} strokeWidth={2.1} /> Acte caution</button></Link>
-                    <Link href={`/edl/${l.id}`}><button style={docChipButton(border)}><FolderKanban size={14} strokeWidth={2.1} /> EDL</button></Link>
-                    <Link href={`/inventory/${l.id}`}><button style={docChipButton(border)}><PackageSearch size={14} strokeWidth={2.1} /> Inventaire</button></Link>
-                    <span
-                      style={{
-                        width: 1,
-                        height: 22,
-                        background: "rgba(27,39,64,0.10)",
-                        display: "inline-block",
-                      }}
-                    />
+                  <div
+                    style={{
+                      borderTop: `1px solid ${line}`,
+                      padding: isMobile ? "12px 14px 14px" : "12px 22px 14px",
+                      display: isMobile ? "grid" : "flex",
+                      gridTemplateColumns: isMobile ? "1fr 1fr" : undefined,
+                      gap: 10,
+                      flexWrap: isMobile ? undefined : "wrap",
+                      alignItems: "center",
+                      background: "#FBFCFE",
+                    }}
+                  >
+                    <Link href={`/import/${l.id}`}>
+                      <button
+                        style={{
+                          ...docChipButton(border),
+                          width: isMobile ? "100%" : undefined,
+                          justifyContent: isMobile ? "center" : undefined,
+                          minHeight: isMobile ? 44 : 38,
+                        }}
+                      >
+                        <Building2 size={14} strokeWidth={2.1} />
+                        Import
+                      </button>
+                    </Link>
+
+                    {!isMobile && (
+                      <span
+                        style={{
+                          width: 1,
+                          height: 22,
+                          background: "rgba(27,39,64,0.10)",
+                          display: "inline-block",
+                        }}
+                      />
+                    )}
+
+                    <Link href={`/guarantor-act/${l.id}`}>
+                      <button
+                        style={{
+                          ...docChipButton(border),
+                          width: isMobile ? "100%" : undefined,
+                          justifyContent: isMobile ? "center" : undefined,
+                          minHeight: isMobile ? 44 : 38,
+                        }}
+                      >
+                        <Shield size={14} strokeWidth={2.1} /> Acte caution
+                      </button>
+                    </Link>
+
+                    <Link href={`/edl/${l.id}`}>
+                      <button
+                        style={{
+                          ...docChipButton(border),
+                          width: isMobile ? "100%" : undefined,
+                          justifyContent: isMobile ? "center" : undefined,
+                          minHeight: isMobile ? 44 : 38,
+                        }}
+                      >
+                        <FolderKanban size={14} strokeWidth={2.1} /> EDL
+                      </button>
+                    </Link>
+
+                    <Link href={`/inventory/${l.id}`}>
+                      <button
+                        style={{
+                          ...docChipButton(border),
+                          width: isMobile ? "100%" : undefined,
+                          justifyContent: isMobile ? "center" : undefined,
+                          minHeight: isMobile ? 44 : 38,
+                        }}
+                      >
+                        <PackageSearch size={14} strokeWidth={2.1} /> Inventaire
+                      </button>
+                    </Link>
+
+                    {!isMobile && (
+                      <span
+                        style={{
+                          width: 1,
+                          height: 22,
+                          background: "rgba(27,39,64,0.10)",
+                          display: "inline-block",
+                        }}
+                      />
+                    )}
 
                     <Link href={`/dashboard/leases/${l.id}/payments`}>
-                      <button style={docChipButton(border)}>
+                      <button
+                        style={{
+                          ...docChipButton(border),
+                          width: isMobile ? "100%" : undefined,
+                          justifyContent: isMobile ? "center" : undefined,
+                          minHeight: isMobile ? 44 : 38,
+                        }}
+                      >
                         <CreditCard size={14} strokeWidth={2.1} /> Paiements & solde
                       </button>
                     </Link>
-                    <span
-                      style={{
-                        width: 1,
-                        height: 22,
-                        background: "rgba(27,39,64,0.10)",
-                        display: "inline-block",
-                      }}
-                    />
+
+                    {!isMobile && (
+                      <span
+                        style={{
+                          width: 1,
+                          height: 22,
+                          background: "rgba(27,39,64,0.10)",
+                          display: "inline-block",
+                        }}
+                      />
+                    )}
 
                     <Link href={`/dashboard/leases/${l.id}/documents`}>
-                      <button style={docChipButton(border)}>
+                      <button
+                        style={{
+                          ...docChipButton(border),
+                          width: isMobile ? "100%" : undefined,
+                          justifyContent: isMobile ? "center" : undefined,
+                          minHeight: isMobile ? 44 : 38,
+                        }}
+                      >
                         <FileText size={14} strokeWidth={2.1} /> Documents
                       </button>
                     </Link>

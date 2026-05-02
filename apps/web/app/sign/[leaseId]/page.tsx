@@ -495,12 +495,7 @@ useEffect(() => {
         null;
       setNoticeDoc(notice);
 
-      const pack =
-        arr
-          .filter((d: any) => d.type === "PACK")
-          .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
-        null;
-      setPackDoc(pack);
+      setPackDoc(null);
 
       // ✅ PACK_FINAL V2 (signé) : doc type PACK_FINAL dont filename contient PACK_FINAL_V2
       const packFinalV2 =

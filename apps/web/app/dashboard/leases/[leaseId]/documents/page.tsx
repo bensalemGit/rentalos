@@ -39,33 +39,26 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
     setStatus("Chargement…");
 
     try {
-            // Info garantie : l'acte de caution est optionnel
+      // Info garantie : l'acte de caution est optionnel.
+      // Source de vérité : /api/guarantees?leaseId=...
       try {
-        const leaseRes = await fetch(`${API}/leases/${leaseId}`, {
+        const guaranteesRes = await fetch(`${API}/guarantees?leaseId=${encodeURIComponent(leaseId)}`, {
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
           cache: "no-store",
         });
 
-        const lease = await leaseRes.json().catch(() => ({}));
+        const guaranteesJson = await guaranteesRes.json().catch(() => ({}));
+        const items = Array.isArray(guaranteesJson?.items) ? guaranteesJson.items : [];
 
-        const guarantees =
-          lease?.guarantees ||
-          lease?.lease?.guarantees ||
-          lease?.data?.guarantees ||
-          [];
+        const hasSelectedCaution = items.some((g: any) => {
+          return (
+            String(g?.type || "").toUpperCase() === "CAUTION" &&
+            g?.selected === true
+          );
+        });
 
-        setHasGuarantor(
-          Array.isArray(guarantees)
-            ? guarantees.length > 0
-            : Boolean(
-                lease?.guarantor_id ||
-                  lease?.guarantorId ||
-                  lease?.guarantor ||
-                  lease?.guarantee_id ||
-                  lease?.guaranteeId
-              )
-        );
+        setHasGuarantor(hasSelectedCaution);
       } catch {
         setHasGuarantor(false);
       }
@@ -335,8 +328,12 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
           <button onClick={refresh} style={secondaryBtn}>
             <RefreshCw size={15} /> Rafraîchir
           </button>
+          <Link href={`/dashboard/leases/${leaseId}/edit`}>
+            <button style={secondaryBtn}>Retour au bail</button>
+          </Link>
+
           <Link href={`/dashboard/leases`}>
-            <button style={secondaryBtn}>Retour baux</button>
+            <button style={secondaryBtn}>Tous les baux</button>
           </Link>
         </div>
       </header>

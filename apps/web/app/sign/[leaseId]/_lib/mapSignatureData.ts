@@ -860,18 +860,6 @@ function mapDocuments(args: {
     });
   }
 
-  const packDoc = args.docs.find((d) => d.type === "PACK");
-  if (packDoc) {
-    pushDoc({
-      id: packDoc.id,
-      label: "Pack documents",
-      type: "PACK",
-      filename: packDoc.filename || null,
-      statusLabel: "Généré",
-      downloadable: true,
-    });
-  }
-
   const exitPackDoc = args.docs.find(
     (d) => d.type === "PACK_EDL_INV_SORTIE",
   );

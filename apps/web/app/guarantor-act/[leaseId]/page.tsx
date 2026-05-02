@@ -21,7 +21,7 @@ export default function GuarantorActPage({ params }: Props) {
   const [candidates, setCandidates] = useState<GuarantorActCandidate[]>([]);
   const [error, setError] = useState<string>("");
 
-  const [creatingFor, setCreatingFor] = useState<string>(""); // leaseTenantId
+  const [creatingFor, setCreatingFor] = useState<string>(""); // guaranteeId
   const [createdDocs, setCreatedDocs] = useState<Record<string, GeneratedDocument>>({});
   const [createError, setCreateError] = useState<string>("");
 
@@ -51,11 +51,15 @@ export default function GuarantorActPage({ params }: Props) {
 
   const hasMany = candidates.length > 1;
 
-  async function generateAct(leaseTenantId: string) {
-    setCreatingFor(leaseTenantId);
+  async function generateAct(candidate: GuarantorActCandidate) {
+    const guaranteeId = candidate.guaranteeId;
+
+    setCreatingFor(guaranteeId);
     setCreateError("");
+
     try {
-      const body = { leaseId, leaseTenantId };
+      const body = { leaseId, guaranteeId };
+
       const res = await apiFetch<GenerateDocResponse>(`/documents/guarantor-act`, {
         method: "POST",
         body: JSON.stringify(body),
@@ -63,7 +67,7 @@ export default function GuarantorActPage({ params }: Props) {
 
       setCreatedDocs((prev) => ({
         ...prev,
-        [leaseTenantId]: res.document,
+        [guaranteeId]: res.document,
       }));
     } catch (e: any) {
       setCreateError(e?.message || "Erreur génération acte");
@@ -124,8 +128,8 @@ export default function GuarantorActPage({ params }: Props) {
 
           <div style={{ display: "grid", gap: 10 }}>
             {candidates.map((c) => {
-              const doc = createdDocs[c.leaseTenantId];
-              const busy = creatingFor === c.leaseTenantId;
+              const doc = createdDocs[c.guaranteeId];
+              const busy = creatingFor === c.guaranteeId;
 
               return (
                 <div key={c.guaranteeId} style={card()}>
@@ -151,13 +155,13 @@ export default function GuarantorActPage({ params }: Props) {
                       </div>
 
                       <div style={{ marginTop: 10, color: "#666", fontSize: 12 }}>
-                        leaseTenantId: <code>{c.leaseTenantId}</code>
+                        garantie: <code>{c.guaranteeId}</code>
                       </div>
                     </div>
 
                     <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 180 }}>
                       <button
-                        onClick={() => generateAct(c.leaseTenantId)}
+                        onClick={() => generateAct(c)}
                         disabled={busy}
                         style={btn(busy)}
                       >
