@@ -1,6 +1,19 @@
+export type DocumentType =
+  | "CONTRAT"
+  | "GUARANTOR_ACT"
+  | "ACTE_CAUTION"
+  | "EDL_ENTREE"
+  | "INVENTAIRE_ENTREE"
+  | "NOTICE"
+  | "EDL_SORTIE"
+  | "INVENTAIRE_SORTIE"
+  | "ATTESTATION_SORTIE"
+  | "PACK_FINAL"
+  | "PACK_EDL_INV_SORTIE";
+
 export type DocumentCategory = "entry" | "exit" | "guarantee" | "pack" | "legal" | "other";
 
-export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
+export const DOCUMENT_TYPE_LABELS: Record<DocumentType, string> = {
   CONTRAT: "Contrat de location",
 
   GUARANTOR_ACT: "Acte de caution",
@@ -18,7 +31,7 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
   PACK_EDL_INV_SORTIE: "Pack sortie",
 };
 
-export const DOCUMENT_TYPE_CATEGORIES: Record<string, DocumentCategory> = {
+export const DOCUMENT_TYPE_CATEGORIES: Record<DocumentType, DocumentCategory> = {
   CONTRAT: "legal",
 
   GUARANTOR_ACT: "guarantee",
@@ -36,18 +49,33 @@ export const DOCUMENT_TYPE_CATEGORIES: Record<string, DocumentCategory> = {
   PACK_EDL_INV_SORTIE: "pack",
 };
 
+export function isKnownDocumentType(type?: string | null): type is DocumentType {
+  const key = normalizeDocumentType(type);
+  return Object.prototype.hasOwnProperty.call(DOCUMENT_TYPE_LABELS, key);
+}
+
 export function normalizeDocumentType(type?: string | null) {
   return String(type || "").trim().toUpperCase();
 }
 
 export function documentTypeLabel(type?: string | null) {
   const key = normalizeDocumentType(type);
-  return DOCUMENT_TYPE_LABELS[key] || key || "Document";
+
+  if (isKnownDocumentType(key)) {
+    return DOCUMENT_TYPE_LABELS[key];
+  }
+
+  return key || "Document";
 }
 
 export function documentTypeCategory(type?: string | null): DocumentCategory {
   const key = normalizeDocumentType(type);
-  return DOCUMENT_TYPE_CATEGORIES[key] || "other";
+
+  if (isKnownDocumentType(key)) {
+    return DOCUMENT_TYPE_CATEGORIES[key];
+  }
+
+  return "other";
 }
 
 export function isSignedFinalDocument(doc: { type?: string | null; filename?: string | null }) {
