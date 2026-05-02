@@ -195,4 +195,19 @@ async acknowledge(
     });
   }
 
+  @Post('send-entry-pack')
+  async sendEntryPack(@Body() body: { leaseId: string }) {
+    return this.docs.sendEntryPackToTenants(String(body?.leaseId || '').trim());
+  }
+
+  @Post('send-guarantor-acts')
+  async sendGuarantorActs(@Body() body: { leaseId: string }) {
+    return this.docs.sendGuarantorActsToGuarantors(String(body?.leaseId || '').trim());
+  }
+
+  @Post('send-exit-documents')
+  async sendExitDocuments(@Body() body: { leaseId: string }) {
+    return this.docs.sendExitDocumentsToTenants(String(body?.leaseId || '').trim());
+  }
+
 }
