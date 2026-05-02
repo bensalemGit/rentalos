@@ -81,6 +81,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
   const [error, setError] = useState("");
 
   const [items, setItems] = useState<Guarantee[]>([]);
+  const [leaseTenants, setLeaseTenants] = useState<LeaseTenant[]>([]);
 
   // create form per lease_tenant_id
   const [draftByLt, setDraftByLt] = useState<Record<string, any>>({});
@@ -117,9 +118,19 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
     if (!token) return;
     setError("");
     setStatus("Chargement…");
+
     try {
-      const j = await apiFetch(`/guarantees?leaseId=${encodeURIComponent(leaseId)}`, { method: "GET" });
-      setItems(Array.isArray(j?.items) ? j.items : []);
+      const guaranteesRes = await apiFetch(
+        `/guarantees?leaseId=${encodeURIComponent(leaseId)}`,
+        { method: "GET" }
+      );
+
+      const apiItems = Array.isArray(guaranteesRes?.items) ? guaranteesRes.items : [];
+      const apiTenants = Array.isArray(guaranteesRes?.tenants) ? guaranteesRes.tenants : [];
+
+      setItems(apiItems);
+      setLeaseTenants(apiTenants);
+
       setStatus("");
     } catch (e: any) {
       setStatus("");
@@ -140,10 +151,14 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
   }, []);
 
   const tenants = useMemo((): LeaseTenant[] => {
+    if (leaseTenants.length > 0) return leaseTenants;
+
     const map = new Map<string, LeaseTenant>();
+
     for (const g of items) {
       const ltId = String(g.lease_tenant_id || "").trim();
       if (!ltId) continue;
+
       if (!map.has(ltId)) {
         map.set(ltId, {
           id: ltId,
@@ -154,8 +169,9 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
         });
       }
     }
+
     return Array.from(map.values());
-  }, [items]);
+  }, [leaseTenants, items]);
 
   const itemsByLeaseTenant = useMemo(() => {
     const obj: Record<string, Guarantee[]> = {};
@@ -323,6 +339,7 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
       const d = draftByLt[leaseTenantId] || {};
       const type: GuaranteeType = String(d.type || "CAUTION").toUpperCase() as GuaranteeType;
       const payload: any = {
+        leaseId,
         leaseTenantId,
         type,
         selected: d.selected === true,
@@ -344,7 +361,13 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
       await apiFetch(`/guarantees`, { method: "POST", body: JSON.stringify(payload) });
 
       setStatus("✅ Garantie créée");
+      setDraftByLt((prev) => {
+        const next = { ...prev };
+        delete next[leaseTenantId];
+        return next;
+      });
       await load(); // ok de reload sur create
+
     } catch (e: any) {
       setStatus("");
       setError(friendlyError(String(e?.message || e)));
@@ -394,8 +417,8 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
           <button onClick={load} style={btnSecondary()}>
             Rafraîchir
           </button>
-          <Link href={`/sign/${leaseId}`}>
-            <button style={btnSecondary()}>← Retour signatures</button>
+          <Link href={`/dashboard/leases/${leaseId}/edit`}>
+            <button style={btnSecondary()}>← Retour bail</button>
           </Link>
         </div>
       </div>
@@ -425,12 +448,18 @@ export default function GuaranteesPage({ params }: { params: { leaseId: string }
 
       {!hasAny && (
         <div style={card()}>
-          <b>ℹ️ V1</b>
+          <b>ℹ️ Aucune garantie pour le moment</b>
           <div style={{ marginTop: 6, color: "#6b7280", fontSize: 13 }}>
-            Pour l’instant, cette page liste les garanties existantes et permet de les gérer.
-            <br />
-            Si ton bail n’a encore aucune garantie, crée-en une via l’API (ou on patchera la page pour lire directement les
-            lease_tenants).
+            Tu peux ajouter une caution ou une garantie VISALE pour chaque locataire ci-dessous.
+          </div>
+        </div>
+      )}
+
+      {tenants.length === 0 && (
+        <div style={card()}>
+          <b>Aucun locataire trouvé pour ce bail.</b>
+          <div style={{ marginTop: 6, color: "#6b7280", fontSize: 13 }}>
+            Impossible d’ajouter une garantie tant que les locataires du bail ne sont pas remontés par l’API.
           </div>
         </div>
       )}

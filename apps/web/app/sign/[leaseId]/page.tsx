@@ -2251,15 +2251,8 @@ console.log("[PACK FINAL READINESS PAGE]", {
 
           <DocumentsSection
             documents={documents}
-            packFinalReadiness={packFinalReadiness}
-            packFinalReadinessError={packFinalReadinessError}
-            loadingPackFinalReadiness={loadingPackFinalReadiness}
-            hasPackFinal={Boolean(packFinalV2Doc)}
-            onGeneratePackFinal={generatePackFinalV2}
             onDownloadDocument={downloadDocumentResource}
             onDownloadSignedDocument={downloadSignedDocumentResource}
-            onGenerateExitCertificate={generateExitCertificate}
-            onGenerateExitPack={generateExitPack}
             onRegenerateContract={() => generateContract(true)}
             onRegenerateEdlEntry={() => generateEdl("entry", true)}
             onRegenerateInventoryEntry={() => generateInventory("entry", true)}
