@@ -55,3 +55,22 @@ Transitions :
 - toutes signatures → SIGNED_FINAL
 
 SIGNED_FINAL est IMMUTABLE.
+
+## Garanties — source de vérité
+
+La source de vérité fonctionnelle pour les garanties est `lease_guarantees`.
+
+Les champs legacy sur `leases` :
+
+- `guarantor_full_name`
+- `guarantor_email`
+- `guarantor_phone`
+- `guarantor_address`
+
+ne doivent plus piloter les nouveaux parcours UI.
+
+Les nouveaux écrans doivent utiliser :
+
+- `GET /api/guarantees?leaseId=...`
+- `POST /api/guarantees`
+- `POST /api/documents/guarantor-act` avec `guaranteeId` en priorité.
