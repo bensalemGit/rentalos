@@ -69,18 +69,41 @@ export class GuaranteesService {
   }
 
   // ✅ derive lease_id from lease_tenants (source of truth)
-  private async getLeaseTenantOrThrow(leaseTenantId: string) {
-    const q = await this.pool.query(
+  private async getLeaseTenantOrThrow(leaseTenantIdOrTenantId: string, leaseId?: string) {
+    const value = String(leaseTenantIdOrTenantId || '').trim();
+    const leaseIdTrim = String(leaseId || '').trim();
+
+    if (!value) throw new BadRequestException('Missing leaseTenantId');
+
+    // 1) Cas normal : vrai lease_tenants.id
+    const byLeaseTenantId = await this.pool.query(
       `
       SELECT id, lease_id, tenant_id, role
       FROM lease_tenants
       WHERE id=$1
       LIMIT 1
       `,
-      [leaseTenantId],
+      [value],
     );
-    if (!q.rowCount) throw new BadRequestException('Unknown leaseTenantId');
-    return q.rows[0];
+
+    if (byLeaseTenantId.rowCount) return byLeaseTenantId.rows[0];
+
+    // 2) Fallback : le front envoie tenants.id à la place de lease_tenants.id
+    if (leaseIdTrim) {
+      const byTenantId = await this.pool.query(
+        `
+        SELECT id, lease_id, tenant_id, role
+        FROM lease_tenants
+        WHERE lease_id=$1 AND tenant_id=$2
+        LIMIT 1
+        `,
+        [leaseIdTrim, value],
+      );
+
+      if (byTenantId.rowCount) return byTenantId.rows[0];
+    }
+
+    throw new BadRequestException('Unknown leaseTenantId');
   }
 
   private async getLeaseTenantByLeaseAndTenantOrThrow(leaseId: string, tenantId: string) {
@@ -109,25 +132,47 @@ export class GuaranteesService {
   async listByLease(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const q = await this.pool.query(
+    const tenantsQ = await this.pool.query(
+      `
+      SELECT
+        lt.id,
+        lt.tenant_id,
+        lt.role,
+        t.full_name AS tenant_full_name,
+        t.email AS tenant_email
+      FROM lease_tenants lt
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+      ORDER BY
+        CASE WHEN lt.role = 'principal' THEN 0 ELSE 1 END,
+        lt.created_at ASC
+      `,
+      [leaseId],
+    );
+
+    const guaranteesQ = await this.pool.query(
       `
       SELECT g.*,
-             lt.tenant_id,
-             lt.role,
-             t.full_name AS tenant_full_name,
-             t.email AS tenant_email
+            lt.tenant_id,
+            lt.role,
+            t.full_name AS tenant_full_name,
+            t.email AS tenant_email
       FROM lease_guarantees g
       JOIN lease_tenants lt ON lt.id = g.lease_tenant_id
       JOIN tenants t ON t.id = lt.tenant_id
       WHERE g.lease_id=$1
       ORDER BY lt.created_at ASC,
-               COALESCE(g.rank, 999999) ASC,
-               g.created_at ASC
+              COALESCE(g.rank, 999999) ASC,
+              g.created_at ASC
       `,
       [leaseId],
     );
 
-    return { ok: true, items: q.rows };
+    return {
+      ok: true,
+      tenants: tenantsQ.rows,
+      items: guaranteesQ.rows,
+    };
   }
 
   async getOne(id: string) {
@@ -142,7 +187,7 @@ export class GuaranteesService {
     const leaseTenantIdFromBody = String(body?.leaseTenantId || '').trim();
 
     const leaseTenant = leaseTenantIdFromBody
-      ? await this.getLeaseTenantOrThrow(leaseTenantIdFromBody)
+      ? await this.getLeaseTenantOrThrow(leaseTenantIdFromBody, body?.leaseId)
       : await this.getLeaseTenantByLeaseAndTenantOrThrow(body?.leaseId, body?.tenantId);
 
     const leaseTenantId = String(leaseTenant?.id || '').trim();

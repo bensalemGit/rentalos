@@ -100,11 +100,17 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
     );
   }
 
+  function allLatestByType(type: string) {
+    return docs
+      .filter((d) => d.type === type && !String(d.filename || "").includes("SIGNED_FINAL"))
+      .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+  }
+
   const rows = useMemo(
     () => ({
       entry: [
         { label: "Contrat de location", type: "CONTRAT", regen: () => generateContract(true) },
-        { label: "Acte de caution", type: "ACTE_CAUTION", regen: undefined },
+        { label: "Acte de caution", type: "GUARANTOR_ACT", multiple: true, regen: undefined },
         { label: "EDL entrée", type: "EDL_ENTREE", regen: () => generateEdl("entry", true) },
         { label: "Inventaire entrée", type: "INVENTAIRE_ENTREE", regen: () => generateInventory("entry", true) },
         { label: "Notice", type: "NOTICE", regen: undefined },
@@ -116,7 +122,7 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
       ],
       packs: [
         { label: "Pack entrée", type: "PACK_FINAL", regen: generatePackEntry },
-        { label: "Pack sortie", type: "PACK_SORTIE", regen: generateExitPack },
+        { label: "Pack sortie", type: "PACK_EDL_INV_SORTIE", regen: generateExitPack },
       ],
     }),
     [docs, token]
@@ -193,7 +199,12 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
   }: {
     title: string;
     subtitle: string;
-    items: Array<{ label: string; type: string; regen?: (() => void | Promise<void>) | undefined }>;
+    items: Array<{
+      label: string;
+      type: string;
+      multiple?: boolean;
+      regen?: (() => void | Promise<void>) | undefined;
+    }>;
   }) {
     return (
       <section style={card}>
@@ -205,13 +216,61 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
         </div>
 
         <div style={{ display: "grid", gap: 10 }}>
-          {items.map((item) => {
-            const doc = latest(item.type);
-            const signedId = doc?.signed_final_document_id;
-            const isCaution = item.type === "ACTE_CAUTION";
+          {items.flatMap((item) => {
+            const isCaution = item.type === "GUARANTOR_ACT";
             const noGuarantor = isCaution && hasGuarantor === false;
 
-            return (
+            const itemDocs = item.multiple
+              ? allLatestByType(item.type)
+              : ([latest(item.type)].filter(Boolean) as Doc[]);
+
+            if (item.multiple && itemDocs.length > 0) {
+              return itemDocs.map((doc, idx) => {
+                const signedId = doc.signed_final_document_id;
+
+                return (
+                  <div key={doc.id} className="document-row" style={row}>
+                    <div style={{ minWidth: 0, display: "flex", gap: 10, alignItems: "center" }}>
+                      <FileText size={17} color="#7C8AA5" />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={docTitle}>
+                          {item.label} {idx + 1}
+                        </div>
+                        <div style={docSub}>{doc.filename}</div>
+                      </div>
+                    </div>
+
+                    <div className="document-actions" style={actions}>
+                      <span style={okPill}>Disponible</span>
+
+                      <button style={linkBtn} onClick={() => downloadDoc(doc)}>
+                        <Download size={14} /> Télécharger
+                      </button>
+
+                      {signedId && (
+                        <button
+                          style={linkBtn}
+                          onClick={() =>
+                            downloadDoc({
+                              ...doc,
+                              id: signedId,
+                              filename: `${item.label}_${idx + 1}_SIGNE.pdf`,
+                            })
+                          }
+                        >
+                          <Download size={14} /> Signé
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              });
+            }
+
+            const doc = itemDocs[0] || null;
+            const signedId = doc?.signed_final_document_id;
+
+            return [
               <div key={item.type} className="document-row" style={row}>
                 <div style={{ minWidth: 0, display: "flex", gap: 10, alignItems: "center" }}>
                   <FileText size={17} color="#7C8AA5" />
@@ -255,8 +314,8 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
                     </button>
                   )}
                 </div>
-              </div>
-            );
+              </div>,
+            ];
           })}
         </div>
       </section>
