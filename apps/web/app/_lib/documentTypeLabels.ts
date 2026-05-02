@@ -96,3 +96,16 @@ export function isEntryPackType(type?: string | null) {
 export function isExitPackType(type?: string | null) {
   return normalizeDocumentType(type) === "PACK_EDL_INV_SORTIE";
 }
+
+export function getDocumentKind(type?: string | null) {
+  if (isGuarantorActType(type)) return "GUARANTOR_ACT";
+  if (isEntryPackType(type)) return "ENTRY_PACK";
+  if (isExitPackType(type)) return "EXIT_PACK";
+
+  const key = normalizeDocumentType(type);
+
+  if (key.startsWith("EDL_")) return "EDL";
+  if (key.startsWith("INVENTAIRE_")) return "INVENTORY";
+
+  return "OTHER";
+}
