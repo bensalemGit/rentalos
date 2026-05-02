@@ -6,6 +6,7 @@ import { FileText, RefreshCw, Download, RotateCcw, Package } from "lucide-react"
 import {
   documentTypeLabel,
   isSignedFinalDocument,
+  getDocumentKind,
 } from "@app/_lib/documentTypeLabels";
 
 const API =
@@ -342,7 +343,7 @@ function guaranteeDisplayLabel(doc: Doc, idx: number) {
 
         <div style={{ display: "grid", gap: 10 }}>
           {items.flatMap((item) => {
-            const isCaution = item.type === "GUARANTOR_ACT";
+            const isCaution = getDocumentKind(item.type) === "GUARANTOR_ACT";
             const noGuarantor = isCaution && hasGuarantor === false;
 
             const itemDocs = item.multiple
