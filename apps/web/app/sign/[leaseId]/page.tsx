@@ -27,6 +27,7 @@ import {
   canCreateCanonicalLink,
   toCanonicalPublicLinkInput,
 } from "./_lib/canonical-link-mapper";
+import { isEntryPackType } from "@app/_lib/documentTypeLabels";
 
 
 const brandBlue = "#2F63E0";
@@ -500,7 +501,7 @@ useEffect(() => {
       // ✅ PACK_FINAL V2 (signé) : doc type PACK_FINAL dont filename contient PACK_FINAL_V2
       const packFinalV2 =
         arr
-          .filter((d: any) => d.type === "PACK_FINAL" && String(d.filename || "").includes("PACK_FINAL_V2"))
+          .filter((d: any) => isEntryPackType(d.type) && String(d.filename || "").includes("PACK_FINAL_V2"))
           .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ||
         null;
 
