@@ -6,6 +6,11 @@ import type {
   SignerTaskStatus,
 } from "../_types/signature-center.types";
 import { toTaskStatusLabel } from "./signature-status.helpers";
+import {
+  documentTypeLabel,
+  isEntryPackType,
+  isExitPackType,
+} from "@app/_lib/documentTypeLabels";
 
 type LeaseTenantLite = {
   tenant_id?: string;
@@ -214,7 +219,7 @@ function mapTenantTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTas
       displayName: String(t.fullName || "").trim() || "Locataire",
       roleLabel: String(t.role || "").toLowerCase() === "principal" ? "Locataire principal" : "Cotitulaire",
       documentId: contract?.documentId || null,
-      documentLabel: "Contrat de location",
+      documentLabel: documentTypeLabel("CONTRAT"),
       documentFilename: contract?.filename || null,
       status,
       statusLabel: toTaskStatusLabel(status),
@@ -317,7 +322,7 @@ function mapGuarantorTasks(
           },
       landlordPendingOnDocument: !isVisale && Boolean(effectiveActId) && !landlordSigned,
       documentId: isVisale ? null : effectiveActId,
-      documentLabel: isVisale ? "Garantie VISALE" : "Acte de caution",
+      documentLabel: isVisale ? "Garantie VISALE" : documentTypeLabel("GUARANTOR_ACT"),
       documentFilename: null,
       status,
       statusLabel: toTaskStatusLabel(status),
@@ -384,7 +389,7 @@ function buildLandlordGuaranteeSubTasks(
           ? "Contresignature bailleur requise"
           : "En attente de la signature du garant",
         documentId: effectiveActId,
-        documentLabel: "Acte de caution",
+        documentLabel: documentTypeLabel("GUARANTOR_ACT"),
         documentFilename: null,
         status,
         statusLabel: toTaskStatusLabel(status),
@@ -436,7 +441,7 @@ function mapLandlordTask(
     displayName: String(landlordName || "").trim() || "Bailleur",
     roleLabel: "Bailleur",
     documentId: contract?.documentId || null,
-    documentLabel: "Contrat de location",
+    documentLabel: documentTypeLabel("CONTRAT"),
     documentFilename: contract?.filename || null,
     status,
     statusLabel: toTaskStatusLabel(status),
@@ -674,7 +679,7 @@ function computeGlobalStatus(args: {
     ? Boolean(inventoryEntry?.signedFinalDocumentId)
     : true;
 
-  const packFinalDoc = args.docs.find((d) => d.type === "PACK_FINAL");
+  const packFinalDoc = args.docs.find((d) => isEntryPackType(d.type));
   const hasPackFinal = Boolean(packFinalDoc);
 
   if (!hasEdlSignedFinal || !hasInventorySignedFinal || !hasPackFinal) {
@@ -790,7 +795,7 @@ function mapDocuments(args: {
   if (contract?.documentId) {
     pushDoc({
       id: contract.documentId,
-      label: "Contrat de location",
+      label: documentTypeLabel("CONTRAT"),
       type: "CONTRACT",
       filename: contract.filename || null,
       statusLabel: contract.signedFinalDocumentId ? "Signé" : "Généré",
@@ -814,10 +819,10 @@ function mapDocuments(args: {
     });
 
   const secondaryBlocks: Array<{ block: SignableDocBlockLite | null | undefined; type: string; label: string }> = [
-    { block: args.sigStatus?.edl?.entry, type: "EDL_ENTRY", label: "EDL entrée" },
-    { block: args.sigStatus?.inventory?.entry, type: "INVENTORY_ENTRY", label: "Inventaire entrée" },
-    { block: args.sigStatus?.edl?.exit, type: "EDL_EXIT", label: "EDL sortie" },
-    { block: args.sigStatus?.inventory?.exit, type: "INVENTORY_EXIT", label: "Inventaire sortie" },
+    { block: args.sigStatus?.edl?.entry, type: "EDL_ENTRY", label: documentTypeLabel("EDL_ENTREE") },
+    { block: args.sigStatus?.inventory?.entry, type: "INVENTORY_ENTRY", label: documentTypeLabel("INVENTAIRE_ENTREE") },
+    { block: args.sigStatus?.edl?.exit, type: "EDL_EXIT", label: documentTypeLabel("EDL_SORTIE") },
+    { block: args.sigStatus?.inventory?.exit, type: "INVENTORY_EXIT", label: documentTypeLabel("INVENTAIRE_SORTIE") },
   ];
 
   secondaryBlocks.forEach(({ block, type, label }) => {
@@ -837,7 +842,7 @@ function mapDocuments(args: {
   if (noticeDoc) {
     pushDoc({
       id: noticeDoc.id,
-      label: "Notice",
+      label: documentTypeLabel("NOTICE"),
       type: "NOTICE",
       filename: noticeDoc.filename || null,
       statusLabel: "Généré",
@@ -852,7 +857,7 @@ function mapDocuments(args: {
   if (exitCertificateDoc) {
     pushDoc({
       id: exitCertificateDoc.id,
-      label: "Attestation de sortie",
+      label: documentTypeLabel("ATTESTATION_SORTIE"),
       type: "ATTESTATION_SORTIE",
       filename: exitCertificateDoc.filename || null,
       statusLabel: "Généré",
@@ -860,13 +865,11 @@ function mapDocuments(args: {
     });
   }
 
-  const exitPackDoc = args.docs.find(
-    (d) => d.type === "PACK_EDL_INV_SORTIE",
-  );
+  const exitPackDoc = args.docs.find((d) => isExitPackType(d.type));
   if (exitPackDoc) {
     pushDoc({
       id: exitPackDoc.id,
-      label: "Pack sortie",
+      label: documentTypeLabel("PACK_EDL_INV_SORTIE"),
       type: "PACK_EDL_INV_SORTIE",
       filename: exitPackDoc.filename || null,
       statusLabel: "Généré",
@@ -874,11 +877,11 @@ function mapDocuments(args: {
     });
   }
 
-  const packFinalDoc = args.docs.find((d) => d.type === "PACK_FINAL");
+  const packFinalDoc = args.docs.find((d) => isEntryPackType(d.type));
   if (packFinalDoc) {
     pushDoc({
       id: packFinalDoc.id,
-      label: "Pack final",
+      label: documentTypeLabel("PACK_FINAL"),
       type: "PACK_FINAL",
       filename: packFinalDoc.filename || null,
       statusLabel: "Signé",

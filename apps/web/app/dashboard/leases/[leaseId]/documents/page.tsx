@@ -3,6 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { FileText, RefreshCw, Download, RotateCcw, Package } from "lucide-react";
+import {
+  documentTypeLabel,
+  isSignedFinalDocument,
+} from "@app/_lib/documentTypeLabels";
 
 const API =
   typeof window !== "undefined"
@@ -135,34 +139,34 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
   function latest(type: string) {
     return (
       docs
-        .filter((d) => d.type === type && !String(d.filename || "").includes("SIGNED_FINAL"))
+        .filter((d) => d.type === type && !isSignedFinalDocument(d))
         .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")))[0] || null
     );
-  }
+}
 
   function allLatestByType(type: string) {
     return docs
-      .filter((d) => d.type === type && !String(d.filename || "").includes("SIGNED_FINAL"))
+      .filter((d) => d.type === type && !isSignedFinalDocument(d))
       .sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
   }
 
   const rows = useMemo(
     () => ({
       entry: [
-        { label: "Contrat de location", type: "CONTRAT", regen: () => generateContract(true) },
-        { label: "Acte de caution", type: "GUARANTOR_ACT", multiple: true, regen: undefined },
-        { label: "EDL entrée", type: "EDL_ENTREE", regen: () => generateEdl("entry", true) },
-        { label: "Inventaire entrée", type: "INVENTAIRE_ENTREE", regen: () => generateInventory("entry", true) },
-        { label: "Notice", type: "NOTICE", regen: undefined },
+        { label: documentTypeLabel("CONTRAT"), type: "CONTRAT", regen: () => generateContract(true) },
+        { label: documentTypeLabel("GUARANTOR_ACT"), type: "GUARANTOR_ACT", multiple: true, regen: undefined },
+        { label: documentTypeLabel("EDL_ENTREE"), type: "EDL_ENTREE", regen: () => generateEdl("entry", true) },
+        { label: documentTypeLabel("INVENTAIRE_ENTREE"), type: "INVENTAIRE_ENTREE", regen: () => generateInventory("entry", true) },
+        { label: documentTypeLabel("NOTICE"), type: "NOTICE", regen: undefined },
       ],
       exit: [
-        { label: "EDL sortie", type: "EDL_SORTIE", regen: () => generateEdl("exit", true) },
-        { label: "Inventaire sortie", type: "INVENTAIRE_SORTIE", regen: () => generateInventory("exit", true) },
-        { label: "Attestation sortie", type: "ATTESTATION_SORTIE", regen: generateExitCertificate },
+        { label: documentTypeLabel("EDL_SORTIE"), type: "EDL_SORTIE", regen: () => generateEdl("exit", true) },
+        { label: documentTypeLabel("INVENTAIRE_SORTIE"), type: "INVENTAIRE_SORTIE", regen: () => generateInventory("exit", true) },
+        { label: documentTypeLabel("ATTESTATION_SORTIE"), type: "ATTESTATION_SORTIE", regen: generateExitCertificate },
       ],
       packs: [
-        { label: "Pack entrée", type: "PACK_FINAL", regen: generatePackEntry },
-        { label: "Pack sortie", type: "PACK_EDL_INV_SORTIE", regen: generateExitPack },
+        { label: documentTypeLabel("PACK_FINAL"), type: "PACK_FINAL", regen: generatePackEntry },
+        { label: documentTypeLabel("PACK_EDL_INV_SORTIE"), type: "PACK_EDL_INV_SORTIE", regen: generateExitPack },
       ],
     }),
     [docs, token]
