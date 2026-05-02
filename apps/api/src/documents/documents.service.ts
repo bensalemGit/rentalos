@@ -3169,11 +3169,6 @@ ${annexHtml}
   }  
 
   async generatePackFinalV2(leaseId: string, opts?: { force?: boolean }, parentDocumentId?: string) {
- 
-  console.log('[PACK_FINAL_V2 ENTER]', {
-    leaseId,
-    force: !!opts?.force,
-  });
 
   const force = !!opts?.force;
   const row = await this.fetchLeaseBundle(leaseId);
@@ -3182,8 +3177,6 @@ ${annexHtml}
   const docs: any [] = await this.listDocsForLease(leaseId);
 
   const readiness = await this.getPackFinalReadiness(leaseId);
-
-  console.log('[PACK_FINAL_V2 READINESS]', readiness);
 
   if (!readiness.ready) {
     throw new BadRequestException({
@@ -3347,33 +3340,6 @@ ${annexHtml}
     }
   }
 
-  console.log('[PACK_FINAL_V2 SELECTED]', {
-    contractSignedFinal: contractSignedFinal
-      ? { id: contractSignedFinal.id, type: contractSignedFinal.type, filename: contractSignedFinal.filename }
-      : null,
-    guarantorActsSignedFinal: guarantorActsSignedFinal.map((d: any) => ({
-      id: d.id,
-      type: d.type,
-      filename: d.filename,
-      parent_document_id: d.parent_document_id,
-    })),
-    notice: notice
-      ? { id: notice.id, type: notice.type, filename: notice.filename }
-      : null,
-    edlRoot: edlRoot
-      ? { id: edlRoot.id, type: edlRoot.type, filename: edlRoot.filename }
-      : null,
-    edlSignedFinal: edl
-      ? { id: edl.id, type: edl.type, filename: edl.filename, parent_document_id: edl.parent_document_id }
-      : null,
-    inventaireRoot: inventaireRoot
-      ? { id: inventaireRoot.id, type: inventaireRoot.type, filename: inventaireRoot.filename }
-      : null,
-    inventaireSignedFinal: inventaire
-      ? { id: inventaire.id, type: inventaire.type, filename: inventaire.filename, parent_document_id: inventaire.parent_document_id }
-      : null,
-  });
-
   // 4) AUDIT GLOBAL DU PACK
   const auditEntries = (
     await Promise.all([
@@ -3489,56 +3455,6 @@ ${annexHtml}
       return p ? { filename: n, buffer: p.buffer } : null; // ⚠️ override filename
     })
     .filter(Boolean) as Array<{ filename: string; buffer: Buffer }>;
-
-
-  console.log('[PACK_FINAL_V2 DEBUG]', {
-    leaseId,
-    force,
-    selected: {
-      contractSignedFinal: contractSignedFinal
-        ? {
-            id: contractSignedFinal.id,
-            type: contractSignedFinal.type,
-            filename: contractSignedFinal.filename,
-          }
-        : null,
-      notice: notice
-        ? {
-            id: notice.id,
-            type: notice.type,
-            filename: notice.filename,
-          }
-        : null,
-      edl: edl
-        ? {
-            id: edl.id,
-            type: edl.type,
-            filename: edl.filename,
-          }
-        : null,
-      inventaire: inventaire
-        ? {
-            id: inventaire.id,
-            type: inventaire.type,
-            filename: inventaire.filename,
-          }
-        : null,
-      guarantorActsSignedFinal: guarantorActsSignedFinal.map((x: any) => ({
-        id: x?.id || null,
-        type: x?.type || null,
-        filename: x?.filename || null,
-      })),
-    },
-    ordered: ordered.map((x: any) => ({
-      filename: x.n,
-      docId: x.doc?.id || null,
-      docType: x.doc?.type || null,
-      docFilename: x.doc?.filename || null,
-    })),
-    parts: this.summarizeParts(parts),
-  });
-
-
 
   if (leaseKind === 'MEUBLE_RP') {
   const hasNoticePart = parts.some((p) => p.filename.includes('_NOTICE.pdf'));
