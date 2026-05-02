@@ -79,16 +79,15 @@ private assertUuidV4(id: string, label: string) {
   }
 }
 
-private async getLatestRootDocumentByType(leaseId: string, type: DocType) {
+private async getLatestDocumentByType(leaseId: string, type: DocType) {
   this.assertUuidV4(leaseId, 'leaseId');
 
   const q = await this.pool.query(
     `
-    SELECT id, filename, type, created_at
+    SELECT id, filename, type, storage_path, created_at
     FROM documents
     WHERE lease_id = $1
       AND type = $2
-      AND parent_document_id IS NULL
     ORDER BY created_at DESC NULLS LAST
     LIMIT 1
     `,
@@ -147,7 +146,7 @@ private async getSignedCautionGuaranteesForMail(leaseId: string) {
     LEFT JOIN lease_tenants lt ON lt.id = lg.lease_tenant_id
     LEFT JOIN tenants t ON t.id = lt.tenant_id
     WHERE lg.lease_id = $1
-      AND UPPER(COALESCE(lg.type, '')) = 'CAUTION'
+      AND UPPER(COALESCE(lg.type::text, '')) = 'CAUTION'
       AND lg.signed_final_document_id IS NOT NULL
     ORDER BY lg.created_at ASC NULLS LAST
     `,
@@ -160,7 +159,7 @@ private async getSignedCautionGuaranteesForMail(leaseId: string) {
 async sendEntryPackToTenants(leaseId: string) {
   this.assertUuidV4(leaseId, 'leaseId');
 
-  const pack = await this.getLatestRootDocumentByType(leaseId, 'PACK_FINAL');
+  const pack = await this.getLatestDocumentByType(leaseId, 'PACK_FINAL');
   if (!pack?.id) {
     throw new BadRequestException('Pack entrée introuvable. Génère le PACK_FINAL avant envoi.');
   }
@@ -251,8 +250,8 @@ async sendGuarantorActsToGuarantors(leaseId: string) {
 async sendExitDocumentsToTenants(leaseId: string) {
   this.assertUuidV4(leaseId, 'leaseId');
 
-  const exitPack = await this.getLatestRootDocumentByType(leaseId, 'PACK_EDL_INV_SORTIE');
-  const exitCertificate = await this.getLatestRootDocumentByType(leaseId, 'ATTESTATION_SORTIE');
+  const exitPack = await this.getLatestDocumentByType(leaseId, 'PACK_EDL_INV_SORTIE');
+  const exitCertificate = await this.getLatestDocumentByType(leaseId, 'ATTESTATION_SORTIE');
 
   if (!exitPack?.id) {
     throw new BadRequestException('Pack sortie introuvable. Génère le PACK_EDL_INV_SORTIE avant envoi.');
