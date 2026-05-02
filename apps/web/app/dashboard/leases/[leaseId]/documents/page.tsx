@@ -18,6 +18,38 @@ type Doc = {
   signed_final_document_id?: string | null;
 };
 
+type GuaranteeItem = {
+  id?: string;
+  type?: string;
+  selected?: boolean;
+  lease_tenant_id?: string | null;
+  leaseTenantId?: string | null;
+  guarantor_act_document_id?: string | null;
+  guarantorActDocumentId?: string | null;
+
+  guarantor_full_name?: string | null;
+  guarantorFullName?: string | null;
+  guarantor_name?: string | null;
+  guarantorName?: string | null;
+
+  tenant_name?: string | null;
+  tenantName?: string | null;
+  role?: string | null;
+};
+
+type LeaseTenant = {
+  id?: string;
+  role?: string | null;
+  tenant_name?: string | null;
+  tenantName?: string | null;
+  full_name?: string | null;
+  fullName?: string | null;
+  first_name?: string | null;
+  firstName?: string | null;
+  last_name?: string | null;
+  lastName?: string | null;
+};
+
 type Phase = "entry" | "exit";
 
 export default function LeaseDocumentsPage({ params }: { params: { leaseId: string } }) {
@@ -28,6 +60,9 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [hasGuarantor, setHasGuarantor] = useState<boolean | null>(null);
+
+  const [guaranteeItems, setGuaranteeItems] = useState<GuaranteeItem[]>([]);
+  const [leaseTenants, setLeaseTenants] = useState<LeaseTenant[]>([]);
 
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
@@ -49,9 +84,19 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
         });
 
         const guaranteesJson = await guaranteesRes.json().catch(() => ({}));
-        const items = Array.isArray(guaranteesJson?.items) ? guaranteesJson.items : [];
 
-        const hasSelectedCaution = items.some((g: any) => {
+        const items = Array.isArray(guaranteesJson?.items)
+          ? guaranteesJson.items
+          : [];
+
+        const tenants = Array.isArray(guaranteesJson?.tenants)
+          ? guaranteesJson.tenants
+          : [];
+
+        setGuaranteeItems(items);
+        setLeaseTenants(tenants);
+
+        const hasSelectedCaution = items.some((g: GuaranteeItem) => {
           return (
             String(g?.type || "").toUpperCase() === "CAUTION" &&
             g?.selected === true
@@ -60,6 +105,8 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
 
         setHasGuarantor(hasSelectedCaution);
       } catch {
+        setGuaranteeItems([]);
+        setLeaseTenants([]);
         setHasGuarantor(false);
       }
 
@@ -185,6 +232,87 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
   }
 
+function roleLabel(role?: string | null) {
+  const v = String(role || "").toLowerCase();
+
+  if (v === "principal") return "locataire principal";
+  if (v === "cotenant") return "colocataire";
+  if (v === "co_tenant") return "colocataire";
+
+  return v || "";
+}
+
+function tenantName(t?: LeaseTenant | null) {
+  if (!t) return "";
+
+  const direct =
+    t.tenant_name ||
+    t.tenantName ||
+    t.full_name ||
+    t.fullName ||
+    "";
+
+  if (direct) return String(direct);
+
+  const first = t.first_name || t.firstName || "";
+  const last = t.last_name || t.lastName || "";
+  const full = `${first} ${last}`.trim();
+
+  return full;
+}
+
+function guaranteeDocumentId(g: GuaranteeItem) {
+  return g.guarantor_act_document_id || g.guarantorActDocumentId || "";
+}
+
+function guaranteeLeaseTenantId(g: GuaranteeItem) {
+  return g.lease_tenant_id || g.leaseTenantId || "";
+}
+
+function guaranteeForDoc(doc: Doc) {
+  return guaranteeItems.find((g) => guaranteeDocumentId(g) === doc.id) || null;
+}
+
+function guaranteeDisplayLabel(doc: Doc, idx: number) {
+  const guarantee = guaranteeForDoc(doc);
+
+  if (!guarantee) {
+    return `Acte de caution ${idx + 1}`;
+  }
+
+  const guarantorName =
+    guarantee.guarantor_full_name ||
+    guarantee.guarantorFullName ||
+    guarantee.guarantor_name ||
+    guarantee.guarantorName ||
+    "";
+
+  const leaseTenantId = guaranteeLeaseTenantId(guarantee);
+
+  const tenant =
+    leaseTenants.find((t) => t.id === leaseTenantId) || null;
+
+  const tenantLabel =
+    tenantName(tenant) ||
+    guarantee.tenant_name ||
+    guarantee.tenantName ||
+    roleLabel(tenant?.role || guarantee.role);
+
+  if (guarantorName && tenantLabel) {
+    return `Acte de caution ${idx + 1} — ${guarantorName} pour ${tenantLabel}`;
+  }
+
+  if (tenantLabel) {
+    return `Acte de caution ${idx + 1} — ${tenantLabel}`;
+  }
+
+  if (guarantorName) {
+    return `Acte de caution ${idx + 1} — ${guarantorName}`;
+  }
+
+  return `Acte de caution ${idx + 1}`;
+}
+
   function Section({
     title,
     subtitle,
@@ -227,7 +355,7 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
                       <FileText size={17} color="#7C8AA5" />
                       <div style={{ minWidth: 0 }}>
                         <div style={docTitle}>
-                          {item.label} {idx + 1}
+                          {isCaution ? guaranteeDisplayLabel(doc, idx) : `${item.label} ${idx + 1}`}
                         </div>
                         <div style={docSub}>{doc.filename}</div>
                       </div>
