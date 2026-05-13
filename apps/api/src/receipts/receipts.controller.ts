@@ -21,4 +21,9 @@ export class ReceiptsController {
   send(@Body() body: any) {
     return this.receipts.send(body);
   }
+
+  @Post('reminder')
+  reminder(@Body() body: any) {
+    return this.receipts.sendPaymentReminder(body);
+  }
 }

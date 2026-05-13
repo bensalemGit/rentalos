@@ -560,6 +560,322 @@ export class LeasesService {
     }
   }
 
+  async createAddTenantAmendment(leaseId: string, body: any) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const effectiveDate = String(body?.effectiveDate || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+      throw new BadRequestException('Invalid effectiveDate');
+    }
+
+    const tenant = body?.tenant || {};
+    const fullName = String(tenant?.fullName || '').trim();
+    if (!fullName) throw new BadRequestException('Missing tenant.fullName');
+
+    const rentCents = Number(body?.rentCents ?? 0);
+    const previousChargesCents = Number(body?.previousChargesCents ?? 0);
+    const extraChargesCentsPerTenant = Number(body?.extraChargesCentsPerTenant ?? 0);
+    const newChargesCents = Number(body?.newChargesCents ?? previousChargesCents + extraChargesCentsPerTenant);
+    const depositCents = Number(body?.depositCents ?? 0);
+    const paymentDay = Number(body?.paymentDay ?? 5);
+
+    if (!Number.isFinite(rentCents)) throw new BadRequestException('Invalid rentCents');
+    if (!Number.isFinite(previousChargesCents)) throw new BadRequestException('Invalid previousChargesCents');
+    if (!Number.isFinite(extraChargesCentsPerTenant)) throw new BadRequestException('Invalid extraChargesCentsPerTenant');
+    if (!Number.isFinite(newChargesCents)) throw new BadRequestException('Invalid newChargesCents');
+
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const leaseQ = await client.query(
+        `SELECT id, unit_id FROM leases WHERE id=$1 FOR UPDATE`,
+        [leaseId],
+      );
+      if (!leaseQ.rowCount) throw new BadRequestException('Unknown leaseId');
+
+      const tenantQ = await client.query(
+        `
+        INSERT INTO tenants (full_name, email, phone)
+        VALUES ($1,$2,$3)
+        RETURNING *
+        `,
+        [
+          fullName,
+          tenant?.email ? String(tenant.email).trim() : null,
+          tenant?.phone ? String(tenant.phone).trim() : null,
+        ],
+      );
+
+      const newTenant = tenantQ.rows[0];
+
+      const landlordQ = await client.query(
+        `
+        SELECT
+          COALESCE(pl.name, p.name, 'Bailleur') AS landlord_name,
+          COALESCE(pl.email, '') AS landlord_email
+        FROM leases l
+        JOIN units u ON u.id = l.unit_id
+        LEFT JOIN projects p ON p.id = u.project_id
+        LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
+        WHERE l.id = $1
+        LIMIT 1
+        `,
+        [leaseId],
+      );
+
+      const landlordName = String(landlordQ.rows[0]?.landlord_name || 'Bailleur').trim();
+      const landlordEmail = String(landlordQ.rows[0]?.landlord_email || '').trim() || null;
+
+
+      const payload = {
+        effectiveDate,
+        tenantIdsToAdd: [newTenant.id],
+        rentCents,
+        previousChargesCents,
+        extraChargesCentsPerTenant,
+        newChargesCents,
+        depositCents,
+        paymentDay,
+        tenantSnapshot: {
+          id: newTenant.id,
+          fullName: newTenant.full_name,
+          email: newTenant.email,
+          phone: newTenant.phone,
+        },
+      };
+
+      const amendmentTitle = `Avenant ajout locataire - ${fullName}`;
+
+      const amendQ = await client.query(
+        `
+        INSERT INTO lease_amendments (
+          lease_id,
+          type,
+          title,
+          status,
+          effective_date,
+          payload_json,
+          created_at,
+          updated_at
+        )
+        VALUES ($1,'ADD_TENANT',$2,'draft',$3::date,$4::jsonb,NOW(),NOW())
+        RETURNING *
+        `,
+        [leaseId, amendmentTitle, effectiveDate, JSON.stringify(payload)],
+      );
+
+      const amendment = amendQ.rows[0];
+
+      await client.query(
+        `
+        INSERT INTO lease_amendment_signers (
+          amendment_id,
+          role,
+          tenant_id,
+          signer_name,
+          signer_email,
+          signature_status
+        )
+        VALUES
+          ($1, 'BAILLEUR', NULL, $2, $3, 'pending'),
+          ($1, 'LOCATAIRE', $4::uuid, $5, $6, 'pending')
+        `,
+        [
+          amendment.id,
+          landlordName,
+          landlordEmail,
+          newTenant.id,
+          String(newTenant.full_name || fullName).trim(),
+          newTenant.email ? String(newTenant.email).trim() : null,
+        ],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        ok: true,
+        tenant: newTenant,
+        amendment,
+      };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async applyLeaseAmendment(leaseId: string, amendmentId: string) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+    if (!amendmentId) throw new BadRequestException('Missing amendmentId');
+
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const amendQ = await client.query(
+        `
+        SELECT *
+        FROM lease_amendments
+        WHERE id = $1
+          AND lease_id = $2
+        FOR UPDATE
+        `,
+        [amendmentId, leaseId],
+      );
+
+      if (!amendQ.rowCount) throw new BadRequestException('Amendment not found');
+
+      const amendment = amendQ.rows[0];
+
+      if (amendment.status === 'applied') {
+        await client.query('COMMIT');
+        return { ok: true, alreadyApplied: true, amendment };
+      }
+
+      if (amendment.status !== 'signed') {
+        throw new BadRequestException('Only signed amendments can be applied');
+      }
+
+      if (!amendment.signed_final_document_id) {
+        throw new BadRequestException('Cannot apply amendment without signed final document');
+      }
+
+      const unsignedQ = await client.query(
+        `
+        SELECT role, tenant_id, signer_name, signature_status
+        FROM lease_amendment_signers
+        WHERE amendment_id = $1
+          AND signature_status <> 'signed'
+        `,
+        [amendmentId],
+      );
+
+      if (unsignedQ.rowCount) {
+        throw new BadRequestException({
+          message: 'Cannot apply amendment: some signers are not signed',
+          unsignedSigners: unsignedQ.rows,
+        } as any);
+      }
+
+      const payload =
+        typeof amendment.payload_json === 'string'
+          ? JSON.parse(amendment.payload_json || '{}')
+          : amendment.payload_json || {};
+
+      if (amendment.type !== 'ADD_TENANT') {
+        throw new BadRequestException(`Unsupported amendment type: ${amendment.type}`);
+      }
+
+      const tenantIdsToAdd = Array.isArray(payload.tenantIdsToAdd)
+        ? payload.tenantIdsToAdd.map((x: any) => String(x || '').trim()).filter(Boolean)
+        : [];
+
+      if (!tenantIdsToAdd.length) {
+        throw new BadRequestException('ADD_TENANT amendment has no tenantIdsToAdd');
+      }
+
+      const tenantsQ = await client.query(
+        `SELECT id FROM tenants WHERE id = ANY($1::uuid[])`,
+        [tenantIdsToAdd],
+      );
+
+      if ((tenantsQ.rowCount || 0) !== tenantIdsToAdd.length) {
+        throw new BadRequestException('One or more tenantIdsToAdd are unknown');
+      }
+
+      await client.query(
+        `
+        INSERT INTO lease_tenants (lease_id, tenant_id, role)
+        SELECT $1, x, 'cotenant'
+        FROM unnest($2::uuid[]) AS x
+        ON CONFLICT (lease_id, tenant_id) DO NOTHING
+        `,
+        [leaseId, tenantIdsToAdd],
+      );
+
+      const effectiveDate = String(
+        payload.effectiveDate ||
+        amendment.effective_date ||
+        '',
+      ).slice(0, 10);
+
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(effectiveDate)) {
+        throw new BadRequestException('Invalid amendment effectiveDate');
+      }
+
+      const baseAmountQ = await client.query(
+        `
+        SELECT rent_cents, charges_cents, deposit_cents, payment_day
+        FROM lease_amounts
+        WHERE lease_id = $1
+          AND effective_date <= $2::date
+        ORDER BY effective_date DESC
+        LIMIT 1
+        `,
+        [leaseId, effectiveDate],
+      );
+
+      const base = baseAmountQ.rows[0] || {};
+
+      const rentCents = Number(payload.rentCents ?? base.rent_cents ?? 0);
+      const newChargesCents = Number(payload.newChargesCents ?? base.charges_cents ?? 0);
+      const depositCents = Number(payload.depositCents ?? base.deposit_cents ?? 0);
+      const paymentDay = Number(payload.paymentDay ?? base.payment_day ?? 5);
+
+      await client.query(
+        `
+        INSERT INTO lease_amounts (
+          lease_id,
+          effective_date,
+          rent_cents,
+          charges_cents,
+          deposit_cents,
+          payment_day
+        )
+        VALUES ($1,$2::date,$3,$4,$5,$6)
+        ON CONFLICT (lease_id, effective_date)
+        DO UPDATE SET
+          rent_cents = EXCLUDED.rent_cents,
+          charges_cents = EXCLUDED.charges_cents,
+          deposit_cents = EXCLUDED.deposit_cents,
+          payment_day = EXCLUDED.payment_day
+        `,
+        [leaseId, effectiveDate, rentCents, newChargesCents, depositCents, paymentDay],
+      );
+
+      const updQ = await client.query(
+        `
+        UPDATE lease_amendments
+        SET status = 'applied',
+            applied_at = NOW(),
+            updated_at = NOW()
+        WHERE id = $1
+        RETURNING *
+        `,
+        [amendmentId],
+      );
+
+      await client.query('COMMIT');
+
+      return {
+        ok: true,
+        applied: true,
+        amendment: updQ.rows[0],
+        addedTenantIds: tenantIdsToAdd,
+        amountEffectiveDate: effectiveDate,
+      };
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   async activateLease(leaseId: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
@@ -858,8 +1174,12 @@ export class LeasesService {
     return { ok: true };
   }
 
-  async getDetails(leaseId: string) {
+  async getDetails(leaseId: string, asOfDate?: string) {
     if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const cleanAsOfDate = asOfDate && /^\d{4}-\d{2}-\d{2}$/.test(String(asOfDate).slice(0, 10))
+      ? String(asOfDate).slice(0, 10)
+      : null;
 
     const leaseR = await this.pool.query(
       `SELECT
@@ -867,31 +1187,45 @@ export class LeasesService {
         u.code as unit_code,
         t.full_name as tenant_name,
         pl.name as landlord_name,
-        pl.email as landlord_email
+        pl.email as landlord_email,
+        COALESCE(a.rent_cents, l.rent_cents) as rent_cents,
+        COALESCE(a.charges_cents, l.charges_cents) as charges_cents,
+        COALESCE(a.deposit_cents, l.deposit_cents) as deposit_cents,
+        COALESCE(a.payment_day, l.payment_day) as payment_day,
+        a.effective_date as amounts_effective_date
       FROM leases l
       JOIN units u ON u.id = l.unit_id
       JOIN tenants t ON t.id = l.tenant_id
       LEFT JOIN projects p ON p.id = u.project_id
       LEFT JOIN project_landlords pl ON pl.id = p.landlord_id
-      WHERE l.id=$1`,
-      [leaseId],
+      LEFT JOIN LATERAL (
+        SELECT rent_cents, charges_cents, deposit_cents, payment_day, effective_date
+        FROM lease_amounts
+        WHERE lease_id = l.id
+          AND effective_date <= COALESCE($2::date, CURRENT_DATE)
+        ORDER BY effective_date DESC
+        LIMIT 1
+      ) a ON TRUE
+      WHERE l.id = $1`,
+      [leaseId, cleanAsOfDate],
     );
+
     if (!leaseR.rowCount) throw new BadRequestException('Unknown leaseId');
 
     const tenantsR = await this.pool.query(
       `SELECT lt.role, t.*
-       FROM lease_tenants lt
-       JOIN tenants t ON t.id = lt.tenant_id
-       WHERE lt.lease_id=$1
-       ORDER BY CASE WHEN lt.role='principal' THEN 0 ELSE 1 END, t.full_name`,
+      FROM lease_tenants lt
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lt.lease_id=$1
+      ORDER BY CASE WHEN lt.role='principal' THEN 0 ELSE 1 END, t.full_name`,
       [leaseId],
     );
 
     const amountsR = await this.pool.query(
       `SELECT *
-       FROM lease_amounts
-       WHERE lease_id=$1
-       ORDER BY effective_date DESC`,
+      FROM lease_amounts
+      WHERE lease_id=$1
+      ORDER BY effective_date DESC`,
       [leaseId],
     );
 

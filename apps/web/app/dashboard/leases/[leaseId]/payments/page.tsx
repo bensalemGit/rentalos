@@ -41,6 +41,12 @@ type Receipt = {
   document_id?: string | null;
   filename?: string | null;
   document_created_at?: string | null;
+  sent_count?: number;
+  last_sent_at?: string | null;
+  last_sent_to?: string | null;
+  reminder_sent_count?: number;
+  last_reminder_at?: string | null;
+  last_reminder_to?: string | null;
 };
 
 type Lease = {
@@ -60,6 +66,16 @@ type DepositDeduction = {
 };
 
 type PaymentStatus = "paid" | "partial" | "unpaid";
+
+type PeriodPaymentStatus = {
+  dueCents: number;
+  paidCents: number;
+  remainingCents: number;
+  fullyPaid: boolean;
+  occupiedDays?: number;
+  daysInMonth?: number;
+  prorated?: boolean;
+};
 
 function formatEuros(cents: number) {
   return `${(Number(cents || 0) / 100).toFixed(2).replace(".", ",")} €`;
@@ -81,6 +97,13 @@ function formatPeriod(payment: Payment) {
   }).format(new Date(payment.period_year, payment.period_month - 1, 1));
 }
 
+function formatSelectedPeriod(year: string, month: string) {
+  return new Intl.DateTimeFormat("fr-FR", {
+    month: "long",
+    year: "numeric",
+  }).format(new Date(Number(year), Number(month) - 1, 1));
+}
+
 export default function LeasePaymentsPage({
   params,
 }: {
@@ -93,6 +116,7 @@ export default function LeasePaymentsPage({
   const [payments, setPayments] = useState<Payment[]>([]);
   const [deductions, setDeductions] = useState<DepositDeduction[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [periodStatus, setPeriodStatus] = useState<PeriodPaymentStatus | null>(null);
   const [lease, setLease] = useState<Lease | null>(null);
 
   const [loading, setLoading] = useState(false);
@@ -139,22 +163,42 @@ export default function LeasePaymentsPage({
     setStatus("");
 
     try {
-      const [paymentsRes, receiptsRes, deductionsRes, leasesRes] = await Promise.all([
-        fetch(`${API}/payments?leaseId=${leaseId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+      const [paymentsRes, receiptsRes, deductionsRes, leasesRes, statusRes] = await Promise.all([
+        fetch(`${API}/payments?leaseId=${leaseId}&t=${Date.now()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+          },
           credentials: "include",
+          cache: "no-store",
         }),
-        fetch(`${API}/receipts?leaseId=${leaseId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        fetch(`${API}/receipts?leaseId=${leaseId}&t=${Date.now()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+          },
           credentials: "include",
+          cache: "no-store",
         }),
-        fetch(`${API}/lease-deposit?leaseId=${leaseId}`, {
-          headers: { Authorization: `Bearer ${token}` },
+        fetch(`${API}/lease-deposit?leaseId=${leaseId}&t=${Date.now()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+          },
           credentials: "include",
+          cache: "no-store",
         }),
         fetch(`${API}/leases`, {
           headers: { Authorization: `Bearer ${token}` },
           credentials: "include",
+        }),
+        fetch(`${API}/payments/status?leaseId=${leaseId}&year=${periodYear}&month=${periodMonth}&t=${Date.now()}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Cache-Control": "no-cache",
+          },
+          credentials: "include",
+          cache: "no-store",
         }),
       ]);
 
@@ -162,6 +206,7 @@ export default function LeasePaymentsPage({
       const receiptsJson = await receiptsRes.json().catch(() => []);
       const deductionsJson = await deductionsRes.json().catch(() => []);
       const leasesJson = await leasesRes.json().catch(() => []);
+      const statusJson = await statusRes.json().catch(() => null);
 
       if (!paymentsRes.ok) {
         throw new Error(paymentsJson?.message || "Erreur chargement paiements");
@@ -175,8 +220,13 @@ export default function LeasePaymentsPage({
         throw new Error(deductionsJson?.message || "Erreur chargement dépôt de garantie");
       }
 
+      if (!statusRes.ok) {
+        throw new Error(statusJson?.message || "Erreur chargement statut paiement");
+      }
+
       setPayments(Array.isArray(paymentsJson) ? paymentsJson : []);
       setReceipts(Array.isArray(receiptsJson) ? receiptsJson : []);
+      setPeriodStatus(statusJson || null);
       setDeductions(Array.isArray(deductionsJson) ? deductionsJson : []);
 
       const leaseList = Array.isArray(leasesJson) ? leasesJson : [];
@@ -191,14 +241,18 @@ export default function LeasePaymentsPage({
   useEffect(() => {
     if (token) loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token, leaseId]);
+  }, [token, leaseId, periodYear, periodMonth]);
 
   const totalPaidCents = useMemo(() => {
     return payments.reduce((sum, p) => sum + Number(p.amount_cents || 0), 0);
   }, [payments]);
 
-  const monthlyDueCents =
-    Number(lease?.rent_cents || 0) + Number(lease?.charges_cents || 0);
+  const selectedPeriodPaidCents = Number(periodStatus?.paidCents || 0);
+
+  const monthlyDueCents = Number(
+    periodStatus?.dueCents ??
+      (Number(lease?.rent_cents || 0) + Number(lease?.charges_cents || 0)),
+  );
 
   const depositCents = Number(lease?.deposit_cents || 0);
 
@@ -209,12 +263,14 @@ export default function LeasePaymentsPage({
 
   const restitutionCents = Math.max(0, depositCents - totalDeductionsCents);
 
-  const remainingCents = Math.max(0, monthlyDueCents - totalPaidCents);
+  const remainingCents = Number(
+    periodStatus?.remainingCents ?? Math.max(0, monthlyDueCents - selectedPeriodPaidCents),
+  );
 
   const paymentStatus: PaymentStatus =
-    monthlyDueCents > 0 && totalPaidCents >= monthlyDueCents
+    periodStatus?.fullyPaid
       ? "paid"
-      : totalPaidCents > 0
+      : selectedPeriodPaidCents > 0
         ? "partial"
         : "unpaid";
 
@@ -226,8 +282,7 @@ export default function LeasePaymentsPage({
       receipts.find(
         (r) =>
           Number(r.period_year) === py &&
-          Number(r.period_month) === pm &&
-          r.document_id,
+          Number(r.period_month) === pm,
       ) || null
     );
   }, [receipts, periodYear, periodMonth]);
@@ -262,6 +317,78 @@ export default function LeasePaymentsPage({
     } catch (e: any) {
       setStatus("");
       setError(String(e?.message || e));
+    }
+  }
+
+  async function sendCurrentReceipt() {
+    setBusy(true);
+    setError("");
+    setStatus("Envoi de la quittance…");
+
+    try {
+      const r = await fetch(`${API}/receipts/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          leaseId,
+          year: Number(periodYear),
+          month: Number(periodMonth),
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        throw new Error(j?.message || JSON.stringify(j));
+      }
+
+      setStatus(`Quittance envoyée ✅ (${j.sentCount || 0} email(s))`);
+      await loadAll();
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendPaymentReminder() {
+    setBusy(true);
+    setError("");
+    setStatus("Envoi de la relance…");
+
+    try {
+      const r = await fetch(`${API}/receipts/reminder`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          leaseId,
+          year: Number(periodYear),
+          month: Number(periodMonth),
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        throw new Error(j?.message || JSON.stringify(j));
+      }
+
+      setStatus(`Relance envoyée ✅ (${j.sentCount || 0} email(s))`);
+      await loadAll();
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -480,6 +607,37 @@ export default function LeasePaymentsPage({
     }
   }
 
+  async function sendDepositSummary() {
+    setBusy(true);
+    setError("");
+    setStatus("Envoi du solde de sortie…");
+
+    try {
+      const r = await fetch(`${API}/lease-deposit/summary/send`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        credentials: "include",
+        body: JSON.stringify({ leaseId }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        throw new Error(j?.message || JSON.stringify(j));
+      }
+
+      setStatus(`Solde envoyé ✅ (${j.sentCount || 0} email(s))`);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <main
       style={{
@@ -575,12 +733,80 @@ export default function LeasePaymentsPage({
       {status ? <div style={successBox}>{status}</div> : null}
       {error ? <div style={errorBox}>{error}</div> : null}
 
+      <section
+        style={{
+          border: `1px solid ${cardBorder}`,
+          borderRadius: 18,
+          background: "#fff",
+          padding: isMobile ? "14px" : "14px 18px",
+          marginBottom: 16,
+          display: "flex",
+          justifyContent: "space-between",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "center",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 14, fontWeight: 900, color: title }}>
+            Période consultée
+          </div>
+          <div style={{ marginTop: 4, fontSize: 13, color: muted }}>
+            Statut, montant dû et quittance pour {formatSelectedPeriod(periodYear, periodMonth)}.
+          </div>
+        </div>
+
+        <div
+          style={{
+            display: "flex",
+            gap: 10,
+            flexWrap: "wrap",
+            width: isMobile ? "100%" : "auto",
+          }}
+        >
+          <select
+            value={periodMonth}
+            onChange={(e) => setPeriodMonth(e.target.value)}
+            style={{
+              ...inputStyle(border),
+              width: isMobile ? "100%" : 150,
+            }}
+          >
+            <option value="1">Janvier</option>
+            <option value="2">Février</option>
+            <option value="3">Mars</option>
+            <option value="4">Avril</option>
+            <option value="5">Mai</option>
+            <option value="6">Juin</option>
+            <option value="7">Juillet</option>
+            <option value="8">Août</option>
+            <option value="9">Septembre</option>
+            <option value="10">Octobre</option>
+            <option value="11">Novembre</option>
+            <option value="12">Décembre</option>
+          </select>
+
+          <input
+            value={periodYear}
+            onChange={(e) => setPeriodYear(e.target.value)}
+            inputMode="numeric"
+            style={{
+              ...inputStyle(border),
+              width: isMobile ? "100%" : 110,
+            }}
+          />
+        </div>
+      </section>
+
       <PaymentStatusBanner
         status={paymentStatus}
-        paidCents={totalPaidCents}
+        paidCents={selectedPeriodPaidCents}
         dueCents={monthlyDueCents}
         remainingCents={remainingCents}
         isMobile={isMobile}
+        prorated={Boolean(periodStatus?.prorated)}
+        occupiedDays={periodStatus?.occupiedDays}
+        daysInMonth={periodStatus?.daysInMonth}
       />
 
       <section
@@ -660,35 +886,97 @@ export default function LeasePaymentsPage({
             </div>
             <div style={{ marginTop: 4, fontSize: 13, color: softText }}>
               {currentPeriodReceipt?.document_id
-                ? `Disponible pour ${new Intl.DateTimeFormat("fr-FR", {
-                    month: "long",
-                    year: "numeric",
-                  }).format(new Date(Number(periodYear), Number(periodMonth) - 1, 1))}`
+                ? currentPeriodReceipt.sent_count && currentPeriodReceipt.sent_count > 0
+                  ? `Envoyée le ${formatDate(currentPeriodReceipt.last_sent_at)} à ${currentPeriodReceipt.last_sent_to || "locataire(s)"}`
+                  : `Disponible pour ${formatSelectedPeriod(periodYear, periodMonth)} — pas encore envoyée`
                 : paymentStatus === "paid"
                   ? "Payé : la quittance sera disponible après génération automatique."
                   : "Disponible uniquement lorsque la période est entièrement payée."}
             </div>
+
+            {currentPeriodReceipt ? (
+              <div style={{ marginTop: 6, display: "grid", gap: 3, fontSize: 12.5, color: softText }}>
+                <div>
+                  Quittance :{" "}
+                  {currentPeriodReceipt.sent_count && currentPeriodReceipt.sent_count > 0
+                    ? `envoyée le ${formatDate(currentPeriodReceipt.last_sent_at)}`
+                    : currentPeriodReceipt.document_id
+                      ? "générée, non envoyée"
+                      : "non générée"}
+                </div>
+
+                <div>
+                  Relance impayé :{" "}
+                  {currentPeriodReceipt.reminder_sent_count && currentPeriodReceipt.reminder_sent_count > 0
+                    ? `envoyée le ${formatDate(currentPeriodReceipt.last_reminder_at)}`
+                    : "jamais envoyée"}
+                </div>
+              </div>
+            ) : null}
+
           </div>
         </div>
 
         {currentPeriodReceipt?.document_id ? (
-          <button
-            type="button"
-            onClick={() =>
-              downloadDocument(
-                currentPeriodReceipt.document_id!,
-                currentPeriodReceipt.filename ||
-                  `QUITTANCE_${periodMonth}-${periodYear}.pdf`,
-              )
-            }
+          <div
             style={{
-              ...primaryButton(blue),
+              display: "flex",
+              gap: 10,
+              flexWrap: "wrap",
               width: isMobile ? "100%" : undefined,
-              justifyContent: "center",
+              justifyContent: isMobile ? "center" : "flex-end",
             }}
           >
-            <Download size={15} strokeWidth={2.2} />
-            Télécharger la quittance
+            <button
+              type="button"
+              onClick={() =>
+                downloadDocument(
+                  currentPeriodReceipt.document_id!,
+                  currentPeriodReceipt.filename ||
+                    `QUITTANCE_${periodMonth}-${periodYear}.pdf`,
+                )
+              }
+              style={{
+                ...primaryButton(blue),
+                width: isMobile ? "100%" : undefined,
+                justifyContent: "center",
+              }}
+            >
+              <Download size={15} strokeWidth={2.2} />
+              Télécharger la quittance
+            </button>
+
+            <button
+              type="button"
+              onClick={sendCurrentReceipt}
+              disabled={busy}
+              style={{
+                ...secondaryButton(border),
+                width: isMobile ? "100%" : undefined,
+                justifyContent: "center",
+                opacity: busy ? 0.65 : 1,
+                cursor: busy ? "not-allowed" : "pointer",
+              }}
+            >
+              <FileText size={15} strokeWidth={2.2} />
+              Renvoyer par email
+            </button>
+          </div>
+        ) : paymentStatus !== "paid" ? (
+          <button
+            type="button"
+            onClick={sendPaymentReminder}
+            disabled={busy}
+            style={{
+              ...secondaryButton(border),
+              width: isMobile ? "100%" : undefined,
+              justifyContent: "center",
+              opacity: busy ? 0.65 : 1,
+              cursor: busy ? "not-allowed" : "pointer",
+            }}
+          >
+            <FileText size={15} strokeWidth={2.2} />
+            Relancer par email
           </button>
         ) : (
           <button
@@ -758,6 +1046,22 @@ export default function LeasePaymentsPage({
             >
               <Download size={15} strokeWidth={2.2} />
               Générer solde PDF
+            </button>
+
+            <button
+              type="button"
+              onClick={sendDepositSummary}
+              disabled={busy}
+              style={{
+                ...secondaryButton(border),
+                width: isMobile ? "100%" : undefined,
+                justifyContent: "center",
+                opacity: busy ? 0.65 : 1,
+                cursor: busy ? "not-allowed" : "pointer",
+              }}
+            >
+              <FileText size={15} strokeWidth={2.2} />
+              Envoyer par email
             </button>
 
             <button
@@ -1130,12 +1434,18 @@ function PaymentStatusBanner({
   dueCents,
   remainingCents,
   isMobile,
+  prorated,
+  occupiedDays,
+  daysInMonth,
 }: {
   status: PaymentStatus;
   paidCents: number;
   dueCents: number;
   remainingCents: number;
   isMobile: boolean;
+  prorated?: boolean;
+  occupiedDays?: number;
+  daysInMonth?: number;
 }) {
   const tone =
     status === "paid"
@@ -1190,8 +1500,14 @@ function PaymentStatusBanner({
         <div style={{ marginTop: 4, fontSize: 13, fontWeight: 700, lineHeight: 1.45 }}>
           {tone.text}
         </div>
-      </div>
 
+        {prorated ? (
+          <div style={{ marginTop: 4, fontSize: 12.5, fontWeight: 700, lineHeight: 1.45 }}>
+            Montant calculé au prorata : {occupiedDays || 0} jour(s) sur {daysInMonth || "—"}.
+          </div>
+        ) : null}
+
+      </div>
       <div
         style={{
           display: "grid",
