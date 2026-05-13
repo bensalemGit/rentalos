@@ -3,7 +3,7 @@ import type {
   SignatureGlobalStatus,
   SignatureOverview,
 } from "../_types/signature-center.types";
-import { CheckCircle2, ShieldCheck, Users, Clock3, FolderCheck } from "lucide-react";
+import { CheckCircle2, ShieldCheck, Users, Clock3 } from "lucide-react";
 import { HeroChip, PremiumButton, SIGN_UI } from "./signature-ui";
 
 type SignatureHeroProps = {
@@ -199,31 +199,16 @@ export function SignatureHero({
             >
               Progression : {progressPercent}%
             </div>
-
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 8,
-                minHeight: 34,
-                padding: "0 14px",
-                borderRadius: 999,
-                background: globalTone.bg,
-                color: globalTone.text,
-                fontWeight: 700,
-                fontSize: 12.5,
-                letterSpacing: "-0.01em",
-                width: "fit-content",
-                boxShadow: "inset 0 0 0 1px rgba(255,255,255,0.34)",
-              }}
-            >
-              <FolderCheck size={14} strokeWidth={2.1} />
-              <span>{statusLabel}</span>
-            </div>
           </div>
 
           <HeroChip
-            icon={<Clock3 size={14} strokeWidth={2.1} />}
+            icon={
+              isCompleted || overview.globalStatus === "CLOSED" ? (
+                <CheckCircle2 size={14} strokeWidth={2.1} />
+              ) : (
+                <Clock3 size={14} strokeWidth={2.1} />
+              )
+            }
             label={
               overview.globalStatus === "CLOSED"
                 ? "Dossier clos"
@@ -231,7 +216,7 @@ export function SignatureHero({
                   ? "Signatures terminées"
                   : `${overview.remainingCount} signatures restantes`
             }
-            done={overview.globalStatus === "CLOSED"}
+            done={isCompleted || overview.globalStatus === "CLOSED"}
             empty={!isCompleted && overview.remainingCount <= 0}
           />
         </div>

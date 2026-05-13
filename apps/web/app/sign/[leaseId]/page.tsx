@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
@@ -10,6 +11,8 @@ import { SignerSection } from "./_components/SignerSection";
 import type {
   SignerTask,
   PackFinalReadiness,
+  SignatureOverview,
+  SignatureGlobalStatus,
 } from "./_types/signature-center.types";
 import { DocumentsSection } from "./_components/DocumentsSection";
 import { HistorySection, type HistoryItem } from "./_components/HistorySection";
@@ -199,6 +202,9 @@ function buildHistoryItems(tasks: SignerTask[], docs: HistoryDocument[]): Histor
 
 export default function SignPage({ params }: { params: { leaseId: string } }) {
   const leaseId = params.leaseId;
+  const searchParams = useSearchParams();
+  const targetedDocumentId = String(searchParams.get("documentId") || "").trim();
+  const isTargetedDocumentMode = Boolean(targetedDocumentId);
   const [token, setToken] = useState("");
 
   const [docs, setDocs] = useState<Doc[]>([]);
@@ -218,6 +224,7 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [packFinalReadiness, setPackFinalReadiness] = useState<PackFinalReadiness | null>(null);
   const [loadingPackFinalReadiness, setLoadingPackFinalReadiness] = useState(false);
   const [packFinalReadinessError, setPackFinalReadinessError] = useState<string | null>(null);
+  const [amendments, setAmendments] = useState<any[]>([]);
 
   // lease kind
   const [leaseKind, setLeaseKind] = useState("");
@@ -441,6 +448,23 @@ useEffect(() => {
     }
   }
 
+  async function loadAmendments() {
+    try {
+      const r = await fetch(`${API}/leases/${leaseId}/amendments`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      const j = await r.json().catch(() => []);
+      const arr = Array.isArray(j) ? j : Array.isArray(j?.value) ? j.value : [];
+
+      setAmendments(arr);
+    } catch {
+      setAmendments([]);
+    }
+  }
+
   async function loadDocs() {
     setError("");
     setStatus("Chargement…");
@@ -519,6 +543,7 @@ useEffect(() => {
     if (!leaseId) return;
 
     loadDocs();
+    loadAmendments();
     fetchSignatureStatus(leaseId).catch(() => {});
     fetchCanonicalWorkflow(leaseId).catch(() => {});
     fetchPackFinalReadiness(leaseId).catch(() => {});
@@ -1334,11 +1359,19 @@ async function downloadDocumentResource(doc: { id: string; filename?: string | n
 
 async function downloadSignedDocumentResource(doc: {
   signedFinalDocumentId?: string | null;
+  signedFinalFilename?: string | null;
+  filename?: string | null;
   label: string;
 }) {
   if (!doc.signedFinalDocumentId) return;
 
-  await downloadDoc(doc.signedFinalDocumentId, `${doc.label}_SIGNE.pdf`);
+  const base =
+    doc.signedFinalFilename ||
+    (doc.filename
+      ? doc.filename.replace(/\.pdf$/i, "_SIGNE.pdf")
+      : `${doc.label}_SIGNE.pdf`);
+
+  await downloadDoc(doc.signedFinalDocumentId, base);
 }
 
 
@@ -1615,12 +1648,99 @@ function onPointerUp(e: any) {
       sigStatus,
       tenants,
       docs,
+      amendments,
       guaranteeActOverride,
       landlordName,
     });
-  }, [leaseId, sigStatus, tenants, docs, guaranteeActOverride, landlordName]);
+  }, [leaseId, sigStatus, tenants, docs, amendments, guaranteeActOverride, landlordName]);
 
   const { overview, signerTasks, documents } = signatureCenter;
+
+  console.log("SIGNER TASKS JSON", JSON.stringify(signerTasks, null, 2));
+  console.log("DOCUMENTS JSON", JSON.stringify(documents, null, 2));
+  console.log("TARGET DOC", targetedDocumentId);
+
+  const visibleSignerTasks = useMemo(() => {
+    if (!isTargetedDocumentMode) return signerTasks;
+
+    return signerTasks.filter((task) => {
+      return (
+        String(task.documentId || "") === targetedDocumentId ||
+        String(task.signedFinalDocumentId || "") === targetedDocumentId
+      );
+    });
+  }, [signerTasks, isTargetedDocumentMode, targetedDocumentId]);
+
+  const visibleDocuments = useMemo(() => {
+    if (!isTargetedDocumentMode) return documents;
+
+    return documents.filter((doc: any) => {
+      return (
+        String(doc.id || "") === targetedDocumentId ||
+        String(doc.signedFinalDocumentId || "") === targetedDocumentId
+      );
+    });
+  }, [documents, isTargetedDocumentMode, targetedDocumentId]);
+
+  const visibleOverview: SignatureOverview = useMemo(() => {
+    if (!isTargetedDocumentMode) return overview;
+
+    const actionableTasks = visibleSignerTasks.filter(
+      (task) => task.status !== "NOT_REQUIRED",
+    );
+
+    const signedCount = actionableTasks.filter(
+      (task) => task.status === "SIGNED",
+    ).length;
+
+    const totalCount = actionableTasks.length;
+    const remainingCount = Math.max(0, totalCount - signedCount);
+
+    const tenantTasks = actionableTasks.filter((task) => task.kind === "TENANT");
+    const guarantorTasks = actionableTasks.filter((task) => task.kind === "GUARANTOR");
+    const landlordTasks = actionableTasks.filter((task) => task.kind === "LANDLORD");
+
+    return {
+      ...overview,
+      progressPercent: totalCount > 0 ? Math.round((signedCount / totalCount) * 100) : 0,
+      signedCount,
+      totalCount,
+      remainingCount,
+      tenants: {
+        ...overview.tenants,
+        signed: tenantTasks.filter((task) => task.status === "SIGNED").length,
+        total: tenantTasks.length,
+        pending: tenantTasks.filter((task) => task.status !== "SIGNED").length,
+      },
+
+      guarantors: {
+        ...overview.guarantors,
+        signed: guarantorTasks.filter((task) => task.status === "SIGNED").length,
+        total: guarantorTasks.length,
+        pending: guarantorTasks.filter((task) => task.status !== "SIGNED").length,
+        notRequired: 0,
+      },
+
+      landlord: {
+        ...overview.landlord,
+        signed:
+          landlordTasks.length > 0 &&
+          landlordTasks.every((task) => task.status === "SIGNED"),
+        total: landlordTasks.length,
+        pending: landlordTasks.filter((task) => task.status !== "SIGNED").length,
+      },
+      globalStatus: (
+        remainingCount === 0 && totalCount > 0
+          ? "SIGNED"
+          : "SIGNATURE"
+      ) as SignatureGlobalStatus,
+      globalStatusLabel:
+        remainingCount === 0 && totalCount > 0
+          ? "Document signé"
+          : "Signature en cours",
+      globalStatusHelp: "",
+    };
+  }, [overview, isTargetedDocumentMode, visibleSignerTasks]);
 
   console.log(
     "[SIGNER TASKS RUNTIME]",
@@ -1642,7 +1762,7 @@ function groupTasksBySigner(tasks: SignerTask[]) {
     if (task.kind === "TENANT") {
       key = `tenant:${task.tenantId}`;
     } else if (task.kind === "LANDLORD") {
-      key = "landlord";
+      key = "landlord:global";
     } else if (task.kind === "GUARANTOR") {
       key = `guarantor:${task.guaranteeId}`;
     }
@@ -1656,11 +1776,11 @@ function groupTasksBySigner(tasks: SignerTask[]) {
 
   function pickMainTask(group: SignerTask[]) {
     return (
+      group.find((t) => t.documentLabel === "Contrat de location") ||
       group.find((t) => t.status === "READY" && !t.isBlocked) ||
       group.find((t) => t.status === "IN_PROGRESS" && !t.isBlocked) ||
       group.find((t) => t.status === "LINK_SENT" && !t.isBlocked) ||
       group.find((t) => t.requiresPreparation) ||
-      group.find((t) => t.documentLabel === "Contrat de location") ||
       group[0]
     );
   }
@@ -1676,7 +1796,7 @@ function groupTasksBySigner(tasks: SignerTask[]) {
   });
 }
 
-  const signerGroups = groupTasksBySigner(signerTasks);
+  const signerGroups = groupTasksBySigner(visibleSignerTasks);
 
   console.log(
     "[SIGNER GROUPS RUNTIME]",
@@ -1713,8 +1833,8 @@ function groupTasksBySigner(tasks: SignerTask[]) {
   });
 
   const historyItems = useMemo(() => {
-  return buildHistoryItems(signerTasks, documents);
-}, [signerTasks, documents]);
+    return buildHistoryItems(visibleSignerTasks, visibleDocuments);
+  }, [visibleSignerTasks, visibleDocuments]);
 
   const isRP = useMemo(() => {
     const k = String(leaseKind || "").toUpperCase();
@@ -1946,6 +2066,7 @@ async function signDocOnPlace(args: {
 
   async function refreshAll() {
     await loadDocs();
+    await loadAmendments();
     await fetchSignatureStatus(leaseId);
     await fetchCanonicalWorkflow(leaseId);
     await fetchPackFinalReadiness(leaseId);
@@ -2007,9 +2128,9 @@ function getRecommendedActionLabel(tasks: SignerTask[]): string {
   return "Le dossier est entièrement prêt et signé.";
 }
 
-const recommendedActionLabel = getRecommendedActionLabel(signerTasks);
+const recommendedActionLabel = getRecommendedActionLabel(visibleSignerTasks);
 
-const canSendAllRemainingLinks = signerTasks.some(
+const canSendAllRemainingLinks = visibleSignerTasks.some(
   (task) =>
     task.status !== "SIGNED" &&
     task.status !== "NOT_REQUIRED" &&
@@ -2017,7 +2138,7 @@ const canSendAllRemainingLinks = signerTasks.some(
     task.canSendEmailLink
 );
 
-const canStartNextOnSite = signerTasks.some(
+const canStartNextOnSite = visibleSignerTasks.some(
   (task) => task.status === "READY" && task.canSignOnSite
 );
 
@@ -2226,7 +2347,7 @@ console.log("[PACK FINAL READINESS PAGE]", {
     
 
           <SignatureHero
-            overview={overview}
+            overview={visibleOverview}
             recommendedActionLabel={recommendedActionLabel}
             canSendAllRemainingLinks={canSendAllRemainingLinks}
             canStartNextOnSite={canStartNextOnSite}
@@ -2235,7 +2356,7 @@ console.log("[PACK FINAL READINESS PAGE]", {
           />
 
           <SignerSection
-            tasks={signerTasks}
+            tasks={signerCards}
             activeTaskId={sessionDraft.signerTaskId}
             enableAutoScroll={isWideScreen}
             onStartOnSite={startOnSiteSignature}
@@ -2246,7 +2367,7 @@ console.log("[PACK FINAL READINESS PAGE]", {
           />
 
           <DocumentsSection
-            documents={documents}
+            documents={visibleDocuments}
             onDownloadDocument={downloadDocumentResource}
             onDownloadSignedDocument={downloadSignedDocumentResource}
             onRegenerateContract={() => generateContract(true)}
@@ -2254,6 +2375,10 @@ console.log("[PACK FINAL READINESS PAGE]", {
             onRegenerateInventoryEntry={() => generateInventory("entry", true)}
             onRegenerateEdlExit={() => generateEdl("exit", true)}
             onRegenerateInventoryExit={() => generateInventory("exit", true)}
+            onRegenerateGuarantorAct={(doc) => {
+              if (!doc.guaranteeId) return;
+              generateGuarantorActFor(doc.guaranteeId);
+            }}
           />
         </div>
 

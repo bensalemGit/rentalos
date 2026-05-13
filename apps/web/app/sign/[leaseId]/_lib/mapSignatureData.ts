@@ -115,11 +115,33 @@ type DocLite = {
   filename?: string;
 };
 
+type AmendmentLite = {
+  id: string;
+  type?: string | null;
+  status?: string | null;
+  document_id?: string | null;
+  document_filename?: string | null;
+  signed_final_document_id?: string | null;
+  signed_final_filename?: string | null;
+  signers?: Array<{
+    role?: string | null;
+    tenantId?: string | null;
+    tenant_id?: string | null;
+    signerName?: string | null;
+    signer_name?: string | null;
+    signerEmail?: string | null;
+    signatureStatus?: string | null;
+    signature_status?: string | null;
+    signedAt?: string | null;
+  }>;
+};
+
 type MapSignatureDataArgs = {
   leaseId: string;
   sigStatus: SignatureStatusPayloadLite | null;
   tenants: LeaseTenantLite[];
   docs: DocLite[];
+  amendments?: AmendmentLite[];
   guaranteeActOverride: Record<string, string>;
   landlordName?: string | null;
 };
@@ -637,6 +659,58 @@ function mapSecondaryDocTasks(sigStatus: SignatureStatusPayloadLite | null): Sig
   ];
 }
 
+function mapAmendmentTasks(amendments: AmendmentLite[] = []): SignerTask[] {
+  return amendments.flatMap((a) => {
+    const documentId = String(a.document_id || "").trim();
+    if (!documentId) return [];
+
+    const signedFinalDocumentId = String(a.signed_final_document_id || "").trim() || null;
+    const filename = a.document_filename || null;
+    const label = "Avenant";
+
+    return (a.signers || []).map((s, index) => {
+      const role = String(s.role || "").toUpperCase();
+      const rawStatus = String(s.signatureStatus || s.signature_status || "").toUpperCase();
+
+      const kind = role === "BAILLEUR" ? "LANDLORD" : "TENANT";
+      const status: SignerTaskStatus = rawStatus === "SIGNED" ? "SIGNED" : "READY";
+
+      const tenantId =
+        String(s.tenantId || s.tenant_id || "").trim() || undefined;
+
+      return {
+        id: `amendment:${a.id}:${role}:${tenantId || index}`,
+        kind,
+        displayName:
+          String(s.signerName || s.signer_name || "").trim() ||
+          (kind === "LANDLORD" ? "Bailleur" : "Locataire"),
+        roleLabel: kind === "LANDLORD" ? "Bailleur" : "Locataire",
+        documentId,
+        documentLabel: label,
+        documentType: "AVENANT",
+        documentFilename: filename,
+        status,
+        statusLabel: toTaskStatusLabel(status),
+        activeMode: null,
+        canSignOnSite: status !== "SIGNED",
+        canSendEmailLink: false,
+        canResendLink: false,
+        canDownloadSigned: Boolean(signedFinalDocumentId),
+        signedFinalDocumentId,
+        signedFinalFilename: a.signed_final_filename || null,
+        tenantId,
+        hasActiveLink: false,
+        activeLinkCreatedAt: null,
+        requiresPreparation: false,
+        preparationLabel: null,
+        isOptional: false,
+        isBlocked: false,
+        blockedReason: null,
+      } as SignerTask;
+    });
+  });
+}
+
 function computeGlobalStatus(args: {
   sigStatus: SignatureStatusPayloadLite | null;
   signerTasks: SignerTask[];
@@ -796,6 +870,7 @@ function mapDocuments(args: {
   docs: DocLite[];
   sigStatus: SignatureStatusPayloadLite | null;
   signerTasks: SignerTask[];
+  amendments?: AmendmentLite[];
 }): DocumentResource[] {
   const items: DocumentResource[] = [];
   const seen = new Set<string>();
@@ -831,6 +906,7 @@ function mapDocuments(args: {
         statusLabel: t.signedFinalDocumentId ? "Signé" : t.statusLabel,
         downloadable: true,
         signedFinalDocumentId: t.signedFinalDocumentId || null,
+        guaranteeId: t.guaranteeId || null,
       });
     });
 
@@ -905,6 +981,21 @@ function mapDocuments(args: {
     });
   }
 
+  (args.amendments || []).forEach((a) => {
+    if (!a.document_id) return;
+
+    pushDoc({
+      id: a.document_id,
+      label: "Avenant",
+      type: "AVENANT",
+      filename: a.document_filename || null,
+      statusLabel: a.signed_final_document_id ? "Signé" : "Généré",
+      downloadable: true,
+      signedFinalDocumentId: a.signed_final_document_id || null,
+      signedFinalFilename: a.signed_final_filename || null,
+    });
+  });
+
   return items;
 }
 
@@ -913,16 +1004,18 @@ function sortSignerTasks(tasks: SignerTask[]): SignerTask[] {
   switch (task.documentType) {
     case "CONTRAT":
       return 1;
-    case "GUARANTOR_ACT":
+    case "AVENANT":
       return 2;
-    case "EDL_ENTREE":
+    case "GUARANTOR_ACT":
       return 3;
-    case "INVENTAIRE_ENTREE":
+    case "EDL_ENTREE":
       return 4;
-    case "EDL_SORTIE":
+    case "INVENTAIRE_ENTREE":
       return 5;
-    case "INVENTAIRE_SORTIE":
+    case "EDL_SORTIE":
       return 6;
+    case "INVENTAIRE_SORTIE":
+      return 7;
     default:
       return 99;
   }
@@ -954,6 +1047,7 @@ export function mapSignatureData(args: MapSignatureDataArgs): MapSignatureDataRe
   const guarantorTasks = mapGuarantorTasks(args.sigStatus, args.guaranteeActOverride);
   const landlordTask = mapLandlordTask(args.sigStatus, args.landlordName);
   const secondaryDocTasks = mapSecondaryDocTasks(args.sigStatus);
+  const amendmentTasks = mapAmendmentTasks(args.amendments || []);
   const landlordGuaranteeSubTasks = buildLandlordGuaranteeSubTasks(
     args.sigStatus,
     args.guaranteeActOverride,
@@ -963,23 +1057,34 @@ export function mapSignatureData(args: MapSignatureDataArgs): MapSignatureDataRe
     ...tenantTasks,
     ...guarantorTasks,
     landlordTask,
+    ...amendmentTasks,
   ];
 
   const signerTasks = sortSignerTasks(
     primaryTasks.map((task) => {
       const subTasks = [
         ...secondaryDocTasks.filter((subTask) => {
-          if (task.kind === "TENANT" && subTask.kind === "TENANT") {
+          if (
+            task.kind === "TENANT" &&
+            task.documentType === "CONTRAT" &&
+            subTask.kind === "TENANT"
+          ) {
             return task.tenantId && subTask.tenantId === task.tenantId;
           }
 
-          if (task.kind === "LANDLORD" && subTask.kind === "LANDLORD") {
+          if (
+            task.kind === "LANDLORD" &&
+            task.documentType === "CONTRAT" &&
+            subTask.kind === "LANDLORD"
+          ) {
             return true;
           }
 
           return false;
         }),
-        ...(task.kind === "LANDLORD" ? landlordGuaranteeSubTasks : []),
+        ...(task.kind === "LANDLORD" && task.documentType === "CONTRAT"
+          ? landlordGuaranteeSubTasks
+          : []),
       ];
 
       if (subTasks.length === 0) {
@@ -1005,6 +1110,7 @@ export function mapSignatureData(args: MapSignatureDataArgs): MapSignatureDataRe
     docs: args.docs,
     sigStatus: args.sigStatus,
     signerTasks,
+    amendments: args.amendments || [],
   });
 
   return {

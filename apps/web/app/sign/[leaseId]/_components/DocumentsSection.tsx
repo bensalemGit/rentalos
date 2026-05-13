@@ -13,6 +13,7 @@ type DocumentsSectionProps = {
   onRegenerateInventoryEntry?: () => void;
   onRegenerateEdlExit?: () => void;
   onRegenerateInventoryExit?: () => void;
+  onRegenerateGuarantorAct?: (doc: DocumentResource) => void;
 };
 
 function DocumentActionLink({
@@ -33,26 +34,20 @@ function DocumentActionLink({
         padding: 0,
         margin: 0,
         fontFamily: SIGN_UI.font,
-        fontSize: 12.75,
-        lineHeight: 1.2,
-        fontWeight: 500,
-        color: "rgba(47,99,224,0.78)",
+        fontSize: 11.5,
+        lineHeight: 1,
+        fontWeight: 550,
+        color: "rgba(47,99,224,0.82)",
         cursor: "pointer",
         display: "inline-flex",
         alignItems: "center",
-        gap: 4,
+        gap: 2,
         whiteSpace: "nowrap",
         letterSpacing: "-0.01em",
       }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.color = "rgba(47,99,224,0.92)";
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.color = "rgba(47,99,224,0.78)";
-      }}
     >
       {children}
-      <ChevronRight size={12} strokeWidth={1.95} />
+      <ChevronRight size={10} strokeWidth={1.95} />
     </button>
   );
 }
@@ -66,14 +61,20 @@ export function DocumentsSection({
   onRegenerateInventoryEntry,
   onRegenerateEdlExit,
   onRegenerateInventoryExit,
+  onRegenerateGuarantorAct,
 }: DocumentsSectionProps) {
 
   function getRegenerateHandler(doc: DocumentResource) {
+    if (doc.type === "GUARANTOR_ACT" && doc.guaranteeId && onRegenerateGuarantorAct) {
+      return () => onRegenerateGuarantorAct(doc);
+    }
+
     if (doc.label === "Contrat de location") return onRegenerateContract;
     if (doc.label === "EDL entrée") return onRegenerateEdlEntry;
     if (doc.label === "Inventaire entrée") return onRegenerateInventoryEntry;
     if (doc.label === "EDL sortie") return onRegenerateEdlExit;
     if (doc.label === "Inventaire sortie") return onRegenerateInventoryExit;
+
     return undefined;
   }
 
@@ -83,7 +84,7 @@ export function DocumentsSection({
         fontFamily: SIGN_UI.font,
         minWidth: 0,
         display: "grid",
-        gap: 16,
+        gap: 6,
       }}
     >
 
@@ -119,11 +120,12 @@ export function DocumentsSection({
                 className="document-row"
                 style={{
                   display: "grid",
-                  gridTemplateColumns: "minmax(0,1fr) auto",
-                  gap: 12,
+                  gridTemplateColumns: "minmax(240px, 1fr) auto",
+                  gap: 6,
                   alignItems: "center",
-                  padding: "13px 0",
-                  borderTop: index === 0 ? "none" : `1px solid ${SIGN_UI.colors.lineSoft}`,
+                  padding: "1px 0",
+                  borderTop: index === 0 ? "none" : "1px solid rgba(27,39,64,0.025)",
+                  minWidth: 0,
                 }}
               >
                 <div
@@ -131,46 +133,34 @@ export function DocumentsSection({
                     minWidth: 0,
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
+                    gap: 6,
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
                   }}
                 >
-                  <FileText
-                    size={14}
-                    strokeWidth={1.9}
-                    color="#8EA3D4"
-                    style={{ flexShrink: 0, opacity: 0.82 }}
-                  />
+                  <FileText size={12} strokeWidth={1.9} color="#8EA3D4" style={{ flexShrink: 0, opacity: 0.82 }} />
 
-                  <div
+                  <span
                     style={{
+                      fontSize: 12,
+                      fontWeight: 600,
+                      color: "#22324D",
+                      letterSpacing: "-0.01em",
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
                       minWidth: 0,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 12,
-                      minHeight: 28,
-                      flexWrap: "wrap",
                     }}
+                    title={doc.label}
                   >
-                    <span
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 500,
-                        color: "#22324D",
-                        lineHeight: 1.3,
-                        minWidth: 0,
-                        wordBreak: "break-word",
-                        letterSpacing: "-0.01em",
-                      }}
-                    >
-                      {doc.label}
-                    </span>
+                    {doc.label}
+                  </span>
 
-                    {doc.statusLabel ? (
-                      <InlineTextStatus tone={tone}>
-                        {doc.statusLabel}
-                      </InlineTextStatus>
-                    ) : null}
-                  </div>
+                  {doc.statusLabel ? (
+                    <InlineTextStatus tone={tone}>
+                      {doc.statusLabel}
+                    </InlineTextStatus>
+                  ) : null}
                 </div>
 
                 <div
@@ -178,9 +168,10 @@ export function DocumentsSection({
                   style={{
                     display: "flex",
                     alignItems: "center",
-                    gap: 12,
-                    flexWrap: "wrap",
+                    gap: 6,
                     justifyContent: "flex-end",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                   }}
                 >
                   {doc.downloadable ? (
@@ -197,7 +188,7 @@ export function DocumentsSection({
 
                   {getRegenerateHandler(doc) ? (
                     <DocumentActionLink onClick={getRegenerateHandler(doc)!}>
-                      Régénérer
+                      Regénérer
                     </DocumentActionLink>
                   ) : null}
                 </div>
@@ -214,7 +205,7 @@ export function DocumentsSection({
                 grid-template-columns: 1fr !important;
                 gap: 10px !important;
                 align-items: start !important;
-                padding: 16px 0 !important;
+                padding: 10px 0 !important;
               }
 
               .document-actions {
