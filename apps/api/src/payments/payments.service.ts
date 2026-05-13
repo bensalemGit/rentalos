@@ -17,6 +17,7 @@ export class PaymentsService {
       `
       SELECT
         l.start_date,
+        l.actual_exit_date,
         l.end_date_theoretical,
         COALESCE(a.rent_cents, l.rent_cents) AS rent_cents,
         COALESCE(a.charges_cents, l.charges_cents) AS charges_cents
@@ -52,9 +53,11 @@ export class PaymentsService {
       ? new Date(lease.start_date)
       : monthStart;
 
-    const leaseEndDate = lease.end_date_theoretical
-      ? new Date(lease.end_date_theoretical)
-      : monthEnd;
+    const leaseEndDate = lease.actual_exit_date
+      ? new Date(lease.actual_exit_date)
+      : lease.end_date_theoretical
+        ? new Date(lease.end_date_theoretical)
+        : monthEnd;
 
     const effectivePeriodStart =
       leaseStartDate > monthStart ? leaseStartDate : monthStart;
@@ -71,7 +74,11 @@ export class PaymentsService {
       return {
         dueCents: 0,
         paidCents: 0,
+        remainingCents: 0,
         fullyPaid: false,
+        occupiedDays: 0,
+        daysInMonth,
+        prorated: true,
       };
     }
 
@@ -96,8 +103,22 @@ export class PaymentsService {
     return {
       dueCents,
       paidCents,
+      remainingCents: Math.max(0, dueCents - paidCents),
       fullyPaid: dueCents > 0 && paidCents >= dueCents,
+      occupiedDays,
+      daysInMonth,
+      prorated: occupiedDays !== daysInMonth,
     };
+  }
+
+  async getStatus(leaseId: string, year: number, month: number) {
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    if (!Number.isFinite(year) || !Number.isFinite(month) || month < 1 || month > 12) {
+      throw new BadRequestException('Invalid year/month');
+    }
+
+    return this.getPeriodPaymentStatus(leaseId, year, month);
   }
 
   async create(body: any) {
@@ -159,18 +180,33 @@ export class PaymentsService {
         periodMonth,
       );
 
+      console.log("[AUTO RECEIPT]", {
+        leaseId,
+        periodYear,
+        periodMonth,
+        amount,
+        periodStatus,
+      });
+
       if (periodStatus.fullyPaid) {
-        await this.receiptsService.generate({
-          leaseId,
-          year: periodYear,
-          month: periodMonth,
-          force: true,
-        });
+        console.log("[AUTO RECEIPT] fully paid -> sending receipt");
+        try {
+          const sendResult = await this.receiptsService.send({
+            leaseId,
+            year: periodYear,
+            month: periodMonth,
+          });
+
+          if (!sendResult?.sent) {
+            console.error("Auto receipt email failed:", (sendResult as any)?.error || sendResult);
+          }
+        } catch (sendError: any) {
+          console.error("Auto receipt email failed:", sendError?.message || sendError);
+        }
       }
     } catch (e: any) {
-      console.error('Auto receipt generation failed:', e?.message || e);
+      console.error('Auto receipt workflow failed:', e?.message || e);
     }
-
     return payment;
   }
 
@@ -199,7 +235,19 @@ export class PaymentsService {
       throw new BadRequestException('Unknown payment id');
     }
 
-    return { ok: true, payment: r.rows[0] };
+    const payment = r.rows[0];
+
+    await this.pool.query(
+      `
+      DELETE FROM receipts
+      WHERE lease_id = $1
+        AND period_year = $2
+        AND period_month = $3
+      `,
+      [payment.lease_id, payment.period_year, payment.period_month],
+    );
+
+    return { ok: true, payment };
   }
 
 }

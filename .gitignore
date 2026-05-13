@@ -120,3 +120,4 @@ arborescence.txt
 
 infra/delete
 infra/queryex
+infra/backup_before_v1_cleanup.sql

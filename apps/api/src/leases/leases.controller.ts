@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
 import { LeasesService } from './leases.service';
 import { JwtGuard } from '../auth/jwt.guard';
 import { CreateLeaseDto } from './dto/create-lease.dto';
@@ -25,8 +25,8 @@ export class LeasesController {
   }
 
   @Get(':id')
-  getOne(@Param('id') id: string) {
-    return this.leases.getDetails(id);
+  getOne(@Param('id') id: string, @Query('asOfDate') asOfDate?: string) {
+    return this.leases.getDetails(id, asOfDate);
   }
 
   @Post(':id/activate')
@@ -62,6 +62,22 @@ export class LeasesController {
   @Post(':id/amounts')
   addAmounts(@Param('id') id: string, @Body() body: any) {
     return this.leases.addAmounts(id, body);
+  }
+
+  @Post(':id/amendments/add-tenant')
+  createAddTenantAmendment(
+    @Param('id') id: string,
+    @Body() body: any,
+  ) {
+    return this.leases.createAddTenantAmendment(id, body);
+  }
+
+  @Post(':id/amendments/:amendmentId/apply')
+  applyAmendment(
+    @Param('id') id: string,
+    @Param('amendmentId') amendmentId: string,
+  ) {
+    return this.leases.applyLeaseAmendment(id, amendmentId);
   }
 
   // ✅ NEW: update designation + keys + IRL reference

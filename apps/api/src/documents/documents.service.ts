@@ -19,6 +19,7 @@ type DocType =
   | 'PACK'
   | 'PACK_FINAL'
   | 'GUARANTOR_ACT'
+  | 'AVENANT'
   | 'AVENANT_IRL'
   | 'EDL_ENTREE'
   | 'EDL_SORTIE'
@@ -764,6 +765,7 @@ private async getLatestSessionByPhase(args: {
     return [
       'CONTRAT',
       'GUARANTOR_ACT',
+      'AVENANT',
       'EDL_ENTREE',
       'INVENTAIRE_ENTREE',
       'EDL_SORTIE',
@@ -780,6 +782,7 @@ private async getLatestSessionByPhase(args: {
 
     if (
       docType === 'CONTRAT' ||
+      docType === 'AVENANT' ||
       docType === 'EDL_ENTREE' ||
       docType === 'INVENTAIRE_ENTREE' ||
       docType === 'EDL_SORTIE' ||
@@ -1836,13 +1839,15 @@ async listByLease(leaseId: string) {
   // -------------------------------------
   // CONTRAT (templated)
   // -------------------------------------
-  async generateContractPdf(leaseId: string, opts?: {force?: boolean}) {
+  async generateContractPdf(leaseId: string, opts?: { force?: boolean; asOfDate?: string }) {
     const force = !!opts?.force;
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
     const leaseBase = await this.pool.query(`SELECT start_date FROM leases WHERE id=$1`, [leaseId]);
     if (!leaseBase.rowCount) throw new BadRequestException('Unknown leaseId');
-    const asOf = this.isoDate(leaseBase.rows[0].start_date);
+    const asOf = opts?.asOfDate
+      ? this.isoDate(opts.asOfDate)
+      : this.isoDate(leaseBase.rows[0].start_date);
 
     const row = await this.fetchLeaseBundle(leaseId, asOf);
     const landlord = await this.getLandlordForLease(leaseId);
@@ -2619,10 +2624,11 @@ const pdfName = `ACTE_CAUTION_${leaseKind}_${row.unit_code}_${this.isoDate(row.s
   // ---------------------------------------------
   // NOTICE (RP only)
   // ---------------------------------------------
-  async generateNoticePdf(leaseId: string) {
+    async generateNoticePdf(leaseId: string, opts?: { force?: boolean; asOfDate?: string }) {
+    const force = !!opts?.force;
     if (!leaseId) throw new BadRequestException('Missing leaseId');
 
-    const row = await this.fetchLeaseBundle(leaseId);
+    const row = await this.fetchLeaseBundle(leaseId, opts?.asOfDate ? this.isoDate(opts.asOfDate) : undefined);
     const landlord = await this.getLandlordForLease(leaseId);
 
     if (!landlord) {
@@ -2705,7 +2711,17 @@ h1{font-size:16pt;margin:0 0 10px 0}
       filename: pdfName,
       parentNullOnly: true,
     });
-    if (existing) return { created: false, document: existing };
+    if (existing) {
+      if (!force) return { created: false, document: existing };
+
+      if (existing.signed_final_document_id) {
+        throw new BadRequestException('Cannot force rebuild: notice already finalized (SIGNED_FINAL exists)');
+      }
+
+      const abs = this.absFromStoragePath(existing.storage_path);
+      await this.deleteDocumentRow(existing.id);
+      await this.safeUnlinkAbs(abs);
+    }
 
     const pdfBuf = await this.htmlToPdfBuffer(html);
 
@@ -2731,7 +2747,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
   // ---------------------------------------------
   async generateEdlPdf(
     leaseId: string,
-    opts?: { phase: 'entry' | 'exit'; force?: boolean },
+    opts?: { phase: 'entry' | 'exit'; force?: boolean; asOfDate?: string },
   ) {
     const phaseKey = opts?.phase;
     const force = Boolean(opts?.force);
@@ -2859,7 +2875,7 @@ h1{font-size:16pt;margin:0 0 10px 0}
       }
     }
 
-    const leaseFullRow = await this.fetchLeaseBundle(leaseId);
+    const leaseFullRow = await this.fetchLeaseBundle(leaseId, opts?.asOfDate ? this.isoDate(opts.asOfDate) : undefined);
     const tenantsPlainLabel = this.buildTenantsPlainLabel(leaseFullRow);
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"/>
@@ -2979,7 +2995,7 @@ ${annexHtml}
   // ---------------------------------------------
   async generateInventoryPdf(
     leaseId: string,
-    opts?: { phase: 'entry' | 'exit'; force?: boolean },
+    opts?: { phase: 'entry' | 'exit'; force?: boolean; asOfDate?: string },
   ) {
     const phase = opts?.phase;
     const force = Boolean(opts?.force);
@@ -3133,7 +3149,7 @@ ${annexHtml}
       }
     }
 
-    const leaseFullRow = await this.fetchLeaseBundle(leaseId);
+    const leaseFullRow = await this.fetchLeaseBundle(leaseId, opts?.asOfDate ? this.isoDate(opts.asOfDate) : undefined);
     const tenantsPlainLabel = this.buildTenantsPlainLabel(leaseFullRow);  
     const html = `<!doctype html>
 <html><head><meta charset="utf-8"/>
@@ -3399,10 +3415,11 @@ ${annexHtml}
     };
   }  
 
-  async generatePackFinalV2(leaseId: string, opts?: { force?: boolean }, parentDocumentId?: string) {
+  async generatePackFinalV2(leaseId: string, opts?: { force?: boolean; asOfDate?: string }, parentDocumentId?: string) {
 
   const force = !!opts?.force;
-  const row = await this.fetchLeaseBundle(leaseId);
+  const asOfDate = opts?.asOfDate ? this.isoDate(opts.asOfDate) : undefined;
+  const row = await this.fetchLeaseBundle(leaseId, asOfDate);
   const leaseKind = String(row.kind || 'MEUBLE_RP').toUpperCase() as LeaseKind;
 
   const docs: any [] = await this.listDocsForLease(leaseId);
@@ -4306,6 +4323,182 @@ ${annexHtml}
     };
   }
 
+  async generateAddTenantAmendmentPdf(
+    leaseId: string,
+    amendmentId: string,
+  ) {
+    if (!leaseId) {
+      throw new BadRequestException('Missing leaseId');
+    }
+
+    if (!amendmentId) {
+      throw new BadRequestException('Missing amendmentId');
+    }
+
+    const amendmentQ = await this.pool.query(
+      `
+      SELECT
+        a.*,
+        l.unit_id,
+        u.code AS unit_code
+      FROM lease_amendments a
+      JOIN leases l ON l.id = a.lease_id
+      JOIN units u ON u.id = l.unit_id
+      WHERE a.id = $1
+        AND a.lease_id = $2
+      LIMIT 1
+      `,
+      [amendmentId, leaseId],
+    );
+
+    if (!amendmentQ.rowCount) {
+      throw new BadRequestException('Amendment not found');
+    }
+
+    const amendment = amendmentQ.rows[0];
+
+    const payload =
+      typeof amendment.payload_json === 'string'
+        ? JSON.parse(amendment.payload_json)
+        : amendment.payload_json || {};
+
+    const tenant = payload?.tenantSnapshot || {};
+
+    const existingTenants = Array.isArray(payload?.existingTenants)
+      ? payload.existingTenants
+      : [];
+
+    const addedTenants = Array.isArray(payload?.addedTenants)
+      ? payload.addedTenants
+      : tenant?.id || tenant?.fullName
+        ? [tenant]
+        : [];
+
+    const effectiveDate =
+      amendment.effective_date ||
+      payload?.effectiveDate ||
+      new Date();
+
+    const formatDateFr = (value: any) => {
+      if (!value) return "—";
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return String(value);
+      return new Intl.DateTimeFormat("fr-FR").format(d);
+    };
+
+    const formatMoney = (cents: any) => {
+      const n = Number(cents || 0);
+      return (n / 100).toFixed(2);
+    };
+
+    const html = `
+    <html>
+      <body style="font-family: Arial; padding: 40px;">
+        <h1>Avenant au bail</h1>
+
+        <p>
+          Ajout d'un cotenant au bail du logement
+          <b>${amendment.unit_code}</b>.
+        </p>
+
+        <h2>Nouveau locataire</h2>
+
+        <ul>
+          <li>Nom : ${tenant.fullName || ''}</li>
+          <li>Email : ${tenant.email || ''}</li>
+          <li>Téléphone : ${tenant.phone || ''}</li>
+        </ul>
+
+        <h2>Conditions financières</h2>
+
+        <ul>
+          <li>Loyer : ${formatMoney(payload.rentCents)} €</li>
+          <li>Anciennes charges : ${formatMoney(payload.previousChargesCents)} €</li>
+          <li>Nouvelles charges : ${formatMoney(payload.newChargesCents)} €</li>
+          <li>Dépôt : ${formatMoney(payload.depositCents)} €</li>
+        </ul>
+
+        <p>
+          Date d'effet :
+          $${formatDateFr(effectiveDate)}
+        </p>
+      </body>
+    </html>
+    `;
+
+    const pdfBuffer = await this.htmlToPdfBuffer(html);
+
+    const filename = `AVENANT_${amendment.unit_code}_${amendment.id}.pdf`;
+
+    const outDir = path.join(
+      this.storageBase,
+      'units',
+      amendment.unit_id,
+      'leases',
+      leaseId,
+      'documents',
+    );
+
+    this.ensureDir(outDir);
+
+    const outPdfPath = path.join(outDir, filename);
+    fsSync.writeFileSync(outPdfPath, pdfBuffer);
+
+    const storagePath = outPdfPath.replace(this.storageBase, '');
+    const sha = this.sha256File(outPdfPath);
+
+    const ins = await this.pool.query(
+      `
+      INSERT INTO documents (
+        unit_id,
+        lease_id,
+        type,
+        filename,
+        storage_path,
+        sha256
+      )
+      VALUES ($1,$2,'AVENANT',$3,$4,$5)
+      RETURNING *
+      `,
+      [
+        amendment.unit_id,
+        leaseId,
+        filename,
+        storagePath,
+        sha,
+      ],
+    );
+
+    const document = ins.rows[0];
+
+    await this.pool.query(
+      `
+      UPDATE lease_amendments
+      SET
+        document_id = $1,
+        updated_at = NOW()
+      WHERE id = $2
+      `,
+      [document.id, amendmentId],
+    );
+
+    return {
+      ok: true,
+      amendment,
+      document,
+    };
+  }
+
+  async generateLeaseAmendmentPdf(
+    leaseId: string,
+    amendmentId: string,
+  ) {
+    return this.generateAddTenantAmendmentPdf(
+      leaseId,
+      amendmentId,
+    );
+  }
+
     private safeReadPdfPart(doc: any): { filename: string; buffer: Buffer } | null {
       const d = doc?.document ? doc.document : doc; // accepte {created, document} OU document direct
       if (!d?.storage_path || !d?.filename) return null;
@@ -4564,9 +4757,55 @@ ${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
       signerTenantId,
     });
 
-    // ✅ Guard: lease + tenants
-    const leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
-    const tenants = this.getTenantsFromLeaseRow(leaseRow);
+    let leaseRow: any;
+
+    if (String(doc.type).toUpperCase() === 'AVENANT') {
+      leaseRow = await this.fetchLeaseBundle(doc.lease_id);
+    } else {
+      leaseRow = await this.assertSignableLeaseOrThrow(doc.lease_id);
+    }
+
+    let tenants = this.getTenantsFromLeaseRow(leaseRow);
+    let amendmentId: string | null = null;
+
+    if (String(doc.type).toUpperCase() === 'AVENANT') {
+      const amendmentQ = await this.pool.query(
+        `
+        SELECT *
+        FROM lease_amendments
+        WHERE document_id = $1
+          AND lease_id = $2
+        LIMIT 1
+        `,
+        [doc.id, doc.lease_id],
+      );
+
+      if (!amendmentQ.rowCount) {
+        throw new BadRequestException('Avenant document is not linked to lease_amendments');
+      }
+
+      amendmentId = amendmentQ.rows[0].id;
+
+      const signersQ = await this.pool.query(
+        `
+        SELECT
+          tenant_id,
+          signer_name AS full_name,
+          role
+        FROM lease_amendment_signers
+        WHERE amendment_id = $1
+          AND role = 'LOCATAIRE'
+        ORDER BY created_at ASC
+        `,
+        [amendmentId],
+      );
+
+      tenants = signersQ.rows.map((s: any) => ({
+        tenant_id: s.tenant_id,
+        full_name: s.full_name,
+        role: 'amendment_signer',
+      }));
+    }
 
     // --- GARANT guard (MVP: legacy columns OR guarantors_json) ---
     const hasLegacyGuarantor =
@@ -4604,7 +4843,11 @@ ${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
       .map(t => t?.tenant_id || t?.id)
       .filter(Boolean);
 
-    // fallback sur la colonne principale du bail (l.tenant_id)
+    if (String(doc.type).toUpperCase() === 'AVENANT' && tenantIds.length === 0) {
+      throw new BadRequestException('Avenant has no tenant signer configured');
+    }
+
+    // fallback sur la colonne principale du bail, sauf AVENANT
     if (tenantIds.length === 0 && leaseRow?.tenant_id) {
       tenantIds = [leaseRow.tenant_id];
     }
@@ -4640,10 +4883,14 @@ ${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
         }
       }
 
-      // validate tenantId belongs to lease
+      // validate tenantId belongs to required signers
       const allowed = new Set(tenants.map((t: any) => String(t?.tenant_id || '').trim()).filter(Boolean));
       if (effectiveTenantId && allowed.size && !allowed.has(effectiveTenantId)) {
-        throw new BadRequestException('signerTenantId is not a tenant of this lease');
+        throw new BadRequestException(
+          String(doc.type).toUpperCase() === 'AVENANT'
+            ? 'signerTenantId is not a signer of this amendment'
+            : 'signerTenantId is not a tenant of this lease',
+        );
       }
       if (!effectiveTenantId) {
         throw new BadRequestException('Unable to resolve signerTenantId for tenant signature');
@@ -4824,6 +5071,29 @@ ${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
         sequence,
       ],
     );
+
+        if (amendmentId) {
+          await this.pool.query(
+            `
+            UPDATE lease_amendment_signers
+            SET signature_status = 'signed',
+                signed_at = $2::timestamptz
+            WHERE amendment_id = $1
+              AND role = $3
+              AND (
+                ($3 = 'BAILLEUR' AND tenant_id IS NULL)
+                OR
+                ($3 = 'LOCATAIRE' AND tenant_id = $4::uuid)
+              )
+            `,
+            [
+              amendmentId,
+              signedAt,
+              signerRole,
+              signerRole === 'LOCATAIRE' ? effectiveTenantId : null,
+            ],
+          );
+        }
 
     const sigs = await this.pool.query(`SELECT * FROM signatures WHERE document_id=$1 ORDER BY signed_at DESC`, [doc.id]);
 
@@ -5028,6 +5298,20 @@ ${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
         }
       }
 
+      if (amendmentId && String(doc.type).toUpperCase() === 'AVENANT') {
+        await this.pool.query(
+          `
+          UPDATE lease_amendments
+          SET signed_final_document_id = $1,
+              status = 'signed',
+              signed_at = NOW(),
+              updated_at = NOW()
+          WHERE id = $2
+          `,
+          [insDoc.rows[0].id, amendmentId],
+        );
+      }
+
       const finalSignedDocument = insDoc.rows[0];
 
       console.log('[SIGNED FINAL CREATED]', {
@@ -5054,7 +5338,7 @@ ${String(signerRole).toUpperCase() === 'GARANT' && auditJson?.guarantorMention
       );
       const leaseKindForPack = String(leaseRowForPack.kind || '').toUpperCase();
 
-      if (leaseKindForPack === 'MEUBLE_RP') {
+      if (String(doc.type).toUpperCase() === 'CONTRAT' && leaseKindForPack === 'MEUBLE_RP') {
         // Prépare les documents racine nécessaires à la suite du parcours
         // sans générer le PACK_FINAL à ce stade.
         await this.generateNoticePdf(finalSignedDocument.lease_id);

@@ -7,7 +7,11 @@ import {
   Building2,
   CalendarRange,
   CircleAlert,
-  Ellipsis,
+  BellRing,
+  FileSignature,
+  FileStack,
+  PencilLine,
+  ShieldX,
   FilePenLine,
   FolderKanban,
   HandCoins,
@@ -85,6 +89,16 @@ type Payment = {
   period_month?: number;
 };
 
+type PeriodPaymentStatus = {
+  dueCents: number;
+  paidCents: number;
+  remainingCents: number;
+  fullyPaid: boolean;
+  occupiedDays?: number;
+  daysInMonth?: number;
+  prorated?: boolean;
+};
+
 function kindLabel(k?: string) {
   const v = String(k || "MEUBLE_RP").toUpperCase();
   if (v === "MEUBLE_RP") return "Meublé (RP)";
@@ -109,6 +123,7 @@ function getCurrentPaymentPeriod() {
 function getLeasePaymentStatus(
   lease: Lease,
   payments: Payment[] | undefined,
+  periodStatus?: PeriodPaymentStatus | null,
 ): {
   status: "paid" | "partial" | "unpaid";
   label: string;
@@ -118,15 +133,19 @@ function getLeasePaymentStatus(
 } {
   const period = getCurrentPaymentPeriod();
 
-  const dueCents = Number(lease.rent_cents || 0) + Number(lease.charges_cents || 0);
+  const fallbackDueCents =
+    Number(lease.rent_cents || 0) + Number(lease.charges_cents || 0);
 
-  const paidCents = (payments || [])
+  const fallbackPaidCents = (payments || [])
     .filter(
       (payment) =>
         Number(payment.period_year) === period.year &&
         Number(payment.period_month) === period.month,
     )
     .reduce((sum, payment) => sum + Number(payment.amount_cents || 0), 0);
+
+  const dueCents = Number(periodStatus?.dueCents ?? fallbackDueCents);
+  const paidCents = Number(periodStatus?.paidCents ?? fallbackPaidCents);
 
   if (dueCents > 0 && paidCents >= dueCents) {
     return {
@@ -187,23 +206,14 @@ export default function LeasesPage() {
   const [token, setToken] = useState("");
   const [leases, setLeases] = useState<Lease[]>([]);
   const [paymentsByLease, setPaymentsByLease] = useState<Record<string, Payment[]>>({});
+  const [paymentStatusByLease, setPaymentStatusByLease] = useState<Record<string, PeriodPaymentStatus | null>>({});
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const [showArchives, setShowArchives] = useState(false);
-  const [openLeaseMenuId, setOpenLeaseMenuId] = useState<string | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [amendmentModalOpen, setAmendmentModalOpen] = useState(false);
+  const [amendmentModalLease, setAmendmentModalLease] = useState<Lease | null>(null);
 
-
-  useEffect(() => {
-    function handleOutsideClick(event: MouseEvent) {
-      const target = event.target as HTMLElement | null;
-      if (target?.closest('[data-lease-actions-root="true"]')) return;
-      setOpenLeaseMenuId(null);
-    }
-
-    document.addEventListener("mousedown", handleOutsideClick);
-    return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, []);
 
 
   // -------------------------
@@ -273,6 +283,33 @@ export default function LeasesPage() {
       );
 
       setPaymentsByLease(Object.fromEntries(paymentsEntries));
+
+      const currentPeriod = getCurrentPaymentPeriod();
+
+      const statusEntries = await Promise.all(
+        activeOrNoticeLeases.map(async (lease) => {
+          try {
+            const r = await fetch(
+              `${API}/payments/status?leaseId=${lease.id}&year=${currentPeriod.year}&month=${currentPeriod.month}&t=${Date.now()}`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Cache-Control": "no-cache",
+                },
+                credentials: "include",
+                cache: "no-store",
+              },
+            );
+
+            const j = await r.json().catch(() => null);
+            return [lease.id, r.ok ? j : null] as const;
+          } catch {
+            return [lease.id, null] as const;
+          }
+        }),
+      );
+
+      setPaymentStatusByLease(Object.fromEntries(statusEntries));
 
       setStatus("");
     } catch (e: any) {
@@ -435,6 +472,30 @@ if (!r.ok) {
   const niceName = `AVENANT_IRL_${code}_${date}.pdf`;
 
   await downloadDocument(docId, niceName);
+}
+
+function openGenericAmendmentModal(lease: Lease) {
+  setAmendmentModalLease(lease);
+  setAmendmentModalOpen(true);
+}
+
+function closeAmendmentModal() {
+  setAmendmentModalOpen(false);
+  setAmendmentModalLease(null);
+}
+
+function goToAddTenantAmendment() {
+  if (!amendmentModalLease) return;
+
+  closeAmendmentModal();
+
+  router.push(
+    `/dashboard/leases/${amendmentModalLease.id}/amendments/new?type=ADD_TENANT`
+  );
+}
+
+async function generateConsolidatedContract(lease: Lease) {
+  router.push(`/sign/${lease.id}`);
 }
 
   useEffect(() => {
@@ -698,7 +759,11 @@ if (!r.ok) {
                       ? "Activer"
                       : "Contrat + signatures";
 
-                  const paymentStatus = getLeasePaymentStatus(l, paymentsByLease[l.id]);
+                  const paymentStatus = getLeasePaymentStatus(
+                    l,
+                    paymentsByLease[l.id],
+                    paymentStatusByLease[l.id],
+                  );
                   const paymentTone = paymentStatusChip(paymentStatus.status);
 
 
@@ -760,133 +825,82 @@ if (!r.ok) {
                         </div>
 
                         <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                          {!isMobile && (
+                            <div style={premiumActionsRailStyle()}>
+                              <button
+                                type="button"
+                                title="Modifier"
+                                onClick={() => router.push(`/dashboard/leases/${l.id}/edit`)}
+                                style={premiumIconButtonStyle(border)}
+                              >
+                                <PencilLine size={20} strokeWidth={1.9} />
+                              </button>
+
+                              <button
+                                type="button"
+                                title="Avenants"
+                                onClick={() => openGenericAmendmentModal(l)}
+                                style={premiumIconButtonStyle(border, "primary")}
+                              >
+                                <FileSignature size={20} strokeWidth={1.9} />
+                              </button>
+
+                              <button
+                                type="button"
+                                title="Contrat consolidé"
+                                onClick={() => generateConsolidatedContract(l)}
+                                style={premiumIconButtonStyle(border)}
+                              >
+                                <FileStack size={20} strokeWidth={1.9} />
+                              </button>
+
+                              <button
+                                type="button"
+                                title={l.status === "notice" ? "Annuler préavis" : "Préavis"}
+                                onClick={() =>
+                                  l.status === "notice" ? cancelNoticeLease(l.id) : setNoticeLease(l.id)
+                                }
+                                style={premiumIconButtonStyle(border)}
+                              >
+                                <BellRing size={20} strokeWidth={1.9} />
+                              </button>
+
+                              <button
+                                type="button"
+                                title="Clôturer"
+                                onClick={() => closeLease(l.id)}
+                                style={premiumIconButtonStyle(border, "danger")}
+                              >
+                                <ShieldX size={20} strokeWidth={1.9} />
+                              </button>
+                            </div>
+                          )}
+
                           {l.status === "draft" ? (
                             <button onClick={() => activateLease(l.id)} style={{
-                                                                          ...btnCompactPrimary(blue),
-                                                                          minWidth: isMobile ? "100%" : 170,
-                                                                          width: isMobile ? "100%" : undefined,
-                                                                          justifyContent: "center",
-                                                                          minHeight: 44,
-                                                                        }}>
+                              ...btnCompactPrimary(blue),
+                              minWidth: isMobile ? "100%" : 170,
+                              width: isMobile ? "100%" : undefined,
+                              justifyContent: "center",
+                              minHeight: 44,
+                            }}>
                               <ArrowRightLeft size={16} strokeWidth={2.2} />
                               {primaryLabel}
                             </button>
                           ) : (
                             <Link href={`/sign/${l.id}`}>
                               <button style={{
-                                        ...btnCompactPrimary(blue),
-                                        minWidth: isMobile ? "100%" : 170,
-                                        width: isMobile ? "100%" : undefined,
-                                        justifyContent: "center",
-                                        minHeight: 44,
-                                      }}>
+                                ...btnCompactPrimary(blue),
+                                minWidth: isMobile ? "100%" : 170,
+                                width: isMobile ? "100%" : undefined,
+                                justifyContent: "center",
+                                minHeight: 44,
+                              }}>
                                 <FilePenLine size={16} strokeWidth={2.2} />
                                 {primaryLabel}
                               </button>
                             </Link>
                           )}
-
-                          <div
-                            data-lease-actions-root="true"
-                            style={{
-                              position: "relative",
-                              zIndex: 30,
-                            }}
-                          >
-                            <button
-                              type="button"
-                              onClick={() => setOpenLeaseMenuId(openLeaseMenuId === l.id ? null : l.id)}
-                              style={compactMenuButton(border)}
-                            >
-                              <Ellipsis size={18} strokeWidth={2.3} />
-                            </button>
-
-                            {openLeaseMenuId === l.id && (
-                              <div style={leaseMenuStyle()}>
-                                {(l.status === "active" || l.status === "notice") && (
-                                  <>
-                                    {l.status === "notice" ? (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenLeaseMenuId(null);
-                                          cancelNoticeLease(l.id);
-                                        }}
-                                        style={leaseMenuItemStyle()}
-                                      >
-                                        <CalendarRange size={14} strokeWidth={2.1} />
-                                        Annuler préavis
-                                      </button>
-                                    ) : (
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setOpenLeaseMenuId(null);
-                                          setNoticeLease(l.id);
-                                        }}
-                                        style={leaseMenuItemStyle()}
-                                      >
-                                        <CalendarRange size={14} strokeWidth={2.1} />
-                                        Préavis
-                                      </button>
-                                    )}
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenLeaseMenuId(null);
-                                        router.push(`/dashboard/leases/${l.id}/edit`);
-                                      }}
-                                      style={leaseMenuItemStyle()}
-                                    >
-                                      <PenSquare size={14} strokeWidth={2.1} />
-                                      Modifier
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenLeaseMenuId(null);
-                                        closeLease(l.id);
-                                      }}
-                                      style={leaseMenuDangerItemStyle()}
-                                    >
-                                      <CircleAlert size={14} strokeWidth={2.1} />
-                                      Clôturer
-                                    </button>
-                                  </>
-                                )}
-
-                                {l.status === "draft" && (
-                                  <>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenLeaseMenuId(null);
-                                        router.push(`/dashboard/leases/${l.id}/edit`);
-                                      }}
-                                      style={leaseMenuItemStyle()}
-                                    >
-                                      <PenSquare size={14} strokeWidth={2.1} />
-                                      Modifier
-                                    </button>
-
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setOpenLeaseMenuId(null);
-                                        closeLease(l.id);
-                                      }}
-                                      style={leaseMenuDangerItemStyle()}
-                                    >
-                                      <CircleAlert size={14} strokeWidth={2.1} />
-                                      Clôturer
-                                    </button>
-                                  </>
-                                )}
-                              </div>
-                            )}
-                          </div>
                         </div>
                       </div>
 
@@ -1096,6 +1110,30 @@ if (!r.ok) {
                           />
                         )}
 
+                        <Link href={`/dashboard/leases/${l.id}/amendments`}>
+                          <button
+                            style={{
+                              ...docChipButton(border),
+                              width: isMobile ? "100%" : undefined,
+                              justifyContent: isMobile ? "center" : undefined,
+                              minHeight: isMobile ? 44 : 38,
+                            }}
+                          >
+                            <FileSignature size={14} strokeWidth={2.1} /> Avenants
+                          </button>
+                        </Link>
+
+                        {!isMobile && (
+                          <span
+                            style={{
+                              width: 1,
+                              height: 22,
+                              background: "rgba(27,39,64,0.10)",
+                              display: "inline-block",
+                            }}
+                          />
+                        )}
+
                         <Link href={`/dashboard/leases/${l.id}/documents`}>
                           <button
                             style={{
@@ -1143,8 +1181,26 @@ if (!r.ok) {
           {showArchives && (
             <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
               {endedLeases.map((l) => (
-                <div key={l.id} style={{ border: `1px solid ${cardBorder}`, borderRadius: 20, background: "#fff", boxShadow: "0 10px 30px rgba(16,24,40,0.05)", overflow: "visible" }}>
-                  <div style={{ display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 16, alignItems: "center", padding: "18px 22px 12px" }}>
+                <div
+                  key={l.id}
+                  style={{
+                    border: `1px solid ${cardBorder}`,
+                    borderRadius: 20,
+                    background: "#fff",
+                    boxShadow: "0 10px 30px rgba(16,24,40,0.05)",
+                    overflow: "visible",
+                    position: "relative",
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) auto",
+                      gap: 18,
+                      alignItems: "center",
+                      padding: isMobile ? "16px 14px 12px" : "18px 22px 14px",
+                    }}
+                  >
                     <div style={{ minWidth: 0, display: "flex", gap: 14, alignItems: "center" }}>
                       <div style={{ width: 40, height: 40, borderRadius: 14, background: "#EEF4FF", color: blue, border: "1px solid rgba(47,99,224,0.10)", display: "inline-flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         <Home size={18} strokeWidth={2.1} />
@@ -1158,104 +1214,21 @@ if (!r.ok) {
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                      <Link href={`/sign/${l.id}`}><button style={{ ...btnCompactPrimary(blue), minWidth: 150, justifyContent: "center" }}><Archive size={13} strokeWidth={2} /> Voir l’archive</button></Link>
-                      <div
-                        data-lease-actions-root="true"
-                        style={{
-                          position: "relative",
-                          zIndex: 30,
-                        }}
-                      >
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, justifyContent: "flex-end", flexWrap: "wrap" }}>
+                      <Link href={`/sign/${l.id}`}>
                         <button
-                          type="button"
-                          onClick={() => setOpenLeaseMenuId(openLeaseMenuId === l.id ? null : l.id)}
-                          style={compactMenuButton(border)}
+                          style={{
+                            ...btnCompactPrimary(blue),
+                            minWidth: isMobile ? "100%" : 170,
+                            width: isMobile ? "100%" : undefined,
+                            justifyContent: "center",
+                            minHeight: 44,
+                          }}
                         >
-                          <Ellipsis size={18} strokeWidth={2.3} />
+                          <Archive size={16} strokeWidth={2.2} />
+                          Voir l’archive
                         </button>
-
-                        {openLeaseMenuId === l.id && (
-                          <div style={leasePopoverStyle()}>
-                            <div style={leasePopoverHeaderStyle()}>
-                              <div style={leasePopoverEyebrowStyle()}>Archive</div>
-                              <div style={leasePopoverTitleStyle()}>{l.unit_code || l.unit_id}</div>
-                              <div style={leasePopoverSubtitleStyle()}>{l.tenant_name || l.tenant_id}</div>
-                            </div>
-
-                            <div>
-                              <div style={leasePopoverSectionLabelStyle()}>Documents</div>
-
-                              <Link
-                                href={`/import/${l.id}`}
-                                style={leasePopoverLinkReset()}
-                                onClick={() => setOpenLeaseMenuId(null)}
-                              >
-                                <span style={leasePopoverItemStyle()}>
-                                  <Building2 size={15} strokeWidth={2.1} />
-                                  Import
-                                </span>
-                              </Link>
-
-                              <Link
-                                href={`/guarantor-act/${l.id}`}
-                                style={leasePopoverLinkReset()}
-                                onClick={() => setOpenLeaseMenuId(null)}
-                              >
-                                <span style={leasePopoverItemStyle()}>
-                                  <Shield size={15} strokeWidth={2.1} />
-                                  Acte caution
-                                </span>
-                              </Link>
-
-                              <Link
-                                href={`/edl/${l.id}`}
-                                style={leasePopoverLinkReset()}
-                                onClick={() => setOpenLeaseMenuId(null)}
-                              >
-                                <span style={leasePopoverItemStyle()}>
-                                  <FolderKanban size={15} strokeWidth={2.1} />
-                                  EDL
-                                </span>
-                              </Link>
-
-                              <Link
-                                href={`/inventory/${l.id}`}
-                                style={leasePopoverLinkReset()}
-                                onClick={() => setOpenLeaseMenuId(null)}
-                              >
-                                <span style={leasePopoverItemStyle()}>
-                                  <PackageSearch size={15} strokeWidth={2.1} />
-                                  Inventaire
-                                </span>
-                              </Link>
-
-                              <Link
-                                href={`/dashboard/leases/${l.id}/payments`}
-                                style={leasePopoverLinkReset()}
-                                onClick={() => setOpenLeaseMenuId(null)}
-                              >
-                                <span style={leasePopoverItemStyle()}>
-                                  <CreditCard size={15} strokeWidth={2.1} />
-                                  Paiements & solde
-                                </span>
-                              </Link>
-
-                              <Link
-                                href={`/dashboard/leases/${l.id}/documents`}
-                                style={leasePopoverLinkReset()}
-                                onClick={() => setOpenLeaseMenuId(null)}
-                              >
-                                <span style={leasePopoverItemStyle()}>
-                                  <FileText size={15} strokeWidth={2.1} />
-                                  Documents
-                                </span>
-                              </Link>
-                              
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                      </Link>
                     </div>
                   </div>
 
@@ -1538,6 +1511,81 @@ if (!r.ok) {
     </div>
   </div>
 )}
+  {amendmentModalOpen && amendmentModalLease && (
+    <div
+      style={modalOverlayStyle()}
+      onClick={closeAmendmentModal}
+    >
+      <div
+        style={amendmentModalStyle(border)}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 14, alignItems: "flex-start" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 900, color: softText, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              Avenant
+            </div>
+            <div style={{ marginTop: 6, fontSize: 22, fontWeight: 950, color: title, letterSpacing: "-0.04em" }}>
+              Générer un avenant
+            </div>
+            <div style={{ marginTop: 6, fontSize: 13.5, color: muted }}>
+              {amendmentModalLease.unit_code || amendmentModalLease.unit_id} — {amendmentModalLease.tenant_name || amendmentModalLease.tenant_id}
+            </div>
+          </div>
+
+          <button type="button" onClick={closeAmendmentModal} style={btnSecondary(border)}>
+            Fermer
+          </button>
+        </div>
+
+        <div style={{ marginTop: 18, display: "grid", gap: 10 }}>
+          <button
+            type="button"
+            onClick={goToAddTenantAmendment}
+            style={amendmentTypeButtonStyle(border, true)}
+          >
+            <span style={amendmentTypeIconStyle("#3467EB", "#EEF4FF")}>
+              <FileSignature size={20} strokeWidth={2} />
+            </span>
+            <span style={{ flex: 1 }}>
+              <span style={{ display: "block", fontWeight: 900, color: title }}>
+                Ajout locataire
+              </span>
+              <span style={{ display: "block", marginTop: 3, fontSize: 12.5, color: muted }}>
+                Créer un avenant pour ajouter un colocataire au bail.
+              </span>
+            </span>
+          </button>
+
+          {[
+            "Départ locataire",
+            "Modification loyer",
+            "Changement charges",
+            "Changement garant",
+          ].map((label) => (
+            <button
+              key={label}
+              type="button"
+              disabled
+              style={amendmentTypeButtonStyle(border, false)}
+            >
+              <span style={amendmentTypeIconStyle("#8D99AE", "#F8FAFC")}>
+                <FileStack size={20} strokeWidth={2} />
+              </span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontWeight: 900, color: "#8D99AE" }}>
+                  {label}
+                </span>
+                <span style={{ display: "block", marginTop: 3, fontSize: 12.5, color: "#A3ADBD" }}>
+                  Bientôt disponible.
+                </span>
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  )}
     </main>
   );
 }
@@ -1667,169 +1715,6 @@ function statusChip(status: string, border: string) {
   } as const;
 }
 
-function compactMenuButton(border: string) {
-  return {
-    listStyle: "none",
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    border: `1px solid ${border}`,
-    background: "#fff",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    cursor: "pointer",
-    color: "#243247",
-    boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-  } as const;
-}
-
-function leaseMenuStyle(): React.CSSProperties {
-  return {
-    position: "absolute",
-    top: "calc(100% + 6px)",
-    right: 0,
-    minWidth: 170,
-    padding: 4,
-    borderRadius: 12,
-    border: "1px solid rgba(27,39,64,0.06)",
-    background: "#fff",
-    boxShadow: "0 10px 24px rgba(16,24,40,0.12)",
-    zIndex: 9999,
-    display: "grid",
-    gap: 2,
-  };
-}
-
-function leaseMenuItemStyle(): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: 7,
-    width: "100%",
-    minHeight: 34,
-    padding: "8px 10px",
-    border: "none",
-    background: "transparent",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 12,
-    fontWeight: 500,
-    color: "#243247",
-    textAlign: "left",
-    lineHeight: 1.2,
-  };
-}
-
-function leaseMenuDangerItemStyle(): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: 7,
-    width: "100%",
-    minHeight: 34,
-    padding: "8px 10px",
-    border: "none",
-    background: "#FBEFF3",
-    borderRadius: 10,
-    cursor: "pointer",
-    fontSize: 12,
-    fontWeight: 600,
-    color: "#A12C52",
-    textAlign: "left",
-    lineHeight: 1.2,
-  };
-}
-
-function leasePopoverStyle(): React.CSSProperties {
-  return {
-    position: "absolute",
-    top: "calc(100% + 8px)",
-    right: 0,
-    width: 344,
-    maxWidth: "min(344px, calc(100vw - 64px))",
-    padding: 12,
-    borderRadius: 18,
-    border: "1px solid rgba(27,39,64,0.08)",
-    background: "#fff",
-    boxShadow: "0 18px 44px rgba(16,24,40,0.16)",
-    zIndex: 9999,
-  };
-}
-
-function leasePopoverHeaderStyle(): React.CSSProperties {
-  return {
-    paddingBottom: 10,
-    marginBottom: 10,
-    borderBottom: "1px solid rgba(27,39,64,0.06)",
-  };
-}
-
-function leasePopoverEyebrowStyle(): React.CSSProperties {
-  return {
-    fontSize: 11,
-    fontWeight: 800,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-    color: "#8D99AE",
-    marginBottom: 6,
-  };
-}
-
-function leasePopoverTitleStyle(): React.CSSProperties {
-  return {
-    fontSize: 15,
-    fontWeight: 900,
-    color: "#17233A",
-    letterSpacing: "-0.02em",
-  };
-}
-
-function leasePopoverSubtitleStyle(): React.CSSProperties {
-  return {
-    marginTop: 4,
-    fontSize: 12.5,
-    color: "#667085",
-  };
-}
-
-function leasePopoverSectionLabelStyle(): React.CSSProperties {
-  return {
-    fontSize: 11,
-    fontWeight: 800,
-    letterSpacing: "0.08em",
-    textTransform: "uppercase",
-    color: "#8D99AE",
-    marginBottom: 8,
-  };
-}
-
-function leasePopoverItemStyle(): React.CSSProperties {
-  return {
-    display: "flex",
-    alignItems: "center",
-    gap: 10,
-    width: "100%",
-    minHeight: 38,
-    padding: "8px 10px",
-    marginBottom: 6,
-    border: "1px solid rgba(27,39,64,0.08)",
-    background: "#fff",
-    borderRadius: 12,
-    cursor: "pointer",
-    fontSize: 13.5,
-    fontWeight: 800,
-    color: "#1B2740",
-    textAlign: "left",
-    whiteSpace: "nowrap",
-    lineHeight: 1.2,
-    boxSizing: "border-box",
-  };
-}
-
-function leasePopoverLinkReset() {
-  return { textDecoration: "none", color: "inherit", display: "block" } as const;
-}
 
 function irlStatusPill(mode: "on" | "off") {
   return {
@@ -1865,6 +1750,61 @@ function irlAvenantButtonStyle(border: string) {
   } as const;
 }
 
+function modalOverlayStyle(): React.CSSProperties {
+  return {
+    position: "fixed",
+    inset: 0,
+    background: "rgba(15,23,42,0.42)",
+    backdropFilter: "blur(8px)",
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "center",
+    padding: "48px 16px",
+    zIndex: 80,
+  };
+}
+
+function amendmentModalStyle(border: string): React.CSSProperties {
+  return {
+    width: "min(620px, 100%)",
+    borderRadius: 24,
+    border: `1px solid ${border}`,
+    background: "#fff",
+    boxShadow: "0 28px 80px rgba(16,24,40,0.24)",
+    padding: 20,
+  };
+}
+
+function amendmentTypeButtonStyle(border: string, active: boolean): React.CSSProperties {
+  return {
+    width: "100%",
+    border: active ? "1px solid rgba(52,103,235,0.16)" : `1px solid ${border}`,
+    background: active ? "#FFFFFF" : "#FBFCFE",
+    borderRadius: 18,
+    padding: 14,
+    display: "flex",
+    alignItems: "center",
+    gap: 12,
+    cursor: active ? "pointer" : "not-allowed",
+    opacity: active ? 1 : 0.72,
+    textAlign: "left",
+    boxShadow: active ? "0 10px 28px rgba(16,24,40,0.07)" : "none",
+  };
+}
+
+function amendmentTypeIconStyle(color: string, background: string): React.CSSProperties {
+  return {
+    width: 44,
+    height: 44,
+    borderRadius: 16,
+    background,
+    color,
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  };
+}
 
 function docChipButton(border: string) {
   return {
@@ -1899,6 +1839,51 @@ function archiveToggleButton(border: string) {
     justifyContent: "space-between",
     gap: 8,
   } as const;
+}
+
+function premiumActionsRailStyle(): React.CSSProperties {
+  return {
+    display: "flex",
+    alignItems: "center",
+    gap: 8,
+    padding: 7,
+    borderRadius: 20,
+    border: "1px solid rgba(27,39,64,0.08)",
+    background: "rgba(255,255,255,0.78)",
+    backdropFilter: "blur(14px)",
+    boxShadow: "0 14px 34px rgba(16,24,40,0.10)",
+    flexShrink: 0,
+  };
+}
+
+function premiumIconButtonStyle(
+  border: string,
+  tone?: "primary" | "danger",
+): React.CSSProperties {
+  const isPrimary = tone === "primary";
+  const isDanger = tone === "danger";
+
+  return {
+    width: 46,
+    height: 46,
+    borderRadius: 16,
+    border: `1px solid ${
+      isPrimary
+        ? "rgba(52,103,235,0.16)"
+        : isDanger
+          ? "rgba(220,38,38,0.16)"
+          : border
+    }`,
+    background: isPrimary ? "#EEF4FF" : isDanger ? "#FFF1F4" : "#fff",
+    color: isPrimary ? "#3467EB" : isDanger ? "#A12C52" : "#243247",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    cursor: "pointer",
+    boxShadow: isPrimary
+      ? "0 12px 28px rgba(52,103,235,0.16)"
+      : "0 8px 20px rgba(16,24,40,0.06)",
+  };
 }
 
 function IrlPreview({

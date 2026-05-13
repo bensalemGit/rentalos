@@ -37,15 +37,22 @@ export class DocumentsController {
   async generateContract(
     @Body() body: any,
     @Query('force', new DefaultValuePipe(false), ParseBoolPipe) force: boolean,
+    @Query('asOfDate') asOfDate: string,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.docs.generateContractPdf(body.leaseId, { force });
+    const result = await this.docs.generateContractPdf(body.leaseId, { force, asOfDate });
     return this.replyCreated(res, result);
   }
 
   @Post('notice')
-  async generateNotice(@Body() body: any, @Res({ passthrough: true }) res: Response) {
-    const result = await this.docs.generateNoticePdf(body.leaseId);
+  async generateNotice(
+    @Body() body: any,
+    @Query('force', new DefaultValuePipe(false), ParseBoolPipe) forceQuery: boolean,
+    @Query('asOfDate') asOfDate: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const force = forceQuery || body?.force === true;
+    const result = await this.docs.generateNoticePdf(body.leaseId, { force, asOfDate });
     return this.replyCreated(res, result);
   }
 
@@ -55,7 +62,11 @@ export class DocumentsController {
     if (phase !== 'entry' && phase !== 'exit') {
       throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
     }
-    const result = await this.docs.generateEdlPdf(body.leaseId, { phase, force: Boolean(body.force) });
+    const result = await this.docs.generateEdlPdf(body.leaseId, {
+      phase,
+      force: Boolean(body.force),
+      asOfDate: body.asOfDate,
+    });
     return this.replyCreated(res, result);
   }
 
@@ -65,7 +76,11 @@ export class DocumentsController {
     if (phase !== 'entry' && phase !== 'exit') {
       throw new BadRequestException("Invalid phase (expected 'entry'|'exit')");
     }
-    const result = await this.docs.generateInventoryPdf(body.leaseId, { phase, force: Boolean(body.force) });
+    const result = await this.docs.generateInventoryPdf(body.leaseId, {
+      phase,
+      force: Boolean(body.force),
+      asOfDate: body.asOfDate,
+    });
     return this.replyCreated(res, result);
   }
   
@@ -95,10 +110,11 @@ export class DocumentsController {
   async generatePackFinal(
     @Body() body: any,
     @Query('force', new DefaultValuePipe(false), ParseBoolPipe) forceQuery: boolean,
+    @Query('asOfDate') asOfDate: string,
     @Res({ passthrough: true }) res: Response,
   ) {
     const force = forceQuery || body?.force === true;
-    const result = await this.docs.generatePackFinalV2(body.leaseId, { force });
+    const result = await this.docs.generatePackFinalV2(body.leaseId, { force, asOfDate });
     return this.replyCreated(res, result);
   }
 
@@ -194,7 +210,7 @@ async acknowledge(
       force: !!body?.force,
     });
   }
-
+  
   @Post('send-entry-pack')
   async sendEntryPack(@Body() body: { leaseId: string }) {
     return this.docs.sendEntryPackToTenants(String(body?.leaseId || '').trim());
@@ -208,6 +224,16 @@ async acknowledge(
   @Post('send-exit-documents')
   async sendExitDocuments(@Body() body: { leaseId: string }) {
     return this.docs.sendExitDocumentsToTenants(String(body?.leaseId || '').trim());
+  }
+
+  @Post('amendments/:amendmentId/generate')
+  async generateAmendment(
+    @Param('amendmentId') amendmentId: string,
+    @Query('leaseId') leaseId: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.docs.generateAddTenantAmendmentPdf(leaseId, amendmentId);
+    return this.replyCreated(res, result);
   }
 
 }

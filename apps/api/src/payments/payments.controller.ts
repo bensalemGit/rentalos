@@ -12,6 +12,15 @@ export class PaymentsController {
     return this.payments.create(body);
   }
 
+  @Get('status')
+  status(
+    @Query('leaseId') leaseId: string,
+    @Query('year') year: string,
+    @Query('month') month: string,
+  ) {
+    return this.payments.getStatus(leaseId, Number(year), Number(month));
+  }
+
   @Get()
   list(@Query('leaseId') leaseId: string) {
     return this.payments.list(leaseId);

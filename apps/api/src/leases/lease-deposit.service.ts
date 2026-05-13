@@ -3,10 +3,12 @@ import { Pool } from 'pg';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
+import { MailerService } from '../mailer/mailer.service';
 
 @Injectable()
 export class LeaseDepositService {
   private pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  constructor(private readonly mailer: MailerService) {}
   private storageBase = process.env.STORAGE_BASE_PATH || '/storage';
   private gotenberg = process.env.GOTENBERG_URL || 'http://gotenberg:3000';
 
@@ -92,6 +94,30 @@ export class LeaseDepositService {
     }
 
     return { ok: true };
+  }
+
+  private async getTenantRecipients(leaseId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT DISTINCT
+        t.full_name,
+        t.email
+      FROM lease_tenants lt
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND t.email IS NOT NULL
+        AND t.email <> ''
+      ORDER BY t.full_name
+      `,
+      [leaseId],
+    );
+
+    return q.rows
+      .map((r: any) => ({
+        name: String(r.full_name || '').trim(),
+        email: String(r.email || '').trim(),
+      }))
+      .filter((r: { name: string; email: string }) => r.email.includes('@'));
   }
 
   async generateSummary(body: any) {
@@ -292,6 +318,93 @@ export class LeaseDepositService {
       depositCents,
       totalDeductionsCents,
       restitutionCents,
+    };
+  }
+
+  async sendSummary(body: any) {
+    const { leaseId, emailOverride } = body || {};
+    if (!leaseId) throw new BadRequestException('Missing leaseId');
+
+    const g = await this.generateSummary({ leaseId });
+
+    const leaseRes = await this.pool.query(
+      `
+      SELECT
+        l.*,
+        u.code AS unit_code,
+        t.full_name AS tenant_name
+      FROM leases l
+      JOIN units u ON u.id = l.unit_id
+      JOIN tenants t ON t.id = l.tenant_id
+      WHERE l.id = $1
+      LIMIT 1
+      `,
+      [leaseId],
+    );
+
+    if (!leaseRes.rowCount) {
+      throw new BadRequestException('Unknown leaseId');
+    }
+
+    const lease = leaseRes.rows[0];
+
+    const recipients =
+      emailOverride && String(emailOverride).includes('@')
+        ? [{ name: lease.tenant_name || '', email: String(emailOverride).trim() }]
+        : await this.getTenantRecipients(leaseId);
+
+    if (!recipients.length) {
+      throw new BadRequestException('Aucun email locataire disponible.');
+    }
+
+    const absPath = path.join(this.storageBase, g.document.storage_path);
+    const buf = fs.readFileSync(absPath);
+
+    const subject = `Solde de sortie — ${lease.unit_code}`;
+
+    const results: any[] = [];
+
+    for (const recipient of recipients) {
+      const html = `
+        <p>Bonjour ${String(recipient.name || '').trim()},</p>
+        <p>Veuillez trouver ci-joint le solde de sortie relatif au dépôt de garantie du logement <b>${lease.unit_code}</b>.</p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `;
+
+      try {
+        const sendRes = await this.mailer.sendMail(recipient.email, subject, html, [
+          {
+            filename: g.document.filename,
+            content: buf,
+            contentType: 'application/pdf',
+          },
+        ]);
+
+        results.push({
+          email: recipient.email,
+          tenantName: recipient.name,
+          sent: !!sendRes.sent,
+          error: sendRes.sent ? null : sendRes.error,
+        });
+      } catch (e: any) {
+        results.push({
+          email: recipient.email,
+          tenantName: recipient.name,
+          sent: false,
+          error: e?.message || String(e),
+        });
+      }
+    }
+
+    const sentCount = results.filter((r) => r.sent).length;
+
+    return {
+      ok: sentCount > 0,
+      sent: sentCount > 0,
+      leaseId,
+      document: g.document,
+      sentCount,
+      results,
     };
   }
 }

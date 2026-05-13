@@ -135,15 +135,68 @@ export class ReceiptsService {
 
     const q = await this.pool.query(
       `
+      WITH periods AS (
+        SELECT lease_id, period_year, period_month
+        FROM receipts
+        WHERE lease_id = $1
+
+        UNION
+
+        SELECT lease_id, period_year, period_month
+        FROM receipt_email_logs
+        WHERE lease_id = $1
+      )
       SELECT
         r.*,
+        p.lease_id,
+        p.period_year,
+        p.period_month,
+
         d.filename,
         d.storage_path,
-        d.created_at AS document_created_at
-      FROM receipts r
+        d.created_at AS document_created_at,
+
+        COALESCE(receipt_logs.sent_count, 0)::int AS sent_count,
+        receipt_logs.last_sent_at,
+        receipt_logs.last_sent_to,
+
+        COALESCE(reminder_logs.sent_count, 0)::int AS reminder_sent_count,
+        reminder_logs.last_sent_at AS last_reminder_at,
+        reminder_logs.last_sent_to AS last_reminder_to
+
+      FROM periods p
+      LEFT JOIN receipts r
+        ON r.lease_id = p.lease_id
+      AND r.period_year = p.period_year
+      AND r.period_month = p.period_month
+
       LEFT JOIN documents d ON d.id = r.document_id
-      WHERE r.lease_id = $1
-      ORDER BY r.period_year DESC, r.period_month DESC
+
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) FILTER (WHERE sent = true)::int AS sent_count,
+          MAX(created_at) FILTER (WHERE sent = true) AS last_sent_at,
+          string_agg(to_email, ', ' ORDER BY created_at DESC) FILTER (WHERE sent = true) AS last_sent_to
+        FROM receipt_email_logs
+        WHERE lease_id = p.lease_id
+          AND period_year = p.period_year
+          AND period_month = p.period_month
+          AND kind = 'receipt'
+      ) receipt_logs ON TRUE
+
+      LEFT JOIN LATERAL (
+        SELECT
+          COUNT(*) FILTER (WHERE sent = true)::int AS sent_count,
+          MAX(created_at) FILTER (WHERE sent = true) AS last_sent_at,
+          string_agg(to_email, ', ' ORDER BY created_at DESC) FILTER (WHERE sent = true) AS last_sent_to
+        FROM receipt_email_logs
+        WHERE lease_id = p.lease_id
+          AND period_year = p.period_year
+          AND period_month = p.period_month
+          AND kind = 'reminder'
+      ) reminder_logs ON TRUE
+
+      ORDER BY p.period_year DESC, p.period_month DESC
       `,
       [leaseId],
     );
@@ -424,6 +477,66 @@ export class ReceiptsService {
     };
   }
 
+    private async getTenantRecipients(leaseId: string) {
+    const q = await this.pool.query(
+      `
+      SELECT DISTINCT
+        t.full_name,
+        t.email
+      FROM lease_tenants lt
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND t.email IS NOT NULL
+        AND t.email <> ''
+      ORDER BY t.full_name
+      `,
+      [leaseId],
+    );
+
+    return q.rows
+      .map((r: any) => ({
+        name: String(r.full_name || '').trim(),
+        email: String(r.email || '').trim(),
+      }))
+      .filter((r: { name: string; email: string }) => r.email.includes('@'));
+  }
+
+  private async logEmail(input: {
+    leaseId: string;
+    receiptId?: string | null;
+    documentId?: string | null;
+    year: number;
+    month: number;
+    kind: 'receipt' | 'reminder';
+    toEmail: string;
+    tenantName?: string | null;
+    sent: boolean;
+    error?: string | null;
+  }) {
+    await this.pool.query(
+      `
+      INSERT INTO receipt_email_logs (
+        lease_id, receipt_id, document_id,
+        period_year, period_month, kind,
+        to_email, tenant_name, sent, error
+      )
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+      `,
+      [
+        input.leaseId,
+        input.receiptId || null,
+        input.documentId || null,
+        input.year,
+        input.month,
+        input.kind,
+        input.toEmail,
+        input.tenantName || null,
+        input.sent,
+        input.error || null,
+      ],
+    );
+  }
+
   async send(body: any) {
     const { leaseId, year, month, emailOverride } = body || {};
 
@@ -431,55 +544,178 @@ export class ReceiptsService {
       throw new BadRequestException('Missing leaseId/year/month');
     }
 
-    const g = await this.generate({ leaseId, year, month, force: true });
-    const lease = await this.getLeaseBundle(leaseId, Number(year), Number(month));
+    const y = Number(year);
+    const m = Number(month);
 
-    const toEmail =
-      emailOverride && String(emailOverride).includes('@')
-        ? String(emailOverride).trim()
-        : lease.tenant_email;
+    const g = await this.generate({ leaseId, year: y, month: m, force: true });
+    const lease = await this.getLeaseBundle(leaseId, y, m);
 
-    if (!toEmail) {
-      throw new BadRequestException('Tenant has no email (or set emailOverride)');
+    const recipients = emailOverride && String(emailOverride).includes('@')
+      ? [{ name: lease.tenant_name || '', email: String(emailOverride).trim() }]
+      : await this.getTenantRecipients(leaseId);
+
+    if (!recipients.length) {
+      throw new BadRequestException('Aucun email locataire disponible.');
     }
 
     const absPath = path.join(this.storageBase, g.document.storage_path);
     const buf = fs.readFileSync(absPath);
 
-    const subject = `Quittance de loyer — ${pad2(Number(month))}/${Number(year)} — ${lease.unit_code}`;
-    const html = `
-      <p>Bonjour ${escapeHtml(lease.tenant_name || '')},</p>
-      <p>Veuillez trouver ci-joint votre quittance de loyer pour <b>${pad2(Number(month))}/${Number(year)}</b> (logement <b>${escapeHtml(lease.unit_code)}</b>).</p>
-      <p>Bien cordialement,<br/>RentalOS</p>
-    `;
+    const subject = `Quittance de loyer — ${pad2(m)}/${y} — ${lease.unit_code}`;
 
-    const sendRes = await this.mailer.sendMail(toEmail, subject, html, [
-      {
-        filename: g.document.filename,
-        content: buf,
-        contentType: 'application/pdf',
-      },
-    ]);
+    const results: any[] = [];
 
-    if (!sendRes.sent) {
-      return {
-        ok: false,
-        sent: false,
-        error: sendRes.error,
-        leaseId,
-        toEmail,
-        documentId: g.document.id,
-      };
+    for (const recipient of recipients) {
+      const html = `
+        <p>Bonjour ${escapeHtml(recipient.name || '')},</p>
+        <p>Veuillez trouver ci-joint votre quittance de loyer pour <b>${pad2(m)}/${y}</b> (logement <b>${escapeHtml(lease.unit_code)}</b>).</p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `;
+
+      try {
+        const sendRes = await this.mailer.sendMail(recipient.email, subject, html, [
+          {
+            filename: g.document.filename,
+            content: buf,
+            contentType: 'application/pdf',
+          },
+        ]);
+
+        await this.logEmail({
+          leaseId,
+          receiptId: g.receipt.id,
+          documentId: g.document.id,
+          year: y,
+          month: m,
+          kind: 'receipt',
+          toEmail: recipient.email,
+          tenantName: recipient.name,
+          sent: !!sendRes.sent,
+          error: sendRes.sent ? null : sendRes.error || 'send_failed',
+        });
+
+        results.push({
+          email: recipient.email,
+          tenantName: recipient.name,
+          sent: !!sendRes.sent,
+          error: sendRes.sent ? null : sendRes.error,
+        });
+      } catch (e: any) {
+        await this.logEmail({
+          leaseId,
+          receiptId: g.receipt.id,
+          documentId: g.document.id,
+          year: y,
+          month: m,
+          kind: 'receipt',
+          toEmail: recipient.email,
+          tenantName: recipient.name,
+          sent: false,
+          error: e?.message || String(e),
+        });
+
+        results.push({
+          email: recipient.email,
+          tenantName: recipient.name,
+          sent: false,
+          error: e?.message || String(e),
+        });
+      }
     }
 
+    const sentCount = results.filter((r) => r.sent).length;
+
     return {
-      ok: true,
-      sent: true,
+      ok: sentCount > 0,
+      sent: sentCount > 0,
       leaseId,
-      toEmail,
       documentId: g.document.id,
       receiptId: g.receipt.id,
       reused: g.reused,
+      sentCount,
+      results,
+    };
+  }
+
+  async sendPaymentReminder(body: any) {
+    const { leaseId, year, month, emailOverride } = body || {};
+
+    if (!leaseId || !year || !month) {
+      throw new BadRequestException('Missing leaseId/year/month');
+    }
+
+    const y = Number(year);
+    const m = Number(month);
+    const lease = await this.getLeaseBundle(leaseId, y, m);
+
+    const recipients = emailOverride && String(emailOverride).includes('@')
+      ? [{ name: lease.tenant_name || '', email: String(emailOverride).trim() }]
+      : await this.getTenantRecipients(leaseId);
+
+    if (!recipients.length) {
+      throw new BadRequestException('Aucun email locataire disponible.');
+    }
+
+    const subject = `Relance paiement loyer — ${pad2(m)}/${y} — ${lease.unit_code}`;
+    const results: any[] = [];
+
+    for (const recipient of recipients) {
+      const html = `
+        <p>Bonjour ${escapeHtml(recipient.name || '')},</p>
+        <p>Sauf erreur de notre part, le paiement du loyer pour <b>${pad2(m)}/${y}</b> n’apparaît pas encore comme soldé pour le logement <b>${escapeHtml(lease.unit_code)}</b>.</p>
+        <p>Merci de régulariser la situation ou de nous transmettre le justificatif de paiement si celui-ci a déjà été effectué.</p>
+        <p>Bien cordialement,<br/>RentalOS</p>
+      `;
+
+      try {
+        const sendRes = await this.mailer.sendMail(recipient.email, subject, html);
+
+        await this.logEmail({
+          leaseId,
+          year: y,
+          month: m,
+          kind: 'reminder',
+          toEmail: recipient.email,
+          tenantName: recipient.name,
+          sent: !!sendRes.sent,
+          error: sendRes.sent ? null : sendRes.error || 'send_failed',
+        });
+
+        results.push({
+          email: recipient.email,
+          tenantName: recipient.name,
+          sent: !!sendRes.sent,
+          error: sendRes.sent ? null : sendRes.error,
+        });
+      } catch (e: any) {
+        await this.logEmail({
+          leaseId,
+          year: y,
+          month: m,
+          kind: 'reminder',
+          toEmail: recipient.email,
+          tenantName: recipient.name,
+          sent: false,
+          error: e?.message || String(e),
+        });
+
+        results.push({
+          email: recipient.email,
+          tenantName: recipient.name,
+          sent: false,
+          error: e?.message || String(e),
+        });
+      }
+    }
+
+    const sentCount = results.filter((r) => r.sent).length;
+
+    return {
+      ok: sentCount > 0,
+      sent: sentCount > 0,
+      leaseId,
+      sentCount,
+      results,
     };
   }
 }

@@ -20,6 +20,11 @@ export class LeaseDepositController {
     return this.service.generateSummary(body);
   }
 
+  @Post('summary/send')
+  sendSummary(@Body() body: any) {
+    return this.service.sendSummary(body);
+  }
+
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.service.remove(id);

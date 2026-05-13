@@ -111,6 +111,8 @@ export type DocumentResource = {
   statusLabel: string;
   downloadable: boolean;
   signedFinalDocumentId?: string | null;
+  signedFinalFilename?: string | null;
+  guaranteeId?: string | null;
 };
 
 export type SignatureSessionDraft = {
