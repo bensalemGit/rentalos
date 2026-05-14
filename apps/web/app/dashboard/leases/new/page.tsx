@@ -9,6 +9,7 @@ import {
   Check,
   ChevronRight,
   Home,
+  LayoutGrid,
   Plus,
   RefreshCw,
   Shield,
@@ -257,7 +258,8 @@ export default function NewLeasePage() {
   const [rent, setRent] = useState<number>(950);
   const [charges, setCharges] = useState<number>(50);
   const [chargesMode, setChargesMode] = useState<LeaseChargesMode>("FORFAIT");
-  const [deposit, setDeposit] = useState<number>(1900);
+  const [deposit, setDeposit] = useState<number>(1000);
+  const [depositTouched, setDepositTouched] = useState(false);
   const [paymentDay, setPaymentDay] = useState<number>(5);
   const [kind, setKind] = useState<string>("MEUBLE_RP");
 
@@ -703,6 +705,13 @@ export default function NewLeasePage() {
     map[step]?.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  useEffect(() => {
+    if (depositTouched) return;
+
+    const nextDeposit = Number(rent || 0) + Number(charges || 0);
+    setDeposit(nextDeposit);
+  }, [rent, charges, depositTouched]);
+
   const completedCount = Object.values(completedSteps).filter(Boolean).length;
 
   const sidebar = (
@@ -815,12 +824,21 @@ export default function NewLeasePage() {
     <main className={uiFont.className} style={pageShellStyle}>
       <div style={pageInnerStyle}>
         <div style={topBarStyle}>
-          <button onClick={() => router.push("/dashboard/leases")} style={softButtonStyle}>
-            <ArrowLeft size={15} /> Retour aux baux
-          </button>
-          <button onClick={loadInitialData} style={softButtonStyle}>
-            <RefreshCw size={14} /> Rafraîchir
-          </button>
+          <div />
+
+          <div style={navIconRail}>
+            <button title="Rafraîchir" style={navIconBtn} onClick={loadInitialData}>
+              <RefreshCw size={17} />
+            </button>
+
+            <button
+              title="Tous les baux"
+              style={navIconBtn}
+              onClick={() => router.push("/dashboard/leases")}
+            >
+              <LayoutGrid size={17} />
+            </button>
+          </div>
         </div>
 
         
@@ -1095,7 +1113,10 @@ export default function NewLeasePage() {
                   <input
                     type="number"
                     value={deposit}
-                    onChange={(e) => setDeposit(Number(e.target.value))}
+                    onChange={(e) => {
+                      setDepositTouched(true);
+                      setDeposit(Number(e.target.value));
+                    }}
                     style={inputStyle}
                   />
                 </Field>
@@ -1158,7 +1179,7 @@ export default function NewLeasePage() {
                     </select>
                   </Field>
 
-                  <Field label="Consistance">
+                  <Field label="Typologie">
                     <input
                       value={designation.consistance || ""}
                       onChange={(e) => setDesignation((p) => ({ ...p, consistance: e.target.value }))}
@@ -1215,7 +1236,7 @@ export default function NewLeasePage() {
                   </Field>
                 </div>
 
-                <div style={fieldsGrid3AdvancedStyle}>
+                <div style={{ maxWidth: 280 }}>
                   <Field label="Nombre de clés remises">
                     <input
                       type="number"
@@ -1224,14 +1245,6 @@ export default function NewLeasePage() {
                       style={inputStyle}
                     />
                   </Field>
-                  <Field label="Source">
-                    <input
-                      value="Pré-rempli depuis le logement sélectionné"
-                      readOnly
-                      style={{ ...inputStyle, color: "#78839B", background: "#FBFCFF" }}
-                    />
-                  </Field>
-                  <div />
                 </div>
 
                 <div style={subtleInlinePanelStyle}>
@@ -1293,7 +1306,7 @@ export default function NewLeasePage() {
 
                   <div style={subtleInlinePanelStyle}>
                     <div style={subtleInlineTitleStyle}>Équipements communs</div>
-                    {["interphone", "digicode", "ascenseur", "antenne TV", "fibre"].map((x) => (
+                    {["interphone", "digicode", "ascenseur", "antenne TV", "fibre", "accès Internet Wi-Fi"].map((x) => (
                       <label key={x} style={checkRowStyle}>
                         <input
                           type="checkbox"
@@ -2308,4 +2321,29 @@ const errorAlertStyle: React.CSSProperties = {
   color: "#A12C52",
   border: "1px solid rgba(161,44,82,0.10)",
   fontWeight: 700,
+};
+
+const navIconRail: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: 7,
+  borderRadius: 22,
+  background: "#FFFFFF",
+  border: "1px solid rgba(27,39,64,0.08)",
+  boxShadow: "0 14px 34px rgba(16,24,40,0.10)",
+};
+
+const navIconBtn: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: 16,
+  border: "1px solid rgba(27,39,64,0.08)",
+  background: "#FFFFFF",
+  color: "#243247",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  boxShadow: "0 6px 16px rgba(16,24,40,0.05)",
 };

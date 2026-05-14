@@ -4,15 +4,18 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Archive,
+  ArrowLeft,
   BadgeCheck,
   CheckCircle2,
   Download,
+  FileSignature,
   FileText,
-  FolderOpen,
+  LayoutGrid,
+  PackageCheck,
   RefreshCw,
   RotateCcw,
-  Send,
   ShieldCheck,
+  TrendingUp,
 } from "lucide-react";
 import {
   documentTypeLabel,
@@ -71,8 +74,6 @@ type RowItem = {
   type: string;
   multiple?: boolean;
   regen?: (() => void | Promise<void>) | undefined;
-  send?: (() => void | Promise<void>) | undefined;
-  sendLabel?: string;
 };
 
 export default function LeaseDocumentsPage({ params }: { params: { leaseId: string } }) {
@@ -276,6 +277,22 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
     return postJson(`/documents/send-guarantor-acts`, { leaseId }, "Actes de caution envoyés aux garants ✅");
   }
 
+  function sendAmendments() {
+    return postJson(
+      `/documents/send-amendments`,
+      { leaseId },
+      "Avenants signés envoyés aux personnes concernées ✅"
+    );
+  }
+
+  function sendIrlAvenant() {
+    return postJson(
+      `/documents/send-irl-avenant`,
+      { leaseId },
+      "Avenant IRL envoyé aux locataires ✅"
+    );
+  }
+
   async function downloadDoc(doc: Doc) {
     const r = await fetch(`${API}/documents/${doc.id}/download`, {
       headers: { Authorization: `Bearer ${token}` },
@@ -434,64 +451,51 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
     );
   }
 
-  function LibraryPanel({
+  function DocumentSection({
     tone,
     icon,
     title,
     subtitle,
-    items,
-    headerAction,
+    count,
+    children,
   }: {
-    tone: "entry" | "exit" | "guarantor";
+    tone: "entry" | "exit" | "guarantor" | "amendment";
     icon: React.ReactNode;
     title: string;
     subtitle: string;
-    items: RowItem[];
-    headerAction?: React.ReactNode;
+    count: string;
+    children: React.ReactNode;
   }) {
-    const isGuarantorPanel = tone === "guarantor";
-    const done = isGuarantorPanel ? guarantorActsCount : availableCount(items);
-    const total = isGuarantorPanel ? guarantorActsCount : items.length;
-
     return (
-      <section style={panel}>
-        <div style={panelAccent(tone)} />
-
-        <div style={panelHeader}>
-          <div style={{ display: "flex", gap: 12, alignItems: "flex-start", minWidth: 0 }}>
-            <div style={panelIcon(tone)}>{icon}</div>
-            <div style={{ minWidth: 0 }}>
-              <h2 style={h2}>{title}</h2>
-              <p style={muted}>{subtitle}</p>
-            </div>
+      <section className="document-section" style={docSection}>
+        <aside style={sectionSide}>
+          <div style={panelIcon(tone)}>{icon}</div>
+          <div>
+            <h3 style={sectionTitle}>{title}</h3>
+            <p style={sectionSub}>{subtitle}</p>
+            <span style={miniCount}>{count}</span>
           </div>
+        </aside>
 
-          <div style={panelRight}>
-            <span style={miniCount}>{done}/{total}</span>
-            {headerAction}
-          </div>
-        </div>
-
-        <div style={{ display: "grid", gap: 10 }}>
-          {items.flatMap((item) => {
-            const itemDocs = item.multiple
-              ? allLatestByType(item.type)
-              : ([latest(item.type)].filter(Boolean) as Doc[]);
-
-            if (item.multiple && itemDocs.length > 0) {
-              return itemDocs.map((doc, idx) => (
-                <DocumentLine key={doc.id} item={item} doc={doc} idx={idx} />
-              ));
-            }
-
-            return [<DocumentLine key={item.type} item={item} doc={itemDocs[0] || null} />];
-          })}
-        </div>
+        <div style={sectionDocs}>{children}</div>
       </section>
     );
   }
 
+
   const guarantorActsCount = allLatestByType("GUARANTOR_ACT").length;
+  const signedAmendmentsCount = docs.filter((d) => {
+    const type = String(d.type || "").toUpperCase();
+
+    return (
+      (type === "AVENANT" || type === "AVENANT_IRL") &&
+      !isSignedFinalDocument(d) &&
+      Boolean(d.signed_final_document_id)
+    );
+  }).length;
+
+  const irlAvenantsCount = allLatestByType("AVENANT_IRL").length;
+  
   const entryTenantDocsCount = rows.entryTenant.length;
   const entryTenantAvailableCount = rows.entryTenant.filter((item) => {
     if (item.multiple) return allLatestByType(item.type).length > 0;
@@ -510,6 +514,22 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
   const entryTotalExpectedCount =
     entryTenantDocsCount + (hasGuarantor === true ? guarantorDocsCount : 0);
 
+  function renderItems(items: RowItem[]) {
+    return items.flatMap((item) => {
+      const itemDocs = item.multiple
+        ? allLatestByType(item.type)
+        : ([latest(item.type)].filter(Boolean) as Doc[]);
+
+      if (item.multiple && itemDocs.length > 0) {
+        return itemDocs.map((doc, idx) => (
+          <DocumentLine key={doc.id} item={item} doc={doc} idx={idx} />
+        ));
+      }
+
+      return [<DocumentLine key={item.type} item={item} doc={itemDocs[0] || null} />];
+    });
+  }
+
   return (
     <main style={page}>
       <header style={hero}>
@@ -523,23 +543,97 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
           </div>
 
           <div style={topActions}>
-            <button onClick={refresh} style={secondaryBtn}>
-              <RefreshCw size={15} /> Rafraîchir
-            </button>
+            <div style={shareIconRail}>
+              <button
+                title="Envoyer le pack entrée"
+                style={shareIconOnlyBtn(
+                  toneColors.entry.bg,
+                  toneColors.entry.color,
+                  !latest("PACK_FINAL"),
+                )}
+                disabled={!latest("PACK_FINAL")}
+                onClick={sendEntryPack}
+              >
+                <PackageCheck size={17} />
+              </button>
 
-            <Link href={`/dashboard/leases/${leaseId}/edit`}>
-              <button style={secondaryBtn}>Retour au bail</button>
-            </Link>
+              <button
+                title="Envoyer le pack sortie"
+                style={shareIconOnlyBtn(
+                  toneColors.exit.bg,
+                  toneColors.exit.color,
+                  !latest("PACK_EDL_INV_SORTIE"),
+                )}
+                disabled={!latest("PACK_EDL_INV_SORTIE")}
+                onClick={sendExitDocuments}
+              >
+                <Archive size={17} />
+              </button>
 
-            <Link href={`/dashboard/leases`}>
-              <button style={secondaryBtn}>Tous les baux</button>
-            </Link>
+              <button
+                title="Envoyer les actes garants"
+                style={shareIconOnlyBtn(
+                  toneColors.guarantor.bg,
+                  toneColors.guarantor.color,
+                  hasGuarantor !== true || guarantorActsCount <= 0,
+                )}
+                disabled={hasGuarantor !== true || guarantorActsCount <= 0}
+                onClick={sendGuarantorActs}
+              >
+                <ShieldCheck size={17} />
+              </button>
+
+              {signedAmendmentsCount > 0 && (
+                <button
+                  title="Envoyer les avenants"
+                  style={shareIconOnlyBtn(
+                    toneColors.amendment.bg,
+                    toneColors.amendment.color,
+                    false,
+                  )}
+                  onClick={sendAmendments}
+                >
+                  <FileSignature size={17} />
+                </button>
+              )}
+
+              {irlAvenantsCount > 0 && (
+                <button
+                  title="Envoyer l’avenant IRL"
+                  style={shareIconOnlyBtn(
+                    toneColors.irl.bg,
+                    toneColors.irl.color,
+                    false,
+                  )}
+                  onClick={sendIrlAvenant}
+                >
+                  <TrendingUp size={17} />
+                </button>
+              )}
+            </div>
+            <div style={navIconRail}>
+              <button title="Rafraîchir" style={navIconBtn} onClick={refresh}>
+                <RefreshCw size={17} />
+              </button>
+
+              <Link href={`/dashboard/leases/${leaseId}/edit`}>
+                <button title="Retour au bail" style={navIconBtn}>
+                  <ArrowLeft size={17} />
+                </button>
+              </Link>
+
+              <Link href={`/dashboard/leases`}>
+                <button title="Tous les baux" style={navIconBtn}>
+                  <LayoutGrid size={17} />
+                </button>
+              </Link>
+            </div>
           </div>
         </div>
 
         <div style={heroStats}>
           <div style={statCard}>
-            <FolderOpen size={18} color="#2F63E0" />
+            <PackageCheck size={18} color={toneColors.entry.color} />
             <div>
               <div style={statValue}>{entryTotalAvailableCount}/{entryTotalExpectedCount}</div>
               <div style={statLabel}>documents entrée</div>
@@ -547,7 +641,7 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
           </div>
 
           <div style={statCard}>
-            <Archive size={18} color="#7C3AED" />
+            <Archive size={18} color={toneColors.exit.color} />
             <div>
               <div style={statValue}>{exitTenantAvailableCount}/{exitTenantDocsCount}</div>
               <div style={statLabel}>documents sortie</div>
@@ -555,85 +649,79 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
           </div>
 
           <div style={statCard}>
-            <ShieldCheck size={18} color="#027A48" />
+            <ShieldCheck size={18} color={toneColors.guarantor.color} />
             <div>
               <div style={statValue}>{hasGuarantor ? guarantorActsCount : "—"}</div>
               <div style={statLabel}>actes garants</div>
             </div>
           </div>
         </div>
-
-        <div className="hero-send-row" style={heroSendRow}>
-          <div style={heroSendLeft}>
-            {latest("PACK_FINAL") && (
-              <button style={heroSendBtn} onClick={sendEntryPack}>
-                <Send size={16} /> Envoyer pack entrée
-              </button>
-            )}
-
-            {hasGuarantor === true && guarantorActsCount > 0 && (
-              <button style={heroSendBtn} onClick={sendGuarantorActs}>
-                <Send size={16} /> Envoyer actes aux garants
-              </button>
-            )}
-          </div>
-
-          <div className="hero-send-right" style={heroSendRight}>
-            {latest("PACK_EDL_INV_SORTIE") && (
-              <button style={heroSendBtnPurple} onClick={sendExitDocuments}>
-                <Send size={16} /> Envoyer documents de sortie
-              </button>
-            )}
-          </div>
-        </div>
-
-
       </header>
 
       {status && <div style={successBox}>{status}</div>}
       {error && <div style={errorBox}>{error}</div>}
 
-      <div style={grid}>
-        <div style={{ display: "grid", gap: 16 }}>
-          <LibraryPanel
-            tone="entry"
-            icon={<FolderOpen size={20} />}
-            title="Entrée locataires"
-            subtitle="Contrat, EDL entrée, inventaire, notice et pack final d’entrée."
-            items={rows.entryTenant}
-          />
+      <section style={hub}>
+        <DocumentSection
+          tone="entry"
+          icon={<PackageCheck size={20} />}
+          title="Entrée locataires"
+          subtitle="Contrat, EDL entrée, inventaire, notice et pack final."
+          count={`${entryTenantAvailableCount}/${entryTenantDocsCount}`}
+        >
+          {renderItems(rows.entryTenant)}
+        </DocumentSection>
 
-          <LibraryPanel
-            tone="entry"
-            icon={<FileText size={20} />}
-            title="Avenants"
-            subtitle="Avenants du bail, prêts à télécharger et signer."
-            items={rows.amendments}
-          />
+        {hasGuarantor === true && (
+          <DocumentSection
+            tone="guarantor"
+            icon={<ShieldCheck size={20} />}
+            title="Entrée garants"
+            subtitle="Actes de caution rattachés au bail."
+            count={`${guarantorActsCount}/${guarantorActsCount}`}
+          >
+            {renderItems(rows.entryGuarantor)}
+          </DocumentSection>
+        )}
 
-          {hasGuarantor === true && (
-            <LibraryPanel
-              tone="guarantor"
-              icon={<ShieldCheck size={20} />}
-              title="Entrée garants"
-              subtitle="Actes de caution rattachés au bail, prêts à transmettre aux garants."
-              items={rows.entryGuarantor}
-            />
-          )}
-        </div>
-
-        <LibraryPanel
+        <DocumentSection
           tone="exit"
-          icon={<Archive size={20} />}
+          icon={<PackageCheck size={20} />}
           title="Sortie locataires"
           subtitle="EDL sortie, inventaire sortie, attestation et pack de sortie."
-          items={rows.exitTenant}
-        />
-      </div>
+          count={`${exitTenantAvailableCount}/${exitTenantDocsCount}`}
+        >
+          {renderItems(rows.exitTenant)}
+        </DocumentSection>
+
+        <DocumentSection
+          tone="amendment"
+          icon={<FileSignature size={20} />}
+          title="Avenants"
+          subtitle="Avenants du bail, prêts à générer si nécessaire."
+          count={`${availableCount(rows.amendments)}/${rows.amendments.length}`}
+        >
+          {renderItems(rows.amendments)}
+        </DocumentSection>
+      </section>
+
 
       <style
         dangerouslySetInnerHTML={{
           __html: `
+            .document-section:last-child {
+                border-bottom: 0 !important;
+              }
+
+            .document-section .document-row:last-child {
+              border-bottom: 0 !important;
+            }
+
+            @media (max-width: 760px) {
+              .document-section {
+                grid-template-columns: 1fr !important;
+              }
+            }
             @media (max-width: 760px) {
               .document-row {
                 grid-template-columns: 1fr !important;
@@ -650,18 +738,6 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
                 flex: 1 1 auto;
                 justify-content: center;
               }
-
-              .hero-send-row {
-                grid-template-columns: 1fr !important;
-              }
-
-              .hero-send-right {
-                justify-content: stretch !important;
-              }
-              
-              .hero-send-row button {
-                width: 100%;
-              }
             }
           `,
         }}
@@ -669,6 +745,14 @@ export default function LeaseDocumentsPage({ params }: { params: { leaseId: stri
     </main>
   );
 }
+
+const toneColors = {
+  entry: { bg: "#EEF4FF", color: "#2F63E0" },
+  exit: { bg: "#F4F0FF", color: "#7C3AED" },
+  guarantor: { bg: "#ECFDF3", color: "#027A48" },
+  amendment: { bg: "#EEF4FF", color: "#3467EB" },
+  irl: { bg: "#ECFEFF", color: "#0891B2" },
+} as const;
 
 const page: React.CSSProperties = {
   maxWidth: 1220,
@@ -683,14 +767,13 @@ const page: React.CSSProperties = {
 };
 
 const hero: React.CSSProperties = {
-  background:
-    "linear-gradient(135deg, rgba(255,255,255,0.96), rgba(255,255,255,0.78))",
+  background: "rgba(255,255,255,0.94)",
   border: "1px solid rgba(27,39,64,0.08)",
   borderRadius: 28,
   padding: 22,
   display: "grid",
   gap: 18,
-  boxShadow: "0 24px 80px rgba(31,42,60,0.08)",
+  boxShadow: "0 8px 30px rgba(31,42,60,0.06)",
 };
 
 const heroTop: React.CSSProperties = {
@@ -705,51 +788,6 @@ const heroStats: React.CSSProperties = {
   display: "grid",
   gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))",
   gap: 10,
-};
-
-const heroSendRow: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-  gap: 16,
-  alignItems: "center",
-};
-
-const heroSendLeft: React.CSSProperties = {
-  display: "flex",
-  gap: 10,
-  alignItems: "center",
-  flexWrap: "wrap",
-};
-
-const heroSendRight: React.CSSProperties = {
-  display: "flex",
-  justifyContent: "flex-end",
-  gap: 10,
-  alignItems: "center",
-  flexWrap: "wrap",
-};
-
-const heroSendBtn: React.CSSProperties = {
-  border: "1px solid rgba(2,122,72,0.18)",
-  background: "linear-gradient(180deg,#ECFDF3 0%,#DFF8EA 100%)",
-  color: "#027A48",
-  borderRadius: 16,
-  padding: "13px 14px",
-  fontWeight: 950,
-  cursor: "pointer",
-  display: "inline-flex",
-  gap: 9,
-  alignItems: "center",
-  justifyContent: "center",
-  boxShadow: "0 10px 24px rgba(2,122,72,0.10)",
-};
-
-const heroSendBtnPurple: React.CSSProperties = {
-  ...heroSendBtn,
-  border: "1px solid rgba(124,58,237,0.18)",
-  background: "linear-gradient(180deg,#F4F0FF 0%,#EEE7FF 100%)",
-  color: "#6D28D9",
-  boxShadow: "0 10px 24px rgba(124,58,237,0.10)",
 };
 
 const statCard: React.CSSProperties = {
@@ -812,68 +850,71 @@ const heroMuted = {
 
 const topActions: React.CSSProperties = {
   display: "flex",
-  gap: 10,
-  flexWrap: "wrap",
-};
-
-const grid: React.CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)",
-  gap: 16,
-};
-const panel: React.CSSProperties = {
-  position: "relative",
-  overflow: "hidden",
-  background: "rgba(255,255,255,0.92)",
-  border: "1px solid rgba(27,39,64,0.08)",
-  borderRadius: 26,
-  padding: 16,
-  display: "grid",
+  alignItems: "center",
   gap: 14,
-  boxShadow: "0 14px 45px rgba(31,42,60,0.06)",
+  marginLeft: "auto",
 };
 
-const panelAccent = (tone: "entry" | "exit" | "guarantor"): React.CSSProperties => ({
-  position: "absolute",
-  inset: "0 0 auto 0",
-  height: 4,
-  background:
-    tone === "entry"
-      ? "linear-gradient(90deg,#2F63E0,#7EA6FF)"
-      : tone === "exit"
-        ? "linear-gradient(90deg,#7C3AED,#C4B5FD)"
-        : "linear-gradient(90deg,#027A48,#86EFAC)",
-});
+const hub: React.CSSProperties = {
+  background: "rgba(255,255,255,0.94)",
+  border: "1px solid rgba(27,39,64,0.08)",
+  borderRadius: 28,
+  boxShadow: "0 14px 45px rgba(31,42,60,0.06)",
+  overflow: "hidden",
+};
 
-const panelHeader: React.CSSProperties = {
+const docSection: React.CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "230px minmax(0, 1fr)",
+  gap: 20,
+  padding: "22px 22px",
+  borderBottom: "1px solid rgba(27,39,64,0.07)",
+  alignItems: "start",
+};
+
+const sectionSide: React.CSSProperties = {
   display: "flex",
-  justifyContent: "space-between",
   gap: 12,
   alignItems: "flex-start",
 };
 
-const panelRight: React.CSSProperties = {
-  display: "flex",
-  gap: 8,
-  alignItems: "center",
-  justifyContent: "flex-end",
-  flexWrap: "wrap",
+const sectionTitle: React.CSSProperties = {
+  margin: 0,
+  fontSize: 16,
+  fontWeight: 950,
+  letterSpacing: "-0.035em",
+  color: "#1F2A3C",
 };
 
-const panelIcon = (tone: "entry" | "exit" | "guarantor"): React.CSSProperties => ({
-  width: 42,
-  height: 42,
-  borderRadius: 16,
+const sectionSub: React.CSSProperties = {
+  margin: "5px 0 10px",
+  color: "#7C8AA5",
+  fontSize: 12.5,
+  lineHeight: 1.45,
+  fontWeight: 650,
+};
+
+const sectionDocs: React.CSSProperties = {
   display: "grid",
-  placeItems: "center",
-  color: tone === "entry" ? "#2F63E0" : tone === "exit" ? "#7C3AED" : "#027A48",
-  background:
-    tone === "entry"
-      ? "#EEF4FF"
-      : tone === "exit"
-        ? "#F4F0FF"
-        : "#ECFDF3",
-});
+  gap: 0,
+};
+
+const panelIcon = (
+  tone: "entry" | "exit" | "guarantor" | "amendment",
+): React.CSSProperties => {
+  const c = toneColors[tone];
+
+  return {
+    width: 42,
+    height: 42,
+    borderRadius: 16,
+    display: "grid",
+    placeItems: "center",
+    color: c.color,
+    background: c.bg,
+    border: `1px solid ${c.color}22`,
+  };
+};
 
 const miniCount: React.CSSProperties = {
   padding: "7px 10px",
@@ -890,10 +931,11 @@ const row: React.CSSProperties = {
   gridTemplateColumns: "minmax(0, 1fr) auto",
   gap: 8,
   alignItems: "center",
-  border: "1px solid rgba(27,39,64,0.08)",
-  borderRadius: 16,
-  padding: "9px 10px",
-  background: "linear-gradient(180deg,#FFFFFF 0%,#FBFCFE 100%)",
+  border: 0,
+  borderBottom: "1px solid rgba(27,39,64,0.075)",
+  borderRadius: 0,
+  padding: "12px 0",
+  background: "transparent",
   minHeight: 58,
   overflow: "hidden",
 };
@@ -953,14 +995,6 @@ const secondaryBtn: React.CSSProperties = {
   boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
 };
 
-const linkBtn: React.CSSProperties = {
-  ...secondaryBtn,
-  padding: "8px 10px",
-  fontSize: 12,
-  color: "#2F63E0",
-  whiteSpace: "nowrap",
-};
-
 const iconBtn: React.CSSProperties = {
   ...secondaryBtn,
   width: 34,
@@ -968,40 +1002,25 @@ const iconBtn: React.CSSProperties = {
   padding: 0,
   justifyContent: "center",
   color: "#2F63E0",
+  background: "#FFFFFF",
+  border: "1px solid rgba(47,99,224,0.18)",
+  boxShadow: "none",
   flex: "0 0 auto",
 };
 
 const signedIconBtn: React.CSSProperties = {
   ...iconBtn,
   color: "#027A48",
-  background: "#ECFDF3",
+  background: "#F8FEFB",
+  border: "1px solid rgba(2,122,72,0.18)",
 };
 
 const regenIconBtn: React.CSSProperties = {
   ...iconBtn,
-  background: "#EEF4FF",
-  color: "#2F63E0",
+  color: "#475569",
+  background: "#FFFFFF",
+  border: "1px solid rgba(71,85,105,0.18)",
 };
-
-const regenBtn: React.CSSProperties = {
-  ...secondaryBtn,
-  padding: "7px 9px",
-  fontSize: 11.5,
-  background: "#EEF4FF",
-  color: "#2F63E0",
-  whiteSpace: "nowrap",
-};
-
-const sendBtn: React.CSSProperties = {
-  ...secondaryBtn,
-  padding: "8px 10px",
-  fontSize: 11.5,
-  background: "#ECFDF3",
-  color: "#027A48",
-  whiteSpace: "nowrap",
-  flex: "0 0 auto",
-};
-
 const okPill: React.CSSProperties = {
   padding: "5px 8px",
   borderRadius: 999,
@@ -1046,3 +1065,58 @@ const errorBox: React.CSSProperties = {
   fontWeight: 900,
   border: "1px solid rgba(180,35,24,0.10)",
 };
+
+const navIconRail: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: 7,
+  borderRadius: 22,
+  background: "#FFFFFF",
+  border: "1px solid rgba(27,39,64,0.08)",
+  boxShadow: "0 14px 34px rgba(16,24,40,0.10)",
+};
+
+const navIconBtn: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: 16,
+  border: "1px solid rgba(27,39,64,0.08)",
+  background: "#FFFFFF",
+  color: "#243247",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  boxShadow: "0 6px 16px rgba(16,24,40,0.05)",
+};
+
+const shareIconRail: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: 7,
+  borderRadius: 22,
+  background: "#FFFFFF",
+  border: "1px solid rgba(27,39,64,0.08)",
+  boxShadow: "0 14px 34px rgba(16,24,40,0.10)",
+};
+
+const shareIconOnlyBtn = (
+  bg: string,
+  color: string,
+  disabled: boolean,
+): React.CSSProperties => ({
+  width: 42,
+  height: 42,
+  borderRadius: 16,
+  border: `1px solid ${disabled ? "rgba(27,39,64,0.08)" : `${color}33`}`,
+  background: disabled ? "#F8FAFC" : bg,
+  color: disabled ? "#A0AEC0" : color,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: disabled ? "not-allowed" : "pointer",
+  opacity: disabled ? 0.45 : 1,
+  boxShadow: disabled ? "none" : "0 8px 20px rgba(16,24,40,0.06)",
+});

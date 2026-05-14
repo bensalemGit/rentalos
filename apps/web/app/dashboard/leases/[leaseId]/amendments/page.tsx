@@ -34,6 +34,9 @@ type Amendment = {
   applied_at?: string | null;
   document_filename?: string | null;
   signed_final_filename?: string | null;
+  irl_revision_date?: string | null;
+  irl_new_quarter?: string | null;
+  irl_new_value?: string | number | null;
   signers?: Array<{
     role?: string | null;
     signerName?: string | null;
@@ -50,10 +53,12 @@ export default function AmendmentsPage() {
   const leaseId = String(params?.leaseId || "");
   const [token, setToken] = useState("");
   const [items, setItems] = useState<Amendment[]>([]);
+  const [irlDocs, setIrlDocs] = useState<Amendment[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+  const [sendingIrlId, setSendingIrlId] = useState<string | null>(null);
 
   useEffect(() => {
     setToken(localStorage.getItem("token") || "");
@@ -82,12 +87,42 @@ export default function AmendmentsPage() {
 
       const arr = Array.isArray(j) ? j : Array.isArray(j?.value) ? j.value : [];
       setItems(arr);
-    } catch (e: any) {
-      setError(String(e?.message || e));
-    } finally {
-      setLoading(false);
-    }
-  }
+      const docsRes = await fetch(`${API}/documents?leaseId=${leaseId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      const docsJson = await docsRes.json().catch(() => []);
+      if (!docsRes.ok) throw new Error(docsJson?.message || JSON.stringify(docsJson));
+      const docsArr = Array.isArray(docsJson) ? docsJson : [];
+
+      const irlAmendmentDocs: Amendment[] = docsArr
+        .filter(
+          (d: any) =>
+            String(d?.type || "").toUpperCase() === "AVENANT_IRL" &&
+            !String(d?.type || "").toUpperCase().includes("SIGNED"),
+        )
+        .map((d: any) => ({
+          id: `doc-${d.id}`,
+          lease_id: leaseId,
+          type: "AVENANT_IRL",
+          status: "generated",
+          title: "Avenant IRL",
+          document_id: d.id,
+          document_filename: d.filename,
+          created_at: d.created_at,
+          generated_at: d.created_at,
+          effective_date: null,
+        }));
+
+      setIrlDocs(irlAmendmentDocs);
+            } catch (e: any) {
+              setError(String(e?.message || e));
+            } finally {
+              setLoading(false);
+            }
+          }
 
   async function downloadDoc(documentId: string, filename?: string | null) {
     setError("");
@@ -153,11 +188,47 @@ export default function AmendmentsPage() {
     }
   }
 
+  async function sendIrlAmendment(amendment: Amendment) {
+    if (!amendment.document_id) {
+      setError("Aucun PDF IRL à envoyer.");
+      return;
+    }
+
+    setSendingIrlId(amendment.id);
+    setError("");
+    setStatus("Envoi de l’avenant IRL…");
+
+    try {
+      const r = await fetch(`${API}/documents/send-irl-avenant`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          leaseId,
+          documentId: amendment.document_id,
+        }),
+      });
+
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j?.message || JSON.stringify(j));
+
+      setStatus(`Avenant IRL envoyé ✅ (${j?.sentCount || 0} destinataire(s))`);
+    } catch (e: any) {
+      setStatus("");
+      setError(String(e?.message || e));
+    } finally {
+      setSendingIrlId(null);
+    }
+  }
+
   const sorted = useMemo(() => {
-    return [...items].sort((a, b) =>
+    return [...items, ...irlDocs].sort((a, b) =>
       String(b.created_at || "").localeCompare(String(a.created_at || "")),
     );
-  }, [items]);
+  }, [items, irlDocs]);
 
   const blue = "#3467EB";
   const title = "#17233A";
@@ -246,8 +317,10 @@ export default function AmendmentsPage() {
             </div>
           ) : (
             sorted.map((a) => {
-              const canSign = Boolean(a.document_id) && a.status !== "applied";
-              const canApply = a.status === "signed";
+              const isIrlAmendment = String(a.type || "").toUpperCase() === "AVENANT_IRL";
+              const canSign = Boolean(a.document_id) && a.status !== "applied" && !isIrlAmendment;
+              const canApply = a.status === "signed" && !isIrlAmendment;
+              const canSendIrl = Boolean(a.document_id) && isIrlAmendment;
 
               return (
                 <article key={a.id} style={card(border)}>
@@ -285,7 +358,7 @@ export default function AmendmentsPage() {
                         </h2>
 
                         <span style={statusPill(a.status)}>
-                          {statusLabel(a.status)}
+                          {statusLabel(a.status, a.type)}
                         </span>
                       </div>
 
@@ -304,11 +377,11 @@ export default function AmendmentsPage() {
                         {a.generated_at && (
                           <span>Généré : {fmtDateTime(a.generated_at)}</span>
                         )}
-                        {a.signed_at && (
+                        {!isIrlAmendment && a.signed_at && (
                           <span>Signé : {fmtDateTime(a.signed_at)}</span>
                         )}
                         {a.applied_at && (
-                          <span>Appliqué : {fmtDateTime(a.applied_at)}</span>
+                          <span>{isIrlAmendment ? "Révision appliquée" : "Appliqué"} : {fmtDateTime(a.applied_at)}</span>
                         )}
                       </div>
 
@@ -318,7 +391,7 @@ export default function AmendmentsPage() {
                         </p>
                       ) : null}
 
-                      {Array.isArray(a.signers) && a.signers.length > 0 ? (
+                      {!isIrlAmendment && Array.isArray(a.signers) && a.signers.length > 0 ? (
                         <div style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
                           {a.signers.map((s, i) => (
                             <span key={i} style={signerPill(s.signatureStatus)}>
@@ -349,6 +422,22 @@ export default function AmendmentsPage() {
                         >
                           <Download size={15} />
                           PDF
+                        </button>
+                      ) : null}
+
+                      {canSendIrl ? (
+                        <button
+                          type="button"
+                          style={smallPrimaryBtn(blue)}
+                          disabled={sendingIrlId === a.id}
+                          onClick={() => sendIrlAmendment(a)}
+                        >
+                          {sendingIrlId === a.id ? (
+                            <Loader2 size={15} className="spin" />
+                          ) : (
+                            <Send size={15} />
+                          )}
+                          Envoyer
                         </button>
                       ) : null}
 
@@ -435,7 +524,16 @@ function fmtDateTime(v?: string | null) {
   return new Date(v).toLocaleString("fr-FR");
 }
 
-function statusLabel(status: string) {
+function statusLabel(status: string, type?: string) {
+  const isIrl = String(type || "").toUpperCase() === "AVENANT_IRL";
+
+  if (isIrl) {
+    if (status === "generated") return "Généré";
+    if (status === "applied") return "Appliqué";
+    if (status === "sent") return "Envoyé";
+    return status || "Généré";
+  }
+
   if (status === "draft") return "Brouillon";
   if (status === "generated") return "Généré";
   if (status === "signed") return "Signé";

@@ -6,7 +6,6 @@ import {
   Archive,
   Building2,
   CalendarRange,
-  CircleAlert,
   BellRing,
   FileSignature,
   FileStack,
@@ -17,7 +16,6 @@ import {
   HandCoins,
   Home,
   PackageSearch,
-  PenSquare,
   Plus,
   RefreshCw,
   Shield,
@@ -398,11 +396,32 @@ async function submitApplyIrl() {
       return;
     }
 
+    const avenantRes = await fetch(`${API}/leases/${irlModalLease.id}/irl/avenant`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      credentials: "include",
+      body: JSON.stringify({ revisionDate }),
+    });
+
+    const avenantTxt = await avenantRes.text().catch(() => "");
+
+    if (!avenantRes.ok) {
+      console.error("IRL avenant generation error:", avenantRes.status, avenantTxt);
+      setIrlApplyErr(
+        `Révision appliquée, mais génération avenant échouée (${avenantRes.status}). Voir console.`,
+      );
+      await loadAll();
+      return;
+    }
+
     setIrlModalOpen(false);
     setIrlModalLease(null);
 
     await loadAll();
-    setStatus("Révision IRL appliquée ✅ (historique créé)");
+    setStatus("Révision IRL appliquée ✅ Avenant IRL généré.");
     setTimeout(() => setStatus(""), 2500);
   } catch (e: any) {
     setIrlApplyErr(String(e?.message || e));
@@ -492,6 +511,16 @@ function goToAddTenantAmendment() {
   router.push(
     `/dashboard/leases/${amendmentModalLease.id}/amendments/new?type=ADD_TENANT`
   );
+}
+
+function goToIrlAmendment() {
+  if (!amendmentModalLease) return;
+
+  const id = amendmentModalLease.id;
+
+  closeAmendmentModal();
+
+  router.push(`/dashboard/leases/${id}/amendments/new?type=AVENANT_IRL`);
 }
 
 async function generateConsolidatedContract(lease: Lease) {
@@ -1556,6 +1585,24 @@ async function generateConsolidatedContract(lease: Lease) {
               </span>
             </span>
           </button>
+
+          <button
+              type="button"
+              onClick={goToIrlAmendment}
+              style={amendmentTypeButtonStyle(border, true)}
+            >
+              <span style={amendmentTypeIconStyle("#3467EB", "#EEF4FF")}>
+                <HandCoins size={20} strokeWidth={2} />
+              </span>
+              <span style={{ flex: 1 }}>
+                <span style={{ display: "block", fontWeight: 900, color: title }}>
+                  Révision IRL
+                </span>
+                <span style={{ display: "block", marginTop: 3, fontSize: 12.5, color: muted }}>
+                  Appliquer une révision annuelle du loyer.
+                </span>
+              </span>
+            </button>
 
           {[
             "Départ locataire",

@@ -236,4 +236,19 @@ async acknowledge(
     return this.replyCreated(res, result);
   }
 
+  @Post('send-amendments')
+  async sendAmendments(@Body() body: { leaseId: string }) {
+    return this.docs.sendAmendmentsToConcernedParties(
+      String(body?.leaseId || '').trim(),
+    );
+  }
+
+  @Post('send-irl-avenant')
+  async sendIrlAvenant(@Body() body: { leaseId: string; documentId?: string }) {
+    return this.docs.sendIrlAvenantToTenants(
+      String(body?.leaseId || '').trim(),
+      body?.documentId ? String(body.documentId).trim() : undefined,
+    );
+  }
+
 }
