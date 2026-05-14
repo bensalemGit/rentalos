@@ -121,10 +121,11 @@ export function DocumentsSection({
                 style={{
                   display: "grid",
                   gridTemplateColumns: "minmax(240px, 1fr) auto",
-                  gap: 6,
+                  gap: 8,
                   alignItems: "center",
-                  padding: "1px 0",
-                  borderTop: index === 0 ? "none" : "1px solid rgba(27,39,64,0.025)",
+                  padding: "4px 6px",
+                  borderTop: index === 0 ? "none" : "1px solid rgba(27,39,64,0.045)",
+                  borderRadius: 10,
                   minWidth: 0,
                 }}
               >
@@ -203,9 +204,9 @@ export function DocumentsSection({
             @media (max-width: 700px) {
               .document-row {
                 grid-template-columns: 1fr !important;
-                gap: 10px !important;
+                gap: 8px !important;
                 align-items: start !important;
-                padding: 10px 0 !important;
+                padding: 8px 6px !important;
               }
 
               .document-actions {

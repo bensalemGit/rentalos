@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { RefreshCw } from "lucide-react";
+import { LayoutGrid, RefreshCw } from "lucide-react";
 import { extractLeaseBundle } from "../../_lib/extractLease";
 import type { SignatureStatusPayload } from "../../_lib/signatureStatus.types";
 import { mapSignatureData } from "./_lib/mapSignatureData";
@@ -263,7 +263,8 @@ export default function SignPage({ params }: { params: { leaseId: string } }) {
   const [canonicalWorkflowError, setCanonicalWorkflowError] = useState<string | null>(null);
   // ✅ Local override: permet d'utiliser immédiatement l'id d'acte renvoyé par /documents/guarantor-act
   const [guaranteeActOverride, setGuaranteeActOverride] = useState<Record<string, string>>({});
-  const [loadingSigStatus, setLoadingSigStatus] = useState(false);
+  const [loadingSigStatus, setLoadingSigStatus] = useState(true);
+  const [hasLoadedSigStatus, setHasLoadedSigStatus] = useState(false);
   const [sigStatusError, setSigStatusError] = useState<string | null>(null);
 
   const [pendingModeSwitchTask, setPendingModeSwitchTask] = useState<SignerTask | null>(null);
@@ -1293,7 +1294,6 @@ async function sendAllRemainingLinks() {
         await createCanonicalPublicLink(input);
         sentCount += 1;
       } catch (e) {
-        console.warn("[sendAllRemainingLinks] skipped", task.id, e);
         skippedCount += 1;
       }
     }
@@ -1436,6 +1436,7 @@ async function confirmSessionDraftSignature() {
     } catch (e: any) {
       setSigStatusError(String(e?.message || e));
     } finally {
+      setHasLoadedSigStatus(true);
       setLoadingSigStatus(false);
     }
   }
@@ -1478,7 +1479,6 @@ async function confirmSessionDraftSignature() {
       setPackFinalReadinessError(null);
     } catch (e: any) {
       const message = String(e?.message || e);
-      console.error("[PACK FINAL READINESS ERROR]", message);
       setPackFinalReadiness(null);
       setPackFinalReadinessError(message);
     } finally {
@@ -1641,24 +1641,33 @@ function onPointerUp(e: any) {
 
   drawing.current = false;
 }
-
+  const signatureDataReady = hasLoadedSigStatus && Boolean(sigStatus);
   const signatureCenter = useMemo(() => {
+    if (!signatureDataReady) return null;
+
     return mapSignatureData({
       leaseId,
-      sigStatus,
+      sigStatus: sigStatus!,
       tenants,
       docs,
       amendments,
       guaranteeActOverride,
       landlordName,
     });
-  }, [leaseId, sigStatus, tenants, docs, amendments, guaranteeActOverride, landlordName]);
+  }, [
+    signatureDataReady,
+    leaseId,
+    sigStatus,
+    tenants,
+    docs,
+    amendments,
+    guaranteeActOverride,
+    landlordName,
+  ]);
 
-  const { overview, signerTasks, documents } = signatureCenter;
-
-  console.log("SIGNER TASKS JSON", JSON.stringify(signerTasks, null, 2));
-  console.log("DOCUMENTS JSON", JSON.stringify(documents, null, 2));
-  console.log("TARGET DOC", targetedDocumentId);
+  const overview = signatureCenter?.overview;
+  const signerTasks = signatureCenter?.signerTasks || [];
+  const documents = signatureCenter?.documents || [];
 
   const visibleSignerTasks = useMemo(() => {
     if (!isTargetedDocumentMode) return signerTasks;
@@ -1682,7 +1691,8 @@ function onPointerUp(e: any) {
     });
   }, [documents, isTargetedDocumentMode, targetedDocumentId]);
 
-  const visibleOverview: SignatureOverview = useMemo(() => {
+  const visibleOverview = useMemo<SignatureOverview | null>(() => {
+    if (!overview) return null;
     if (!isTargetedDocumentMode) return overview;
 
     const actionableTasks = visibleSignerTasks.filter(
@@ -1712,7 +1722,6 @@ function onPointerUp(e: any) {
         total: tenantTasks.length,
         pending: tenantTasks.filter((task) => task.status !== "SIGNED").length,
       },
-
       guarantors: {
         ...overview.guarantors,
         signed: guarantorTasks.filter((task) => task.status === "SIGNED").length,
@@ -1720,7 +1729,6 @@ function onPointerUp(e: any) {
         pending: guarantorTasks.filter((task) => task.status !== "SIGNED").length,
         notRequired: 0,
       },
-
       landlord: {
         ...overview.landlord,
         signed:
@@ -1730,28 +1738,13 @@ function onPointerUp(e: any) {
         pending: landlordTasks.filter((task) => task.status !== "SIGNED").length,
       },
       globalStatus: (
-        remainingCount === 0 && totalCount > 0
-          ? "SIGNED"
-          : "SIGNATURE"
+        remainingCount === 0 && totalCount > 0 ? "SIGNED" : "SIGNATURE"
       ) as SignatureGlobalStatus,
       globalStatusLabel:
-        remainingCount === 0 && totalCount > 0
-          ? "Document signé"
-          : "Signature en cours",
+        remainingCount === 0 && totalCount > 0 ? "Document signé" : "Signature en cours",
       globalStatusHelp: "",
     };
   }, [overview, isTargetedDocumentMode, visibleSignerTasks]);
-
-  console.log(
-    "[SIGNER TASKS RUNTIME]",
-    signerTasks.map((t) => ({
-      id: t.id,
-      kind: t.kind,
-      label: t.documentLabel,
-      tenantId: (t as any).tenantId || null,
-      hasSubTasks: Array.isArray((t as any).subTasks) ? (t as any).subTasks.length : 0,
-    })),
-  );
 
 function groupTasksBySigner(tasks: SignerTask[]) {
   const map = new Map<string, SignerTask[]>();
@@ -1798,37 +1791,22 @@ function groupTasksBySigner(tasks: SignerTask[]) {
 
   const signerGroups = groupTasksBySigner(visibleSignerTasks);
 
-  console.log(
-    "[SIGNER GROUPS RUNTIME]",
-    signerGroups.map((g) => ({
-      key: g.key,
-      mainTaskId: g.mainTask.id,
-      mainTaskLabel: g.mainTask.documentLabel,
-      taskIds: g.tasks.map((t) => t.id),
-      taskLabels: g.tasks.map((t) => t.documentLabel),
-    })),
-  );
-
-  const displayTasks = signerGroups.flatMap((group) => {
-  const main = group.mainTask;
-  const sub = group.tasks.filter((t) => t.id !== main.id);
-
-  return [
-    {
-      ...main,
-      subTasks: sub,
-    } as SignerTask,
-    ...sub,
-  ];
-});
-
   const signerCards = signerGroups.map((group) => {
     const main = group.mainTask;
-    const sub = group.tasks.filter((t) => t.id !== main.id);
+
+    const existingSubTasks = Array.isArray((main as any).subTasks)
+      ? ((main as any).subTasks as SignerTask[])
+      : [];
+
+    const siblingSubTasks = group.tasks.filter((t) => t.id !== main.id);
+
+    const mergedSubTasks = [...existingSubTasks, ...siblingSubTasks].filter(
+      (task, index, arr) => arr.findIndex((x) => x.id === task.id) === index,
+    );
 
     return {
       ...main,
-      subTasks: sub,
+      subTasks: mergedSubTasks,
     } as SignerTask;
   });
 
@@ -2142,32 +2120,6 @@ const canStartNextOnSite = visibleSignerTasks.some(
   (task) => task.status === "READY" && task.canSignOnSite
 );
 
-
-console.log(
-  "[SIGNER SECTION INPUT]",
-  signerGroups.map((group) => {
-    const main = group.mainTask;
-    const siblingSubTasks = group.tasks.filter((t) => t.id !== main.id);
-    const existingSubTasks = Array.isArray((main as any).subTasks) ? (main as any).subTasks : [];
-
-    return {
-      key: group.key,
-      mainTaskId: main.id,
-      mainTaskLabel: main.documentLabel,
-      existingSubTasks: existingSubTasks.map((t: any) => ({
-        id: t.id,
-        label: t.documentLabel,
-        status: t.status,
-      })),
-      siblingSubTasks: siblingSubTasks.map((t) => ({
-        id: t.id,
-        label: t.documentLabel,
-        status: t.status,
-      })),
-    };
-  }),
-);
-
 const flatTasksForSession = signerTasks.flatMap((task) => [
   task,
   ...(((task as any).subTasks || []) as SignerTask[]),
@@ -2200,12 +2152,40 @@ const activeSessionGuarantorMentionValid =
   !activeSessionIsGuarantor ||
   isMentionValid(onsiteGuarantorMention, activeSessionRequiredGuarantorMention);
 
-console.log("[PACK FINAL READINESS PAGE]", {
-  packFinalReadiness,
-  loadingPackFinalReadiness,
-  hasPackFinal: Boolean(packFinalV2Doc),
-});
-    
+const navIconRail: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 8,
+  padding: 7,
+  borderRadius: 22,
+  background: "#FFFFFF",
+  border: "1px solid rgba(27,39,64,0.08)",
+  boxShadow: "0 14px 34px rgba(16,24,40,0.10)",
+  flexShrink: 0,
+};
+
+const navIconBtn: React.CSSProperties = {
+  width: 42,
+  height: 42,
+  borderRadius: 16,
+  border: "1px solid rgba(27,39,64,0.08)",
+  background: "#FFFFFF",
+  color: "#243247",
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  cursor: "pointer",
+  boxShadow: "0 6px 16px rgba(16,24,40,0.05)",
+};
+
+  if (!signatureDataReady || !overview || !visibleOverview) {
+    return (
+      <div style={{ padding: 32, fontFamily: UI_FONT }}>
+        Chargement du centre de signature…
+      </div>
+    );
+  }
+
   return (
     <div
       style={{
@@ -2302,31 +2282,21 @@ console.log("[PACK FINAL READINESS PAGE]", {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={refreshAll}
-          style={{
-            appearance: "none",
-            border: `1px solid ${SIGN_UI.colors.cardBorder}`,
-            background: "linear-gradient(180deg, #FFFFFF 0%, #FBFCFE 100%)",
-            borderRadius: 14,
-            height: 40,
-            padding: "0 16px",
-            fontSize: 13.5,
-            fontWeight: 600,
-            cursor: "pointer",
-            color: SIGN_UI.colors.textStrong,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 8,
-            boxShadow: "0 1px 2px rgba(16,24,40,0.04)",
-            fontFamily: SIGN_UI.font,
-            flexShrink: 0,
-          }}
-        >
-          <RefreshCw size={14} strokeWidth={2.05} />
-          <span>Rafraîchir</span>
-        </button>
+        <div style={navIconRail}>
+          <button title="Rafraîchir" style={navIconBtn} onClick={refreshAll}>
+            <RefreshCw size={17} />
+          </button>
+
+          <button
+            title="Tous les baux"
+            style={navIconBtn}
+            onClick={() => {
+              window.location.href = "/dashboard/leases";
+            }}
+          >
+            <LayoutGrid size={17} />
+          </button>
+        </div>
       </div>
       <div
         style={{
