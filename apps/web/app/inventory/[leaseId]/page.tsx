@@ -682,7 +682,13 @@ export default function InventoryPage({ params }: { params: { leaseId: string } 
         throw new Error(t || "Copie entrée → sortie impossible (inventory).");
       }
 
-      // 6) reload lines
+      // 6) recharge sessions + lignes, et sélectionne la session sortie
+      await loadSessions(exitSessionId);
+      sessionIdRef.current = exitSessionId;
+      userPickedSessionRef.current = true;
+      setSessionId(exitSessionId);
+      setViewMode("EXIT");
+
       await loadLines(exitSessionId);
 
       pushToast({ kind: "ok", message: "Copie entrée → sortie ✅" });
