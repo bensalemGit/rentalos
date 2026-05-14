@@ -112,7 +112,10 @@ type SignatureStatusPayloadLite = {
 type DocLite = {
   id: string;
   type: string;
-  filename?: string;
+  filename?: string | null;
+  created_at?: string | null;
+  signed_final_document_id?: string | null;
+  parent_document_id?: string | null;
 };
 
 type AmendmentLite = {
@@ -599,14 +602,108 @@ function buildSecondaryLandlordTask(args: {
   ];
 }
 
-function mapSecondaryDocTasks(sigStatus: SignatureStatusPayloadLite | null): SignerTask[] {
+function latestDocByTypes(docs: DocLite[], types: string[]): DocLite | null {
+  const wanted = new Set(types.map((t) => t.toUpperCase()));
+
+  return (
+    docs
+      .filter((d) => wanted.has(String(d.type || "").toUpperCase()))
+      .sort((a, b) =>
+        String(b.created_at || "").localeCompare(String(a.created_at || "")),
+      )[0] || null
+  );
+}
+
+function fallbackSignableBlockFromDocs(args: {
+  docs: DocLite[];
+  key: string;
+  label: string;
+  types: string[];
+}): SignableDocBlockLite | null {
+  const doc = latestDocByTypes(args.docs, args.types);
+  if (!doc?.id) return null;
+
+  return {
+    key: args.key,
+    label: args.label,
+    documentId: doc.id,
+    filename: doc.filename || null,
+    signedFinalDocumentId: doc.signed_final_document_id || null,
+    status: doc.signed_final_document_id ? "SIGNED" : "GENERATED",
+    need: {
+      landlord: {
+        required: true,
+        signed: Boolean(doc.signed_final_document_id),
+      },
+      tenants: [],
+    },
+    landlordLastLink: null,
+    tenantLastLinkByTenantId: {},
+  };
+}
+
+function withFallbackBlock(
+  primary: SignableDocBlockLite | null | undefined,
+  fallback: SignableDocBlockLite | null,
+): SignableDocBlockLite | null {
+  return primary?.documentId ? primary : fallback;
+}
+
+function getSecondaryDocBlocks(
+  sigStatus: SignatureStatusPayloadLite | null,
+  docs: DocLite[],
+) {
+  const edlEntry = withFallbackBlock(
+    sigStatus?.edl?.entry || null,
+    fallbackSignableBlockFromDocs({
+      docs,
+      key: "edl_entry",
+      label: documentTypeLabel("EDL_ENTREE"),
+      types: ["EDL_ENTREE", "EDL_ENTRY"],
+    }),
+  );
+
+  const inventoryEntry = withFallbackBlock(
+    sigStatus?.inventory?.entry || null,
+    fallbackSignableBlockFromDocs({
+      docs,
+      key: "inventory_entry",
+      label: documentTypeLabel("INVENTAIRE_ENTREE"),
+      types: ["INVENTAIRE_ENTREE", "INVENTORY_ENTRY"],
+    }),
+  );
+
+  const edlExit = withFallbackBlock(
+    sigStatus?.edl?.exit || null,
+    fallbackSignableBlockFromDocs({
+      docs,
+      key: "edl_exit",
+      label: documentTypeLabel("EDL_SORTIE"),
+      types: ["EDL_SORTIE", "EDL_EXIT"],
+    }),
+  );
+
+  const inventoryExit = withFallbackBlock(
+    sigStatus?.inventory?.exit || null,
+    fallbackSignableBlockFromDocs({
+      docs,
+      key: "inventory_exit",
+      label: documentTypeLabel("INVENTAIRE_SORTIE"),
+      types: ["INVENTAIRE_SORTIE", "INVENTORY_EXIT"],
+    }),
+  );
+
+  return { edlEntry, inventoryEntry, edlExit, inventoryExit };
+}
+
+function mapSecondaryDocTasks(
+  sigStatus: SignatureStatusPayloadLite | null,
+  docs: DocLite[],
+): SignerTask[] {
   const contractTenants = sigStatus?.contract?.tenants || [];
 
-  const edlEntry = sigStatus?.edl?.entry || null;
-  const edlExit = sigStatus?.edl?.exit || null;
-
-  const inventoryEntry = sigStatus?.inventory?.entry || null;
-  const inventoryExit = sigStatus?.inventory?.exit || null;
+  const { edlEntry, inventoryEntry, edlExit, inventoryExit } =
+    getSecondaryDocBlocks(sigStatus, docs);
 
   return [
     ...buildSecondaryTenantTasks({
@@ -755,8 +852,10 @@ function computeGlobalStatus(args: {
     };
   }
 
-  const edlEntry = args.sigStatus?.edl?.entry || null;
-  const inventoryEntry = args.sigStatus?.inventory?.entry || null;
+  const { edlEntry, inventoryEntry } = getSecondaryDocBlocks(
+    args.sigStatus,
+    args.docs,
+  );
 
   const edlRequired = Boolean(edlEntry?.documentId);
   const inventoryRequired = Boolean(inventoryEntry?.documentId);
@@ -910,11 +1009,14 @@ function mapDocuments(args: {
       });
     });
 
+  const { edlEntry, inventoryEntry, edlExit, inventoryExit } =
+    getSecondaryDocBlocks(args.sigStatus, args.docs);
+
   const secondaryBlocks: Array<{ block: SignableDocBlockLite | null | undefined; type: string; label: string }> = [
-    { block: args.sigStatus?.edl?.entry, type: "EDL_ENTRY", label: documentTypeLabel("EDL_ENTREE") },
-    { block: args.sigStatus?.inventory?.entry, type: "INVENTORY_ENTRY", label: documentTypeLabel("INVENTAIRE_ENTREE") },
-    { block: args.sigStatus?.edl?.exit, type: "EDL_EXIT", label: documentTypeLabel("EDL_SORTIE") },
-    { block: args.sigStatus?.inventory?.exit, type: "INVENTORY_EXIT", label: documentTypeLabel("INVENTAIRE_SORTIE") },
+    { block: edlEntry, type: "EDL_ENTRY", label: documentTypeLabel("EDL_ENTREE") },
+    { block: inventoryEntry, type: "INVENTORY_ENTRY", label: documentTypeLabel("INVENTAIRE_ENTREE") },
+    { block: edlExit, type: "EDL_EXIT", label: documentTypeLabel("EDL_SORTIE") },
+    { block: inventoryExit, type: "INVENTORY_EXIT", label: documentTypeLabel("INVENTAIRE_SORTIE") },
   ];
 
   secondaryBlocks.forEach(({ block, type, label }) => {
@@ -1046,7 +1148,7 @@ export function mapSignatureData(args: MapSignatureDataArgs): MapSignatureDataRe
   const tenantTasks = mapTenantTasks(args.sigStatus);
   const guarantorTasks = mapGuarantorTasks(args.sigStatus, args.guaranteeActOverride);
   const landlordTask = mapLandlordTask(args.sigStatus, args.landlordName);
-  const secondaryDocTasks = mapSecondaryDocTasks(args.sigStatus);
+  const secondaryDocTasks = mapSecondaryDocTasks(args.sigStatus, args.docs);
   const amendmentTasks = mapAmendmentTasks(args.amendments || []);
   const landlordGuaranteeSubTasks = buildLandlordGuaranteeSubTasks(
     args.sigStatus,

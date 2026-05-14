@@ -308,6 +308,80 @@ async sendExitDocumentsToTenants(leaseId: string) {
   };
 }
 
+async sendAmendmentsToConcernedParties(leaseId: string) {
+  this.assertUuidV4(leaseId, 'leaseId');
+
+  const q = await this.pool.query(
+    `
+    SELECT
+      a.id AS amendment_id,
+      a.title,
+      a.signed_final_document_id,
+      d.filename,
+      s.role,
+      s.signer_name,
+      s.signer_email
+    FROM lease_amendments a
+    JOIN documents d ON d.id = a.signed_final_document_id
+    JOIN lease_amendment_signers s ON s.amendment_id = a.id
+    WHERE a.lease_id = $1
+      AND a.status IN ('signed', 'applied')
+      AND a.signed_final_document_id IS NOT NULL
+      AND s.signer_email IS NOT NULL
+    ORDER BY a.created_at DESC, s.created_at ASC
+    `,
+    [leaseId],
+  );
+
+  const rows = q.rows.filter((r: any) =>
+    String(r.signer_email || '').includes('@'),
+  );
+
+  if (!rows.length) {
+    throw new BadRequestException(
+      'Aucun avenant signé avec destinataire email disponible.',
+    );
+  }
+
+  const results = [];
+
+  for (const row of rows) {
+    const to = String(row.signer_email || '').trim();
+    const name = String(row.signer_name || '').trim() || 'Bonjour';
+    const title = String(row.title || 'Avenant au bail').trim();
+
+    const attachment = await this.readDocumentAttachment(
+      String(row.signed_final_document_id),
+    );
+
+    const subject = `${title} signé`;
+    const html = `
+      <p>Bonjour ${this.escapeHtml(name)},</p>
+      <p>Vous trouverez en pièce jointe l’avenant signé relatif au bail.</p>
+      <p><strong>${this.escapeHtml(title)}</strong></p>
+      <p>Cordialement,<br/>RentalOS</p>
+    `;
+
+    const sent = await this.mailer.sendMail(to, subject, html, [attachment]);
+
+    results.push({
+      amendmentId: row.amendment_id,
+      documentId: row.signed_final_document_id,
+      role: row.role,
+      email: to,
+      sent: sent.sent === true,
+      error: sent.error || null,
+    });
+  }
+
+  return {
+    ok: true,
+    sent: results.filter((r) => r.sent).length,
+    failed: results.filter((r) => !r.sent).length,
+    results,
+  };
+}
+
 // -------------------------------------
 // Session selector by phase
 // -------------------------------------
@@ -2128,6 +2202,12 @@ async listByLease(leaseId: string) {
   const oldEur = (Number(rev.previous_rent_cents) / 100).toFixed(2);
   const newEur = (Number(rev.new_rent_cents) / 100).toFixed(2);
 
+  const chargesEur = (Number(row.charges_cents || 0) / 100).toFixed(2);
+  const newTotalCcEur = (
+    (Number(rev.new_rent_cents || 0) + Number(row.charges_cents || 0)) /
+    100
+  ).toFixed(2);
+
   const oldCents = Number(rev.previous_rent_cents ?? 0);
   const newCents = Number(rev.new_rent_cents ?? 0);
 
@@ -2179,7 +2259,25 @@ h1{font-size:16pt;margin:0 0 10px 0}
   <table class="kv">
     <tr><td class="k">Date d'effet de la révision</td><td>${this.escapeHtml(this.formatDateFr(revIso))}</td></tr>
     <tr><td class="k">Ancien loyer (hors charges)</td><td><b>${this.escapeHtml(oldEur)} €</b></td></tr>
-    <tr><td class="k">Nouveau loyer (hors charges)</td><td><b>${this.escapeHtml(newEur)} €</b></td></tr>
+    <tr>
+      <td class="k">Nouveau loyer (hors charges)</td>
+      <td>
+        <b>${this.escapeHtml(newEur)} €</b><br/>
+        <span class="small">
+          applicable à compter du ${this.escapeHtml(this.formatDateFr(revIso))}
+        </span>
+      </td>
+    </tr>
+    <tr><td class="k">Charges mensuelles</td><td>${this.escapeHtml(chargesEur)} € <span class="small">(inchangées)</span></td></tr>
+    <tr>
+      <td class="k">Nouveau montant total mensuel</td>
+      <td>
+        <b>${this.escapeHtml(newTotalCcEur)} € charges comprises</b><br/>
+        <span class="small">
+          applicable à compter du ${this.escapeHtml(this.formatDateFr(revIso))}
+        </span>
+      </td>
+    </tr>
     <tr><td class="k">IRL de référence</td><td>${this.escapeHtml(String(rev.irl_reference_quarter || '—'))} — ${this.escapeHtml(String(rev.irl_reference_value || '—'))}</td></tr>
     <tr><td class="k">IRL appliqué</td><td>${this.escapeHtml(String(rev.irl_new_quarter || '—'))} — ${this.escapeHtml(String(rev.irl_new_value || '—'))}</td></tr>
     <tr>
@@ -2221,6 +2319,148 @@ Fait à ${this.escapeHtml(process.env.SIGNATURE_CITY || row.unit_city || '—')}
 
   return { created: true, document: ins.rows[0] };
 }
+
+  async sendIrlAvenantToTenants(leaseId: string, documentId?: string) {
+    if (!leaseId) {
+      throw new BadRequestException('Missing leaseId');
+    }
+
+    const docQ = await this.pool.query(
+      `
+      SELECT d.*
+      FROM documents d
+      WHERE d.lease_id = $1
+        AND d.type = 'AVENANT_IRL'
+        AND ($2::uuid IS NULL OR d.id = $2::uuid)
+      ORDER BY d.created_at DESC
+      LIMIT 1
+      `,
+      [leaseId, documentId || null],
+    );
+
+    if (!docQ.rowCount) {
+      throw new BadRequestException('Aucun avenant IRL généré pour ce bail.');
+    }
+
+    const doc = docQ.rows[0];
+    
+    const revisionDateFromFilename =
+      String(doc.filename || "").match(/_(\d{4}-\d{2}-\d{2})\.pdf$/)?.[1] || null;
+
+    const leaseQ = await this.pool.query(
+      `
+      SELECT
+        l.charges_cents,
+        lr.new_rent_cents
+      FROM leases l
+      LEFT JOIN lease_revisions lr
+        ON lr.lease_id = l.id
+       AND ($2::date IS NULL OR lr.revision_date::date = $2::date)
+      WHERE l.id = $1
+      ORDER BY lr.created_at DESC NULLS LAST
+      LIMIT 1
+      `,
+      [leaseId, revisionDateFromFilename],
+    );
+
+    const leaseRow = leaseQ.rows[0] || {};
+    const newRentCents = Number(leaseRow.new_rent_cents || 0);
+    const chargesCents = Number(leaseRow.charges_cents || 0);
+
+    const newRentEur = (newRentCents / 100).toFixed(2);
+    const chargesEur = (chargesCents / 100).toFixed(2);
+    const totalCcEur = ((newRentCents + chargesCents) / 100).toFixed(2);
+
+    if (!doc.storage_path || !doc.filename) {
+      throw new BadRequestException('Avenant IRL incomplet: fichier PDF introuvable.');
+    }
+
+    const abs = this.absFromStoragePath(doc.storage_path);
+
+    if (!fsSync.existsSync(abs)) {
+      throw new BadRequestException('Fichier PDF avenant IRL introuvable sur le serveur.');
+    }
+
+    const tenantsQ = await this.pool.query(
+      `
+      SELECT DISTINCT
+        t.id,
+        t.full_name,
+        t.email
+      FROM lease_tenants lt
+      JOIN tenants t ON t.id = lt.tenant_id
+      WHERE lt.lease_id = $1
+        AND t.email IS NOT NULL
+        AND t.email <> ''
+      ORDER BY t.full_name ASC
+      `,
+      [leaseId],
+    );
+
+    const recipients = tenantsQ.rows.filter((t: any) =>
+      String(t.email || '').includes('@'),
+    );
+
+    if (!recipients.length) {
+      throw new BadRequestException('Aucun email locataire disponible.');
+    }
+
+    const attachment = {
+      filename: doc.filename,
+      content: fsSync.readFileSync(abs),
+    };
+
+    const sent: any[] = [];
+
+    for (const tenant of recipients) {
+      const to = String(tenant.email || '').trim();
+      const name = String(tenant.full_name || 'Locataire').trim();
+
+      const subject = 'Révision annuelle du loyer - Avenant IRL';
+
+      const html = `
+        <p>Bonjour ${this.escapeHtml(name)},</p>
+
+        <p>
+          Vous trouverez ci-joint l’avenant d’information relatif à la révision annuelle du loyer
+          selon l’Indice de Référence des Loyers (IRL).
+        </p>
+
+        <p>
+          Ce document récapitule le calcul appliqué, le nouveau loyer hors charges
+          et le nouveau montant total mensuel charges comprises.
+        </p>
+
+        <p>
+          À compter du <b>${this.escapeHtml(this.formatDateFr(revisionDateFromFilename || ''))}</b> :
+        </p>
+
+        <p>
+          Nouveau loyer hors charges : <b>${newRentEur} €</b><br/>
+          Charges mensuelles : <b>${chargesEur} €</b> inchangées<br/>
+          Nouveau total mensuel : <b>${totalCcEur} € charges comprises</b>
+        </p>
+
+        <p>Cordialement,</p>
+      `;
+
+      const result = await this.mailer.sendMail(to, subject, html, [attachment]);
+
+      sent.push({
+        tenantId: tenant.id,
+        email: to,
+        sent: true,
+        result,
+      });
+    }
+
+    return {
+      ok: true,
+      documentId: doc.id,
+      sentCount: sent.length,
+      sent,
+    };
+  }
 
   // -------------------------------------
   // GUARANTEE picker (CAUTION) + UI helpers

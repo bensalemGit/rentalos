@@ -1,5 +1,4 @@
 "use client";
-
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
@@ -15,6 +14,7 @@ import {
   UserPlus,
   UsersRound,
   WalletCards,
+  TrendingUp,
 } from "lucide-react";
 
 const API =
@@ -57,9 +57,13 @@ export default function NewAmendmentPage() {
   const [tenantSearch, setTenantSearch] = useState("");
   const [selectedTenantId, setSelectedTenantId] = useState("");
   const [extraChargesCents, setExtraChargesCents] = useState("7000");
+  const [irlApplyDate, setIrlApplyDate] = useState("");
+  const [irlApplyQuarter, setIrlApplyQuarter] = useState("");
+  const [irlApplyValue, setIrlApplyValue] = useState("");
 
   const lease = data?.lease;
   const tenants = data?.tenants || [];
+  const isIrl = String(type).toUpperCase() === "AVENANT_IRL";
 
   const existingTenantIds = useMemo(() => {
     return new Set(
@@ -129,6 +133,29 @@ export default function NewAmendmentPage() {
 
       setData(j);
 
+      if (isIrl) {
+
+        const loadedLease = j?.lease || j;
+
+        const defaultIrlDate =
+          (loadedLease?.next_revision_date
+            ? String(loadedLease.next_revision_date).slice(0, 10)
+            : "") ||
+          (loadedLease?.nextRevisionDate
+            ? String(loadedLease.nextRevisionDate).slice(0, 10)
+            : "") ||
+          (loadedLease?.irl_revision_date
+            ? String(loadedLease.irl_revision_date).slice(0, 10)
+            : "") ||
+          (loadedLease?.irlRevisionDate
+            ? String(loadedLease.irlRevisionDate).slice(0, 10)
+            : "") ||
+          addOneYear(loadedLease?.start_date || loadedLease?.startDate) ||
+          new Date().toISOString().slice(0, 10);
+
+        setIrlApplyDate(defaultIrlDate);
+      }
+
       const tenantsRes = await fetch(`${API}/tenants`, {
         headers: { Authorization: `Bearer ${token}` },
         credentials: "include",
@@ -157,6 +184,78 @@ export default function NewAmendmentPage() {
   async function submit() {
     setError("");
     setStatus("");
+
+    if (isIrl) {
+      if (!irlApplyDate) return setError("Date de révision obligatoire.");
+      if (!irlApplyQuarter.trim()) return setError("Trimestre IRL obligatoire. Exemple : T4 2026.");
+
+      const irlNewValue = Number(String(irlApplyValue || "").replace(",", "."));
+      if (!Number.isFinite(irlNewValue) || irlNewValue <= 0) {
+        return setError("Valeur IRL invalide.");
+      }
+
+      setBusy(true);
+
+      try {
+        setStatus("Application de la révision IRL…");
+
+        const applyRes = await fetch(`${API}/leases/${leaseId}/irl/apply`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            revisionDate: irlApplyDate,
+            irlNewQuarter: irlApplyQuarter.trim(),
+            irlNewValue,
+          }),
+        });
+
+        const applyTxt = await applyRes.text().catch(() => "");
+        const applyJson = applyTxt
+          ? await Promise.resolve().then(() => JSON.parse(applyTxt)).catch(() => ({ message: applyTxt }))
+          : {};
+
+        if (!applyRes.ok) {
+          throw new Error(applyJson?.message || applyTxt || `Erreur application IRL ${applyRes.status}`);
+        }
+
+        setStatus("Révision appliquée, génération de l’avenant IRL…");
+
+        const avenantRes = await fetch(`${API}/leases/${leaseId}/irl/avenant`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            revisionDate: irlApplyDate,
+          }),
+        });
+
+        const avenantTxt = await avenantRes.text().catch(() => "");
+        const avenantJson = avenantTxt
+          ? await Promise.resolve().then(() => JSON.parse(avenantTxt)).catch(() => ({ message: avenantTxt }))
+          : {};
+
+        if (!avenantRes.ok) {
+          throw new Error(avenantJson?.message || avenantTxt || `Erreur génération avenant IRL ${avenantRes.status}`);
+        }
+
+        setStatus("Avenant IRL généré ✅");
+
+        router.push(`/dashboard/leases/${leaseId}/amendments`);
+        return;
+      } catch (e: any) {
+        setError(String(e?.message || e));
+        return;
+      } finally {
+        setBusy(false);
+      }
+    }
 
     if (!selectedTenantId || !selectedTenant) {
       return setError("Sélectionne un locataire existant.");
@@ -279,15 +378,17 @@ export default function NewAmendmentPage() {
           <div style={heroCard()}>
             <div style={eyebrow(soft)}>
               <Sparkles size={15} />
-              AVENANT
+              {isIrl ? "RÉVISION IRL" : "AVENANT"}
             </div>
 
             <h1 style={{ margin: "10px 0 8px", fontSize: 36, lineHeight: 1, color: title, letterSpacing: "-0.055em" }}>
-              Générer un avenant
+              {isIrl ? "Appliquer une révision IRL" : "Générer un avenant"}
             </h1>
 
             <p style={{ margin: 0, color: muted, lineHeight: 1.65, maxWidth: 680 }}>
-              Crée un avenant propre, prêt à signer, pour ajouter un colocataire au bail existant.
+              {isIrl
+                ? "Applique la révision annuelle du loyer et génère l’avenant IRL PDF, sans parcours de signature."
+                : "Crée un avenant propre, prêt à signer, pour ajouter un colocataire au bail existant."}
             </p>
 
             <div style={{ marginTop: 22, display: "grid", gap: 12 }}>
@@ -299,19 +400,31 @@ export default function NewAmendmentPage() {
 
           <div style={summaryCard()}>
             <div style={premiumIcon(blue)}>
-              <FileSignature size={24} />
+              {isIrl ? <TrendingUp size={24} /> : <FileSignature size={24} />}
             </div>
             <h2 style={{ margin: "14px 0 6px", color: title, letterSpacing: "-0.035em" }}>
-              Ajout locataire
+              {isIrl ? "Révision IRL" : "Ajout locataire"}
             </h2>
             <p style={{ margin: 0, color: muted, lineHeight: 1.55, fontSize: 14 }}>
-              L’avenant mettra à jour les signataires et les charges à compter de la date d’effet.
+              {isIrl
+                ? "La révision mettra à jour le loyer du bail et générera un avenant IRL transmissible aux locataires."
+                : "L’avenant mettra à jour les signataires et les charges à compter de la date d’effet."}
             </p>
 
             <div style={{ marginTop: 18, display: "grid", gap: 10 }}>
-              <MoneyLine label="Loyer" value={`${euro(rentCents)} €`} />
-              <MoneyLine label="Charges actuelles" value={`${euro(chargesCents)} €`} />
-              <MoneyLine label="Nouvelles charges" value={`${euro(newCharges)} €`} strong />
+              <MoneyLine label="Loyer actuel" value={`${euro(rentCents)} €`} />
+
+              {isIrl ? (
+                <>
+                  <MoneyLine label="IRL référence" value={irlRefLabel(lease)} />
+                  <MoneyLine label="Prochaine révision" value={irlApplyDate || "—"} strong />
+                </>
+              ) : (
+                <>
+                  <MoneyLine label="Charges actuelles" value={`${euro(chargesCents)} €`} />
+                  <MoneyLine label="Nouvelles charges" value={`${euro(newCharges)} €`} strong />
+                </>
+              )}
             </div>
           </div>
         </section>
@@ -327,113 +440,149 @@ export default function NewAmendmentPage() {
               <div style={{ display: "flex", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
                 <div>
                   <div style={eyebrow(soft)}>
-                    <UserPlus size={15} />
+                    {isIrl ? <TrendingUp size={15} /> : <UserPlus size={15} />}
                     TYPE D’AVENANT
                   </div>
                   <h2 style={{ margin: "8px 0 0", color: title, letterSpacing: "-0.035em" }}>
-                    Ajout locataire
+                    {isIrl ? "Révision IRL" : "Ajout locataire"}
                   </h2>
                 </div>
 
                 <div style={pill(blue)}>
-                  <ShieldCheck size={16} />
-                  Signature multi-parties
+                  {isIrl ? <TrendingUp size={16} /> : <ShieldCheck size={16} />}
+                  {isIrl ? "Sans signature" : "Signature multi-parties"}
                 </div>
               </div>
 
               {error && <div style={alertBox("danger")}>{error}</div>}
               {status && <div style={alertBox("success")}>{status}</div>}
 
-              <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }} className="form-grid">
-                <Field label="Date d’effet *">
-                  <input
-                    type="date"
-                    value={effectiveDate}
-                    onChange={(e) => setEffectiveDate(e.target.value)}
-                    style={input(border)}
-                  />
-                </Field>
-
-                <Field label="Charges complémentaires mensuelles (centimes)">
-                  <input value={extraChargesCents} onChange={(e) => setExtraChargesCents(e.target.value)} style={input(border)} />
-                </Field>
-
-                <Field label="Locataire à ajouter *">
-                  <div style={{ position: "relative" }}>
+              {isIrl ? (
+                  <>
+                <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14 }} className="form-grid">
+                  <Field label="Date de révision *">
                     <input
-                      value={tenantSearch}
-                      onFocus={() => {
-                        setTenantDropdownOpen(true);
-                      }}
-                      onBlur={() => {
-                        window.setTimeout(() => {
-                          setTenantDropdownOpen(false);
-                        }, 150);
-                      }}
-                      onChange={(e) => {
-                        setTenantSearch(e.target.value);
-                        setSelectedTenantId("");
-                        setTenantDropdownOpen(true);
-                      }}
-                      placeholder="Rechercher un locataire existant..."
+                      type="date"
+                      value={irlApplyDate}
+                      onChange={(e) => setIrlApplyDate(e.target.value)}
                       style={input(border)}
                     />
+                  </Field>
 
-                    {tenantDropdownOpen && (
-                      <div style={tenantDropdownStyle(border)}>
-                        {availableTenants.map((t) => {
-                          const name = String(t.full_name || t.fullName || "Locataire");
-                          const email = String(t.email || "");
+                  <Field label="Nouveau trimestre IRL *">
+                    <input
+                      value={irlApplyQuarter}
+                      onChange={(e) => setIrlApplyQuarter(e.target.value)}
+                      placeholder="ex: T4 2026"
+                      style={input(border)}
+                    />
+                  </Field>
 
-                          return (
-                            <button
-                              key={t.id}
-                              type="button"
-                              onMouseDown={(e) => e.preventDefault()}
-                              onClick={() => {
-                                setSelectedTenantId(t.id);
+                  <Field label="Nouvelle valeur IRL *">
+                    <input
+                      value={irlApplyValue}
+                      onChange={(e) => setIrlApplyValue(e.target.value)}
+                      placeholder="ex: 144.64"
+                      style={input(border)}
+                    />
+                  </Field>
+                </div>
+                  <IrlPreview
+                    muted={muted}
+                    border={border}
+                    lease={lease}
+                    newValueRaw={irlApplyValue}
+                  />
+                </>      
+              ) : (
+                
+                <div style={{ marginTop: 22, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }} className="form-grid">
+                  <Field label="Date d’effet *">
+                    <input
+                      type="date"
+                      value={effectiveDate}
+                      onChange={(e) => setEffectiveDate(e.target.value)}
+                      style={input(border)}
+                    />
+                  </Field>
 
-                                setTenantSearch(
-                                  email
-                                    ? `${name} — ${email}`
-                                    : name
-                                );
+                  <Field label="Charges complémentaires mensuelles (centimes)">
+                    <input value={extraChargesCents} onChange={(e) => setExtraChargesCents(e.target.value)} style={input(border)} />
+                  </Field>
 
-                                setTenantDropdownOpen(false);
-                              }}
-                              style={tenantChoiceButton(border, selectedTenantId === t.id)}
-                            >
-                              <b>{name}</b>
-                              {email ? <span style={{ color: "#667085" }}>{email}</span> : null}
-                            </button>
-                          );
-                        })}
+                  <Field label="Locataire à ajouter *">
+                    <div style={{ position: "relative" }}>
+                      <input
+                        value={tenantSearch}
+                        onFocus={() => {
+                          setTenantDropdownOpen(true);
+                        }}
+                        onBlur={() => {
+                          window.setTimeout(() => {
+                            setTenantDropdownOpen(false);
+                          }, 150);
+                        }}
+                        onChange={(e) => {
+                          setTenantSearch(e.target.value);
+                          setSelectedTenantId("");
+                          setTenantDropdownOpen(true);
+                        }}
+                        placeholder="Rechercher un locataire existant..."
+                        style={input(border)}
+                      />
 
-                        {!availableTenants.length && (
-                          <div style={{ padding: 12, color: "#8D99AE", fontSize: 13, fontWeight: 700 }}>
-                            Aucun locataire disponible.
-                          </div>
-                        )}
-                      </div>
-                    )}
+                      {tenantDropdownOpen && (
+                        <div style={tenantDropdownStyle(border)}>
+                          {availableTenants.map((t) => {
+                            const name = String(t.full_name || t.fullName || "Locataire");
+                            const email = String(t.email || "");
+
+                            return (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedTenantId(t.id);
+                                  setTenantSearch(email ? `${name} — ${email}` : name);
+                                  setTenantDropdownOpen(false);
+                                }}
+                                style={tenantChoiceButton(border, selectedTenantId === t.id)}
+                              >
+                                <b>{name}</b>
+                                {email ? <span style={{ color: "#667085" }}>{email}</span> : null}
+                              </button>
+                            );
+                          })}
+
+                          {!availableTenants.length && (
+                            <div style={{ padding: 12, color: "#8D99AE", fontSize: 13, fontWeight: 700 }}>
+                              Aucun locataire disponible.
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </Field>
+                </div>
+              )}
+
+              {!isIrl && (
+                <div style={previewBox()}>
+                  <div style={previewItem()}>
+                    <BadgeEuro size={18} />
+                    <span>Charges : {euro(chargesCents)} € → <b>{euro(newCharges)} €</b></span>
                   </div>
-                </Field>
-              </div>
-
-              <div style={previewBox()}>
-                <div style={previewItem()}>
-                  <BadgeEuro size={18} />
-                  <span>Charges : {euro(chargesCents)} € → <b>{euro(newCharges)} €</b></span>
+                  <div style={previewItem()}>
+                    <WalletCards size={18} />
+                    <span>Dépôt : <b>{euro(depositCents)} €</b></span>
+                  </div>
+                  <div style={previewItem()}>
+                    <CalendarDays size={18} />
+                    <span>Échéance : jour <b>{paymentDay}</b></span>
+                  </div>
                 </div>
-                <div style={previewItem()}>
-                  <WalletCards size={18} />
-                  <span>Dépôt : <b>{euro(depositCents)} €</b></span>
-                </div>
-                <div style={previewItem()}>
-                  <CalendarDays size={18} />
-                  <span>Échéance : jour <b>{paymentDay}</b></span>
-                </div>
-              </div>
+                )}
 
               <div style={{ marginTop: 22, display: "flex", justifyContent: "flex-end", gap: 12, flexWrap: "wrap" }}>
                 <button onClick={() => router.back()} style={secondaryBtn(border)} disabled={busy}>
@@ -441,7 +590,7 @@ export default function NewAmendmentPage() {
                 </button>
                 <button onClick={submit} style={primaryBtn(blue)} disabled={busy}>
                   {busy ? <Loader2 size={17} className="spin" /> : <Plus size={17} />}
-                  Générer l’avenant
+                  {isIrl ? "Appliquer et générer l’avenant IRL" : "Générer l’avenant"}
                 </button>
               </div>
             </>
@@ -721,4 +870,105 @@ function tenantDropdownStyle(border: string): React.CSSProperties {
     display: "grid",
     gap: 6,
   };
+}
+
+function addOneYear(v?: string | null) {
+  if (!v) return "";
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function IrlPreview({
+  lease,
+  newValueRaw,
+  muted,
+  border,
+}: {
+  lease: any;
+  newValueRaw: string;
+  muted: string;
+  border: string;
+}) {
+  const currentRent = Number(lease?.rent_cents || 0) / 100;
+
+  const terms = lease?.lease_terms ?? lease?.leaseTerms ?? null;
+
+  const refValue =
+    terms?.irlIndexation?.referenceValue ??
+    terms?.irl_indexation?.referenceValue ??
+    lease?.irl_reference_value ??
+    lease?.irlReferenceValue ??
+    null;
+
+  const refNum = Number(refValue);
+  const newNum = Number(String(newValueRaw || "").replace(",", "."));
+
+  const canCompute =
+    Number.isFinite(refNum) &&
+    refNum > 0 &&
+    Number.isFinite(newNum) &&
+    newNum > 0 &&
+    currentRent > 0;
+
+  const coef = canCompute ? newNum / refNum : null;
+  const nextRent = canCompute ? Math.round(currentRent * coef! * 100) / 100 : null;
+
+  return (
+    <div
+      style={{
+        marginTop: 18,
+        border: `1px solid ${border}`,
+        borderRadius: 18,
+        padding: 16,
+        background: "#fff",
+      }}
+    >
+      <div style={{ fontWeight: 950, marginBottom: 8, color: "#17233A" }}>
+        Aperçu (calcul attendu)
+      </div>
+
+      <div style={{ color: muted, fontSize: 13, display: "grid", gap: 6 }}>
+        <div>Loyer actuel (contrat) : <b>{currentRent.toFixed(2)} €</b></div>
+        <div>IRL référence : <b>{Number.isFinite(refNum) ? refNum : "—"}</b></div>
+        <div>IRL nouveau : <b>{Number.isFinite(newNum) ? newNum : "—"}</b></div>
+
+        {canCompute ? (
+          <>
+            <div>Coefficient : <b>{coef!.toFixed(6)}</b></div>
+            <div>Nouveau loyer attendu : <b>{nextRent!.toFixed(2)} €</b></div>
+            <div style={{ marginTop: 6 }}>
+              Le backend peut arrondir au centime / gérer des règles spécifiques.
+            </div>
+          </>
+        ) : (
+          <div style={{ marginTop: 6 }}>
+            Renseigne la valeur IRL pour afficher le calcul.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function irlRefLabel(lease: any) {
+  const terms = lease?.lease_terms ?? lease?.leaseTerms ?? null;
+
+  const refValue =
+    terms?.irlIndexation?.referenceValue ??
+    terms?.irl_indexation?.referenceValue ??
+    lease?.irl_reference_value ??
+    lease?.irlReferenceValue ??
+    null;
+
+  const refQuarter =
+    terms?.irlIndexation?.referenceQuarter ??
+    terms?.irl_indexation?.referenceQuarter ??
+    lease?.irl_reference_quarter ??
+    lease?.irlReferenceQuarter ??
+    "";
+
+  if (!refValue) return "—";
+  return refQuarter ? `${refValue} · ${refQuarter}` : String(refValue);
 }

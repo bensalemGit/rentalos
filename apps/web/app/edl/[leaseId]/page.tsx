@@ -686,7 +686,13 @@ export default function EdlPage({ params }: { params: { leaseId: string } }) {
       throw new Error(t || "Copie entrée → sortie impossible (EDL).");
     }
 
-    // 6) reload items
+    // 6) recharge sessions + items, et sélectionne la session sortie
+    await loadSessions(exitSessionId);
+    sessionIdRef.current = exitSessionId;
+    userPickedSessionRef.current = true;
+    setSessionId(exitSessionId);
+    setViewMode("EXIT");
+
     await loadItems(exitSessionId);
 
     pushToast({ kind: "ok", message: "Copie entrée → sortie ✅" });

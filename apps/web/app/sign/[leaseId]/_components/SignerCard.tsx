@@ -671,50 +671,35 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
               {effectiveTask.documentLabel}
             </div>
 
-            {(task as any).subTasks?.length > 0 && (
-              <div
-                className="signer-card-subtasks"
-                style={{
-                  display: "grid",
-                  gap: 6,
-                  marginTop: 6,
-                  marginBottom: 10,
-                }}
-              >
-                {(task as any).subTasks.map((t: SignerTask) => (
+            {(task as any).subTasks?.length > 0 && effectiveTask.status !== "SIGNED" ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                {buildProgressItems(effectiveTask).map((item) => (
                   <div
-                    key={t.id}
+                    key={item.label}
                     style={{
                       display: "flex",
                       alignItems: "center",
-                      justifyContent: "space-between",
-                      fontSize: 12.5,
-                      color: "#7B879C",
-                      paddingLeft: 2,
+                      gap: 9,
+                      color: item.done ? "#1C2B42" : "#4E5C73",
+                      fontSize: 13.5,
+                      lineHeight: 1.45,
+                      fontWeight: item.done ? 700 : 500,
                     }}
                   >
-                    <span>{t.documentLabel}</span>
-
-                    <span
-                      style={{
-                        fontWeight: 600,
-                        color:
-                          t.status === "SIGNED"
-                            ? "#2FA35B"
-                            : t.status === "READY"
-                              ? "#A06A2C"
-                              : "#98A2B3",
-                      }}
-                    >
-                      {t.statusLabel}
-                    </span>
+                    {item.done ? (
+                      <Check size={15} strokeWidth={2.2} color="#4C936A" />
+                    ) : (
+                      <Circle size={14} strokeWidth={2.0} color="#CC8B37" />
+                    )}
+                    <span>{item.label}</span>
                   </div>
                 ))}
               </div>
-            )}
+            ) : null}
 
-            <div style={{ display: "grid", gap: 8 }}>
-              {progressItems.map((item) => (
+            {!((task as any).subTasks?.length > 0 && effectiveTask.status !== "SIGNED") ? (
+              <div style={{ display: "grid", gap: 8 }}>
+                {progressItems.map((item) => (
                 <div
                   key={item.label}
                   style={{
@@ -736,6 +721,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                 </div>
               ))}
             </div>
+            ) : null}
 
             {effectiveTask.helperLabel &&
             !effectiveTask.requiresPreparation &&
@@ -910,7 +896,7 @@ export const SignerCard = React.forwardRef<HTMLDivElement, SignerCardProps>(
                 .signer-card-subtasks > div {
                   display: grid !important;
                   grid-template-columns: 1fr !important;
-                  gap: 4px !important;
+                  gap: 8px !important;
                   align-items: start !important;
                 }
               }
